@@ -550,49 +550,47 @@ function procederConUnion(nombreSala) {
 
     db.ref('salas/' + sala + '/jugadores').once('value', snap => {
         let jugadores = snap.val() || [];
-        let idGuardado = localStorage.getItem('monopoly_player_id');
+        let miNombreGuardado = localStorage.getItem('monopoly_nombre'); // Guardaremos el nombre
         let encontrado = false;
+        let miIdx = -1;
 
-        // Lógica de reconexión: ¿El ID guardado es válido en esta sala?
-        if (idGuardado !== null && jugadores[idGuardado]) {
-            miIdx = parseInt(idGuardado);
-            encontrado = true;
-            console.log("Reconectado a la partida existente como jugador: " + miIdx);
-        } else {
-            // Jugador nuevo: asignamos el siguiente índice disponible
+        // 1. BUSCAR POR NOMBRE: Si el jugador ya estaba, lo reconectamos
+        if (miNombreGuardado) {
+            jugadores.forEach((j, index) => {
+                if (j && j.nombre === miNombreGuardado) {
+                    miIdx = index;
+                    encontrado = true;
+                }
+            });
+        }
+
+        // 2. Si no lo encontramos, asignar nuevo
+        if (!encontrado) {
             miIdx = jugadores.length;
-            localStorage.setItem('monopoly_player_id', miIdx);
-            console.log("Nuevo jugador asignado al índice: " + miIdx);
+            // Definir nombre inicial
+            let nombreBase = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
+            localStorage.setItem('monopoly_nombre', nombreBase);
         }
 
         yaEntro = true;
-        let miNombre = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
+        let miNombre = localStorage.getItem('monopoly_nombre');
         let jugadorRef = db.ref('salas/' + sala + '/jugadores/' + miIdx);
         
-        // Usamos update para no borrar datos si ya existe (ej: posición o dinero actual)
         jugadorRef.update({
-            pos: jugadores[miIdx] ? jugadores[miIdx].pos : 0,
-            dinero: jugadores[miIdx] ? jugadores[miIdx].dinero : 1000,
-            enCarcel: jugadores[miIdx] ? jugadores[miIdx].enCarcel : 0,
+            pos: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].pos : 0,
+            dinero: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].dinero : 1000,
+            enCarcel: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].enCarcel : 0,
             nombre: miNombre,
-            tienePrestamo: jugadores[miIdx] ? jugadores[miIdx].tienePrestamo : false,
-            montoPrestamo: jugadores[miIdx] ? jugadores[miIdx].montoPrestamo : 0,
-            // --- NUEVAS PROPIEDADES PARA LOGROS ---
-            escudo: jugadores[miIdx] ? jugadores[miIdx].escudo : false,
-            quiebraTecnica: jugadores[miIdx] ? jugadores[miIdx].quiebraTecnica : 0
-            // --------------------------------------
+            tienePrestamo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].tienePrestamo : false,
+            montoPrestamo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].montoPrestamo : 0,
+            escudo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].escudo : false,
+            quiebraTecnica: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].quiebraTecnica : 0
         }).then(() => {
-            // Guardamos sala para reconexión
             localStorage.setItem('monopoly_sala', sala);
             
-            // 1. Limpiamos jugador al desconectar
-            jugadorRef.onDisconnect().remove();
+            // YA NO USAMOS .remove() porque eso borra tu progreso al salir
+            // Simplemente mantenemos la sesión activa
             
-            // 2. CONFIGURAMOS EL MENSAJE DE ABANDONO
-            let chatRef = db.ref('salas/' + sala + '/chat').push();
-            chatRef.onDisconnect().set({ n: "Sistema", m: miNombre + " ha abandonado." });
-            
-            // 3. ENVIAMOS MENSAJE DE ENTRADA O RECONEXIÓN
             db.ref('salas/' + sala + '/chat').push({ 
                 n: "Sistema", 
                 m: miNombre + (encontrado ? " ha vuelto a la partida." : " ha entrado a la sala.") 
@@ -605,7 +603,6 @@ function procederConUnion(nombreSala) {
 
             sincronizar();
         }).catch(error => {
-            console.error("Error al unirse a la sala:", error);
             yaEntro = false;
             if (btn) btn.disabled = false;
         });
