@@ -1535,7 +1535,7 @@ function mejorar(pos) {
         return;
     }
 
-    // 1. Sincronización del Chat (Usa child_added para no repetir todo el historial)
+    // 1. Sincronización del Chat
     let chatLog = document.getElementById('chat-log');
     if (chatLog) {
         db.ref('salas/' + sala + '/chat').on('child_added', snap => {
@@ -1552,6 +1552,11 @@ function mejorar(pos) {
         let s = snap.val(); 
         if(!s) return; 
 
+        // --- BLOQUEO SI MODAL ESTÁ ABIERTO ---
+        // Obtenemos el estado del modal
+        let modal = document.getElementById('modal');
+        let modalAbierto = (modal && modal.style.display === 'block');
+
         // --- BLOQUEO DE INTERACCIÓN FUERA DE TURNO ---
         const board = document.getElementById('board');
         if (board) {
@@ -1560,13 +1565,11 @@ function mejorar(pos) {
         }
 
         // --- SISTEMA DE BOT POR INACTIVIDAD ---
-        // Solo el jugador activo verifica el tiempo para evitar ejecuciones múltiples
-        if (s.turno === miIdx && s.tiempoUltimoTurno) {
+        // SOLO activamos el BOT si NO hay un modal abierto (ej. intercambio/venta)
+        if (s.turno === miIdx && s.tiempoUltimoTurno && !modalAbierto) {
             let ahora = Date.now();
             if ((ahora - s.tiempoUltimoTurno) > 10000) {
-                // Marcamos tiempo futuro para evitar que otros clientes activen el bot al mismo tiempo
                 db.ref('salas/' + sala + '/tiempoUltimoTurno').set(ahora + 20000);
-                
                 console.log("¡Bot activado por inactividad!");
                 if (typeof tirarDado === 'function') tirarDado();
             }
@@ -1617,7 +1620,7 @@ function mejorar(pos) {
             }); 
         }
 
-        // Actualizar Log (Solo si hay cambios)
+        // Actualizar Log
         if(s.log) { 
             let logEl = document.getElementById('log');
             if(logEl) {
