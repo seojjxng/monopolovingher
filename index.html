@@ -1588,19 +1588,16 @@ window.abrirIntercambio = function() {
         return;
     }
 
-    // 1. Sincronización del Chat
-    db.ref('salas/' + sala + '/chat').on('value', snap => {
-        if (!yaEntro) return; 
-        let chatLog = document.getElementById('chat-log');
-        if (!chatLog) return;
-        chatLog.innerHTML = ""; 
-        snap.forEach(msgSnap => {
-            let m = msgSnap.val();
+    // 1. Sincronización del Chat (Usa child_added para no repetir todo el historial)
+    let chatLog = document.getElementById('chat-log');
+    if (chatLog) {
+        db.ref('salas/' + sala + '/chat').on('child_added', snap => {
+            let m = snap.val();
             let hora = m.t ? `<small style="color:gray;">[${m.t}]</small> ` : "";
             chatLog.innerHTML += `<div>${hora}<b>${m.n}:</b> ${m.m}</div>`;
+            chatLog.scrollTop = chatLog.scrollHeight;
         });
-        chatLog.scrollTop = chatLog.scrollHeight;
-    });
+    }
 
     // 2. Sincronización del Juego
     db.ref('salas/' + sala).on('value', snap => { 
@@ -1611,56 +1608,36 @@ window.abrirIntercambio = function() {
         // --- BLOQUEO DE INTERACCIÓN FUERA DE TURNO ---
         const board = document.getElementById('board');
         if (board) {
-            if (s.turno !== miIdx) {
-                board.style.pointerEvents = "none";
-                board.style.opacity = "0.8";
-            } else {
-                board.style.pointerEvents = "auto";
-                board.style.opacity = "1";
-            }
+            board.style.pointerEvents = (s.turno === miIdx) ? "auto" : "none";
+            board.style.opacity = (s.turno === miIdx) ? "1" : "0.8";
         }
 
-        // --- SISTEMA DE BOT POR INACTIVIDAD (PROTEGIDO) ---
-        // Solo verificamos el bot si el turno es del usuario actual (miIdx) 
-        // y si existe la variable tiempoUltimoTurno
-        if (s.turno === miIdx && s.tiempoUltimoTurno !== undefined) {
+        // --- SISTEMA DE BOT POR INACTIVIDAD ---
+        // Solo el jugador activo verifica el tiempo para evitar ejecuciones múltiples
+        if (s.turno === miIdx && s.tiempoUltimoTurno) {
             let ahora = Date.now();
-            let diferencia = (ahora - s.tiempoUltimoTurno) / 1000;
-
-            // Solo activamos si pasaron más de 10s
-            // IMPORTANTE: Solo dejamos que el jugador actual (el del navegador) procese esto
-            if (diferencia > 10) {
-                // Actualizamos el tiempo a un valor futuro inmediato para que 
-                // ningún otro proceso de sincronización lo vuelva a detectar por unos segundos
-                db.ref('salas/' + sala + '/tiempoUltimoTurno').set(ahora + 5000);
-
-                log("El jugador " + (typeof nombres !== 'undefined' ? nombres[miIdx] : "Jugador " + (miIdx + 1)) + " no respondió, el bot tomó el control.");
-                console.log("¡Bot activado: inactividad detectada!");
+            if ((ahora - s.tiempoUltimoTurno) > 10000) {
+                // Marcamos tiempo futuro para evitar que otros clientes activen el bot al mismo tiempo
+                db.ref('salas/' + sala + '/tiempoUltimoTurno').set(ahora + 20000);
                 
-                if (typeof tirarDado === 'function') {
-                    tirarDado(); 
-                }
+                console.log("¡Bot activado por inactividad!");
+                if (typeof tirarDado === 'function') tirarDado();
             }
         }
 
-        // Actualizar dinero
-        if (s.jugadores && s.jugadores[miIdx]) {
-            document.getElementById('dinero-mio').innerText = s.jugadores[miIdx].dinero;
-        }
-
-        // Actualizar Turnos
+        // Actualizar dinero, Turnos y Clima
+        if (s.jugadores && s.jugadores[miIdx]) document.getElementById('dinero-mio').innerText = s.jugadores[miIdx].dinero;
+        
         let turnoText = document.getElementById('turno-text');
         if (turnoText && s.turno !== undefined && typeof nombres !== 'undefined') {
             turnoText.innerText = "Turno: " + (nombres[s.turno] || "Jugador " + (s.turno + 1));
         }
 
-        // Actualizar Clima
         if(s.clima !== undefined && typeof climas !== 'undefined') { 
-            let c = climas[s.clima]; 
-            document.getElementById('clima-display').innerText = "Estación: " + c.n; 
+            document.getElementById('clima-display').innerText = "Estación: " + climas[s.clima].n; 
         }
 
-        // Actualizar Fichas de jugadores
+        // Actualizar Fichas y Propiedades
         if (s.jugadores) {
             s.jugadores.forEach((j, i) => { 
                 let el = document.getElementById('p' + i); 
@@ -1675,7 +1652,6 @@ window.abrirIntercambio = function() {
             });
         }
 
-        // Actualizar Propiedades
         if(s.propiedades) { 
             Object.keys(s.propiedades).forEach(pos => { 
                 let cell = document.getElementById('cell-' + pos);
@@ -1694,51 +1670,16 @@ window.abrirIntercambio = function() {
             }); 
         }
 
-        // Actualizar Log
+        // Actualizar Log (Solo si hay cambios)
         if(s.log) { 
-            let h = ""; Object.values(s.log).forEach(l => h += l + "<br>"); 
             let logEl = document.getElementById('log');
-            if(logEl) logEl.innerHTML = h; 
-        }
-
-        // Misiones
-        if (s.jugadores && s.jugadores[miIdx]) {
-            if (typeof verificarMisionCajaFuerte === 'function') verificarMisionCajaFuerte(miIdx, s.jugadores[miIdx].dinero);
-            if (s.jugadores[miIdx].ultimaMision) {
-                let m = s.jugadores[miIdx].ultimaMision;
-                const mensajes = {
-                    "negociador": "¡Has ganado $400 por tu primer intercambio!",
-                    "inversor": "¡Felicidades! Has ganado $200 por ser un Inversor Inicial.",
-                    "coleccionista": "¡Felicidades! Has ganado $300 por completar un set de color.",
-                    "cajafuerte": "¡Felicidades! Has acumulado $2,000. ¡Un premio de $650 irá directo a tu caja fuerte!",
-                    "intocable": "¡El Intocable! Otros jugadores han caído 5 veces en tus propiedades. ¡Has ganado $400!",
-                    "renovador": "¡Excelente constructor! Has construido 5 casas en total. ¡Has ganado $500!",
-                    "monopolioTotal": "¡INCREÍBLE! Has conseguido el Monopolio Total. ¡Premio de $1,500!"
-                };
-                if (mensajes[m]) {
-                    if (typeof mostrarNotificacionMision === 'function') mostrarNotificacionMision(mensajes[m]);
-                    db.ref('salas/' + sala + '/jugadores/' + miIdx + '/ultimaMision').remove();
-                }
+            if(logEl) {
+                let h = ""; Object.values(s.log).forEach(l => h += l + "<br>"); 
+                logEl.innerHTML = h;
             }
         }
     }); 
 };
-        
-    // 1. EL BLOQUE DE RECONEXIÓN (Fuera de todo)
-// BLOQUE DE RECONEXIÓN: Solo rellena el input, NO entra automáticamente
-window.addEventListener('load', () => {
-    let salaGuardada = localStorage.getItem('monopoly_sala');
-    
-    // Solo rellenamos el input si el usuario tenía una sala guardada
-    // Pero NO llamamos a procederConUnion(), para que se quede en el Lobby
-    if (salaGuardada) {
-        let input = document.getElementById('sala-id');
-        if (input) {
-            // input.value = salaGuardada; // <-- COMENTA ESTA LÍNEA
-            console.log("Sesión ignorada para empezar en blanco.");
-        }
-    }
-});
 // 2. EL BLOQUE DE CREACIÓN DEL TABLERO
 window.addEventListener('DOMContentLoaded', () => {
         const board = document.getElementById('board');
