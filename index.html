@@ -489,8 +489,11 @@ window.unirse = function() {
     
     let nombreSala = inputSala.value.trim();
 
-    // Desactivamos oyentes previos para evitar duplicidad al reconectar
-    db.ref('salas/').off();
+    // Solo desconectamos las escuchas de la sala anterior, no de todo 'salas/'
+    // Esto evita que si tienes otros oyentes globales se rompan.
+    if (typeof sala !== 'undefined' && sala) {
+        db.ref('salas/' + sala).off();
+    }
 
     db.ref('salas/' + nombreSala).once('value', snap => {
         if (!snap.exists()) {
@@ -512,118 +515,95 @@ window.unirse = function() {
             // La sala existe: Entramos directamente
             procederConUnion(nombreSala);
             
-            // Lógica de escucha simplificada (se controla desde sincronizar o una sola vez aquí)
-            // Ya no es necesario el .on dentro de unirse si tu función sincronizar ya escucha la sala
-            
-            // ACTIVACIÓN DE OFERTAS: Solo se llama una vez
+            // ACTIVACIÓN DE OFERTAS
             if (typeof escucharOfertas === 'function') {
                 escucharOfertas();
             }
         }
     });
 };
-// 2. Función auxiliar para crear y entrar
-window.crearNuevaSala = function(nombreSala) {
-    db.ref('salas/' + nombreSala).set({
-        estado: 'esperando',
-        jugadores: []
-    }).then(() => {
-        document.getElementById('modal').style.display = 'none';
-        procederConUnion(nombreSala);
-    });
 };
 
 // 3. Función principal de unión (con reconexión)
 window.procederConUnion = function(nombreSala) {
-    // 1. RESETEO DE SESIÓN: Limpiamos variables antes de entrar a la nueva sala
-    sala = null;
-    miIdx = null;
-    yaEntro = false; 
-    
+    // 1. RESETEO DE SESIÓN
     sala = nombreSala;
+    miIdx = null;
+    yaEntro = false;
     
     let btn = document.getElementById('btn-unirse');
     if (btn) btn.disabled = true;
 
-    db.ref('salas/' + sala + '/jugadores').once('value', snap => {
-        let data = snap.val();
-        let jugadores = Array.isArray(data) ? data : (data ? Object.values(data) : []);
-        
-        // --- CORRECCIÓN UID: Identificación única por navegador ---
-        let miID = localStorage.getItem('monopoly_uid');
-        if (!miID) {
-            miID = 'player_' + Math.random().toString(36).substr(2, 9);
-            localStorage.setItem('monopoly_uid', miID);
-        }
-        
-        let encontrado = false;
-        let indexEncontrado = -1;
+    // Identificación única
+    let miID = localStorage.getItem('monopoly_uid');
+    if (!miID) {
+        miID = 'player_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('monopoly_uid', miID);
+    }
 
-        // Búsqueda por UID único
-        jugadores.forEach((j, index) => {
-            if (j && j.uid === miID) {
-                indexEncontrado = index;
-                encontrado = true;
-            }
-        });
+    // 2. TRANSACCIÓN ATÓMICA PARA SEGURIDAD TOTAL
+    db.ref('salas/' + sala + '/jugadores').transaction(jugadores => {
+        if (!jugadores) jugadores = [];
 
-        // 2. Asignación correcta
-        if (encontrado) {
-            miIdx = indexEncontrado;
-            console.log("Reconectado con UID: " + miID + " en índice: " + miIdx);
-        } else {
-            miIdx = jugadores.length;
-            // --- CORRECCIÓN DE NOMBRE ---
-            // Si el nombre guardado es "Dog" o no existe, forzamos el nombre según el índice del array 'nombres'
-            let nombrePorIndice = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
-            let nombreGuardado = localStorage.getItem('monopoly_nombre');
-            
-            let miNombre = (nombreGuardado === "Dog" || !nombreGuardado) ? nombrePorIndice : nombreGuardado;
-            
-            localStorage.setItem('monopoly_nombre', miNombre);
-            console.log("Nuevo jugador registrado con UID: " + miID + " y nombre: " + miNombre);
+        // Buscamos si ya existe por UID (Reconexión)
+        let idx = jugadores.findIndex(j => j && j.uid === miID);
+        
+        // Si no existe, lo asignamos al siguiente índice disponible
+        if (idx === -1) {
+            idx = jugadores.length;
         }
 
-        yaEntro = true;
-        let miNombre = localStorage.getItem('monopoly_nombre');
-        let jugadorRef = db.ref('salas/' + sala + '/jugadores/' + miIdx);
-        
-        let jActual = (encontrado && jugadores[miIdx]) ? jugadores[miIdx] : {};
+        // Gestión de nombre
+        let nombreGuardado = localStorage.getItem('monopoly_nombre');
+        let nombrePorIndice = (typeof nombres !== 'undefined' && nombres[idx]) ? nombres[idx] : ("Jugador " + (idx + 1));
+        let miNombre = (nombreGuardado === "Dog" || !nombreGuardado) ? nombrePorIndice : nombreGuardado;
+        localStorage.setItem('monopoly_nombre', miNombre);
 
-        jugadorRef.update({
-            uid: miID, 
+        // Preparamos los datos del jugador (conservando lo anterior si reconecta)
+        let jActual = jugadores[idx] || {};
+        jugadores[idx] = {
+            ...jActual,
+            uid: miID,
+            nombre: miNombre,
+            status: 'online',
             pos: jActual.pos || 0,
             dinero: jActual.dinero !== undefined ? jActual.dinero : 1000,
             enCarcel: jActual.enCarcel || 0,
-            nombre: miNombre,
             tienePrestamo: jActual.tienePrestamo || false,
             montoPrestamo: jActual.montoPrestamo || 0,
             escudo: jActual.escudo || false,
-            quiebraTecnica: jActual.quiebraTecnica || 0,
-            status: 'online'
-        }).then(() => {
+            quiebraTecnica: jActual.quiebraTecnica || 0
+        };
+
+        miIdx = idx; // Asignamos el índice para el alcance global
+        return jugadores;
+    }, (error, committed, snap) => {
+        if (committed) {
+            yaEntro = true;
             localStorage.setItem('monopoly_sala', sala);
-            jugadorRef.onDisconnect().update({ status: 'offline' });
             
+            // Configurar desconexión automática
+            db.ref('salas/' + sala + '/jugadores/' + miIdx).onDisconnect().update({ status: 'offline' });
+            
+            // Notificar chat
             db.ref('salas/' + sala + '/chat').push({ 
                 n: "Sistema", 
-                m: miNombre + (encontrado ? " ha vuelto a la partida." : " ha entrado a la sala.") 
+                m: localStorage.getItem('monopoly_nombre') + (miIdx >= 0 ? " ha vuelto o se ha unido a la sala." : " ha entrado.") 
             });
 
-            if (miIdx === 0 && !encontrado) {
-                db.ref('salas/' + sala + '/turno').set(0);
+            // Si es el primero, inicializa el turno
+            if (miIdx === 0) {
+                db.ref('salas/' + sala + '/turno').transaction(t => (t === null ? 0 : t));
                 if (typeof iniciarRelojClima === 'function') iniciarRelojClima();
             }
 
             sincronizar();
-        }).catch(error => {
-            console.error("Error al entrar a la sala:", error);
-            yaEntro = false;
+        } else {
+            console.error("Error al unir a la sala:", error);
             if (btn) btn.disabled = false;
-        });
+        }
     });
 };
-
         function calcularAlquiler(precioBase, duenoIdx) {
     // Si no tiene reputación, por defecto es 50
     let rep = (window.jugadores && window.jugadores[duenoIdx]) ? (window.jugadores[duenoIdx].reputacion || 50) : 50;
@@ -1458,64 +1438,45 @@ function mejorar(pos) {
     });
 }
     
-    window.tirarDado = function() {
+    // Variable global temporal para el dado
+let ultimoDado = 0;
+
+window.tirarDado = function() {
     if (miIdx === -1) return;
 
+    // Calculamos el dado ANTES de la transacción para poder usarlo en la UI
+    ultimoDado = Math.floor(Math.random() * 6) + 1;
+
     db.ref('salas/' + sala).transaction(s => {
-        if (!s || s.turno !== miIdx) return; // Si no es tu turno, aborta transacción
+        if (!s || s.turno !== miIdx) return;
+        if (s.jugadores[miIdx].enCarcel > 0) return s;
 
-        // 1. GESTIÓN DE CÁRCEL
-        if (s.jugadores[miIdx].enCarcel > 0) {
-            return s; // La lógica de pasar turno en cárcel debe ir en una función aparte o aquí
-        }
+        if (s.clima === undefined) s.clima = Math.floor(Math.random() * climas.length);
 
-        // 2. Lógica de clima (inicial)
-        if (s.clima === undefined) {
-            s.clima = Math.floor(Math.random() * climas.length);
-        }
-
-        // 3. Cálculo del dado y contador
-        let dado = Math.floor(Math.random() * 6) + 1;
         let contadorActual = s.jugadores[miIdx].seisSeguidos || 0;
-        let nuevoContador = (dado === 6) ? contadorActual + 1 : 0;
-
-        // 4. Movimiento
+        let nuevoContador = (ultimoDado === 6) ? contadorActual + 1 : 0;
         let posActual = Number(s.jugadores[miIdx].pos);
-        let nuevaPos = (posActual + dado) % mapa.length;
+        let nuevaPos = (posActual + ultimoDado) % mapa.length;
 
-        // Cobro por pasar por SALIDA
-        if (nuevaPos < posActual) {
-            s.jugadores[miIdx].dinero = (s.jugadores[miIdx].dinero || 0) + 100;
-        }
+        if (nuevaPos < posActual) s.jugadores[miIdx].dinero = (s.jugadores[miIdx].dinero || 0) + 100;
 
-        // 5. Aplicar lógica de 3 veces 6 o movimiento normal
         if (nuevoContador === 3) {
-            s.jugadores[miIdx].pos = 9; // Cárcel
+            s.jugadores[miIdx].pos = 9;
             s.jugadores[miIdx].enCarcel = 2;
             s.jugadores[miIdx].seisSeguidos = 0;
-            s.turno = (s.turno + 1) % s.jugadores.length; // Pasar turno
+            s.turno = (s.turno + 1) % s.jugadores.length;
         } else {
             s.jugadores[miIdx].pos = nuevaPos;
             s.jugadores[miIdx].seisSeguidos = nuevoContador;
-
-            // Si no saca 6, pasa el turno
-            if (dado !== 6) {
-                s.turno = (s.turno + 1) % s.jugadores.length;
-            }
+            if (ultimoDado !== 6) s.turno = (s.turno + 1) % s.jugadores.length;
         }
 
-        s.tiempoUltimoTurno = Date.now(); // Reset reloj bot
-        return s; // Guarda todo el estado actualizado
+        s.tiempoUltimoTurno = Date.now();
+        return s;
     }, (error, committed, snapshot) => {
         if (committed) {
-            let s = snapshot.val();
-            let posFinal = s.jugadores[miIdx].pos;
-            
-            // Actualización de UI post-transacción
-            document.getElementById('dado-valor').innerText = "Dado: " + (snapshot.val().jugadores[miIdx].pos - posFinal + " (ok)"); // Ajustar visual
-            
-            // Ejecutar efectos laterales (log y manejo de casilla)
-            setTimeout(() => manejarCasilla(posFinal), 600);
+            document.getElementById('dado-valor').innerText = "Dado: " + ultimoDado;
+            setTimeout(() => manejarCasilla(snapshot.val().jugadores[miIdx].pos), 600);
         }
     });
 };
