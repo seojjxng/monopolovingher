@@ -1606,6 +1606,7 @@ window.tirarDado = function() {
     }); 
 };
 // 2. EL BLOQUE DE CREACIÓN DEL TABLERO
+// 2. EL BLOQUE DE CREACIÓN DEL TABLERO
 window.addEventListener('DOMContentLoaded', () => {
     const board = document.getElementById('board');
     if (!board) return;
@@ -1615,7 +1616,7 @@ window.addEventListener('DOMContentLoaded', () => {
         d.className = 'cell'; 
         d.id = 'cell-' + i; 
         
-        // CORRECCIÓN: Usamos 'e' para detener la propagación y pasamos false a verPropiedad
+        // Usamos e.stopPropagation para evitar clics fantasma
         d.onclick = (e) => {
             e.stopPropagation();
             verPropiedad(i, false);
