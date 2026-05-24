@@ -1413,9 +1413,13 @@ function inicializarEquipos() {
     if (!modal || !modalText || !mapa[pos]) return;
 
     let p = mapa[pos];
+    // Limpiamos los botones antes de cargar nada
+    modalExtra.innerHTML = "";
+
     if (p.p === 0) {
         modalTitle.innerText = p.n;
         modalText.innerHTML = "Casilla especial: " + p.n;
+        modalExtra.innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Cerrar</button>`;
         modal.style.display = 'block';
         return;
     }
@@ -1424,32 +1428,25 @@ function inicializarEquipos() {
     let esFerrocarril = (g && g.color === "#f5f5dc");
     let iconos = { 8: "https://i.imgur.com/24NquXH.png", 24: "https://i.imgur.com/QMFz9pn.png", 26: "https://i.imgur.com/AINz8Jt.png", 27: "https://i.imgur.com/ZaN9ZUG.png" };
     
-    modalExtra.innerHTML = "";
-    
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val() || {};
         let prop = data.propiedades ? data.propiedades[pos] : null;
         
-        let multClima = data.clima !== undefined ? climas[data.clima].mult : 1.0;
-        let nombreClima = data.clima !== undefined ? climas[data.clima].n : 'Normal';
+        let multClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].mult : 1.0;
+        let nombreClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].n : 'Normal';
         let porcentajes = [0.10, 0.15, 0.20, 0.30, 0.40, 0.50];
         let nivelesNombres = ["Base", "1 Casa", "2 Casas", "3 Casas", "4 Casas", "Hotel"];
         
-        let listaAlquileres = "";
-        porcentajes.forEach((porc, i) => {
-            let precioNormal = Math.floor(p.p * porc);
-            let precioClima = Math.floor(precioNormal * multClima);
-            let notaClima = (multClima !== 1) ? ` <small style="color:red;">(c/clima: $${precioClima})</small>` : "";
-            listaAlquileres += `<li>${nivelesNombres[i]}: $${precioNormal}${notaClima}</li>`;
-        });
-        
         modalTitle.innerText = "Tarjeta de Propiedad";
         let htmlCard = `<div class="card-property"><div class="card-header">${p.n}</div>`;
+        
         if (esFerrocarril && iconos[pos]) {
-            htmlCard += `<div style="width: 80px; height: 80px; margin: 30px auto 10px auto; background-color: #ff80bf; -webkit-mask: url('${iconos[pos]}') no-repeat center / contain; mask: url('${iconos[pos]}') no-repeat center / contain;"></div>`;
+            htmlCard += `<div style="width: 80px; height: 80px; margin: 10px auto; background-color: #ff80bf; -webkit-mask: url('${iconos[pos]}') no-repeat center / contain; mask: url('${iconos[pos]}') no-repeat center / contain;"></div>`;
         }
-        htmlCard += `<p>Valor de compra: <b>$${esFerrocarril ? 600 : p.p}</b></p>`;
+        
+        htmlCard += `<p>Valor: <b>$${esFerrocarril ? 600 : p.p}</b></p>`;
 
+        // LOGICA DE BOTONES (Exclusiva)
         if (!prop) {
             htmlCard += `<p>Estado: <b>Disponible</b></p>`;
             if(esCaida) {
@@ -1460,7 +1457,7 @@ function inicializarEquipos() {
             htmlCard += `<p>Dueño: <b>Tú</b></p>`;
             if (!esFerrocarril) htmlCard += `<p>Nivel: <b>${nivelesNombres[prop.nivel || 0]}</b></p>`;
             if (!prop.hipotecada) {
-                if (!esFerrocarril && prop.nivel < 5) modalExtra.innerHTML += `<button class="btn" onclick="mejorar(${pos})">Mejorar ($50)</button>`;
+                if (!esFerrocarril && (prop.nivel || 0) < 5) modalExtra.innerHTML += `<button class="btn" onclick="mejorar(${pos})">Mejorar ($50)</button>`;
                 modalExtra.innerHTML += `<button class="btn" style="background: #ad0c0c;" onclick="hipotecar(${pos})">Hipotecar</button>`;
             } else {
                 modalExtra.innerHTML += `<button class="btn" onclick="liberar(${pos})">Liberar</button>`;
@@ -1469,21 +1466,21 @@ function inicializarEquipos() {
             htmlCard += `<p>Dueño: <b>${nombres[prop.owner]}</b></p>`;
             let alqFinal = 0;
             if (esFerrocarril) {
-                let transportes = [8, 24, 26, 27];
-                let count = transportes.filter(idx => data.propiedades && data.propiedades[idx] && data.propiedades[idx].owner === prop.owner).length;
+                let trans = [8, 24, 26, 27];
+                let count = trans.filter(idx => data.propiedades && data.propiedades[idx] && data.propiedades[idx].owner === prop.owner).length;
                 let tabla = { 1: 200, 2: 250, 3: 350, 4: 450 };
                 alqFinal = tabla[count] || 200;
             } else {
                 alqFinal = Math.floor(p.p * porcentajes[prop.nivel || 0] * multClima);
             }
-            htmlCard += `<p>Alquiler a pagar: <b>$${alqFinal}</b></p>`;
+            htmlCard += `<p>Alquiler: <b>$${alqFinal}</b></p>`;
             if(esCaida && !prop.hipotecada) {
                 modalExtra.innerHTML = `<button class="btn" onclick="procesarPago(${miIdx}, ${prop.owner}, ${alqFinal})">Pagar Alquiler</button>`;
             }
         }
-        
-        htmlCard += `<hr><p style="font-size: 11px;"><b>${esFerrocarril ? "Alquiler según transportes:" : "Precios de Alquiler ("+nombreClima+"): "}</b></p>
-                     <ul style="font-size: 11px; padding-left: 20px;">${esFerrocarril ? "<li>Si se poseen: $200</li><li>Si se poseen: $250</li><li>Si se poseen: $350</li><li>Si se poseen: $450</li>" : listaAlquileres}</ul></div>`;
+
+        // Botón cerrar siempre al final
+        modalExtra.innerHTML += `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Cerrar</button>`;
         
         modalText.innerHTML = htmlCard;
         modal.style.display = 'block';
