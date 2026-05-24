@@ -86,34 +86,7 @@
     background: #ff59aa; /* Rosa vibrante para el progreso */
     transition: width 0.5s ease-in-out; /* Animación suave */
 }
-        #modal-misiones { 
-    display: none; 
-    position: fixed; 
-    top: 50%; 
-    left: 50%; 
-    transform: translate(-50%, -50%); 
-    width: 350px; 
-    background: #ffe4e9; 
-    padding: 20px; 
-    border: 3px solid #ff80bf; 
-    border-radius: 15px; 
-    text-align: center; 
-    z-index: 1000; 
-}
-        #modal-mision-completada {
-    display: none; 
-    position: fixed; 
-    top: 50%; 
-    left: 50%; 
-    transform: translate(-50%, -50%); 
-    width: 320px; 
-    background: #ffe4e9; 
-    padding: 20px; 
-    border: 3px solid #ff80bf; 
-    border-radius: 15px; 
-    text-align: center; 
-    z-index: 9999;
-}
+      
 #lista-misiones { 
     list-style: none; 
     padding: 0; 
@@ -202,7 +175,9 @@
 
             <div class="center-zone">
                 <div class="reputacion-wrapper">
-                    <div class="reputacion-label" style="cursor: pointer;" onclick="abrirInfoReputacion()">Reputación (Click para ver)</div>
+                   <div class="reputacion-label" style="cursor: pointer;" onclick="mostrarAvisoReputacion()">
+    Reputación (Click para ver)
+</div>
                     <div class="reputacion-container">
                         <div id="rep-bar" class="reputacion-bar"></div>
                     </div>
@@ -688,31 +663,42 @@ window.toggleModo2v2 = function() {
 }
         
         
-        function abrirModalMisiones() {
+        window.abrirModalMisiones = function() {
+    // Referencia al modal principal unificado
+    let modal = document.getElementById('modal');
+    let modalTitle = document.getElementById('modal-title');
+    let modalText = document.getElementById('modal-text');
+    let modalExtra = document.getElementById('modal-extra');
+
     db.ref('salas/' + sala + '/jugadores/' + miIdx + '/misionesCumplidas').once('value', snap => {
         let completadas = snap.val() || {};
-        let lista = document.getElementById('lista-misiones');
-        lista.innerHTML = ""; // Limpiar lista anterior
-
+        
         const misiones = [
-    { id: 'inversorInicial', titulo: 'Inversor Inicial. Poseer al menos 3 propiedades.', rec: 200 },
-    { id: 'coleccionista', titulo: 'El coleccionista. Completar cualquier set de color.', rec: 300 },
-    { id: 'negociador', titulo: 'El negociador. Por realizar tu primer intercambio exitoso.', rec: 400 },
-    { id: 'cajafuerte', titulo: 'Caja fuerte. Acumular $2,000 en efectivo.', rec: 650 },
-    { id: 'renovador', titulo: 'Renovador. Construir un total de 5 casas.', rec: 500 },
-    { id: 'monopolioTotal', titulo: 'Monopolio total. Ser dueño de los 3 sets más caros.', rec: 1500 },
-    { id: 'intocable', titulo: 'El intocable. Otros jugadores caen 5 veces en tus propiedades.', rec: 400 }
-];
+            { id: 'inversorInicial', titulo: 'Inversor Inicial. Poseer al menos 3 propiedades.', rec: 200 },
+            { id: 'coleccionista', titulo: 'El coleccionista. Completar cualquier set de color.', rec: 300 },
+            { id: 'negociador', titulo: 'El negociador. Por realizar tu primer intercambio exitoso.', rec: 400 },
+            { id: 'cajafuerte', titulo: 'Caja fuerte. Acumular $2,000 en efectivo.', rec: 650 },
+            { id: 'renovador', titulo: 'Renovador. Construir un total de 5 casas.', rec: 500 },
+            { id: 'monopolioTotal', titulo: 'Monopolio total. Ser dueño de los 3 sets más caros.', rec: 1500 },
+            { id: 'intocable', titulo: 'El intocable. Otros jugadores caen 5 veces en tus propiedades.', rec: 400 }
+        ];
 
+        // Construimos el HTML de la lista directamente
+        let htmlLista = `<ul id="lista-misiones">`;
         misiones.forEach(m => {
-            let item = document.createElement('li');
-           item.innerHTML = `${m.titulo} - <b>$${m.rec}</b> ${completadas[m.id] ? '✅' : ''}`;
-            lista.appendChild(item);
+            htmlLista += `<li>${m.titulo} - <b>$${m.rec}</b> ${completadas[m.id] ? '✅' : ''}</li>`;
         });
+        htmlLista += `</ul>`;
 
-        document.getElementById('modal-misiones').style.display = 'block';
+        // Asignamos al modal unificado
+        modalTitle.innerText = "Misiones Disponibles";
+        modalText.innerHTML = htmlLista;
+        modalExtra.innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Cerrar</button>`;
+
+        // Mostramos el modal
+        modal.style.display = 'block';
     });
-}
+};
 
 function mostrarNotificacionMision(titulo) {
     document.getElementById('msg-mision').innerText = titulo;
@@ -1575,6 +1561,8 @@ function mejorar(pos) {
         }
     });
 }
+
+                    
     
     window.tirarDado = function() {
     if(miIdx === -1) return;
@@ -1781,6 +1769,27 @@ function mejorar(pos) {
             }
         }
     });
+};
+
+
+        window.mostrarAvisoReputacion = function() {
+    // Si ya entró, no hacemos nada (o dejamos que el juego fluya)
+    if (typeof yaEntro !== 'undefined' && yaEntro) return;
+
+    let modal = document.getElementById('modal');
+    let modalTitle = document.getElementById('modal-title');
+    let modalText = document.getElementById('modal-text');
+    let modalExtra = document.getElementById('modal-extra');
+
+    if (modal && modalTitle && modalText) {
+        modalTitle.innerText = "Estado de Reputación";
+        modalText.innerText = "Cargando datos de jugador... espera un momento.";
+        
+        // Limpiamos los botones y solo dejamos el de cerrar
+        modalExtra.innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Entendido</button>`;
+        
+        modal.style.display = 'block';
+    }
 };
         
     // 1. EL BLOQUE DE RECONEXIÓN (Fuera de todo)
