@@ -954,47 +954,6 @@ function mostrarNotificacionMision(titulo) {
         });
     });
 }
-
-        window.abrirIntercambio = function() {
-    document.getElementById('modal-extra').innerHTML = ""; 
-    
-    db.ref('salas/' + sala).once('value', snap => {
-        let data = snap.val();
-        let misProps = [];
-        
-        if(data.propiedades) {
-            Object.keys(data.propiedades).forEach(pIdx => {
-                if(data.propiedades[pIdx].owner === miIdx) misProps.push(pIdx);
-            });
-        }
-        
-        document.getElementById('modal-title').innerText = "Revender Propiedad";
-        
-        let html = `<div class="card-property">`;
-        html += "Selecciona propiedad, precio (mayor a 250) y comprador:<br><br>";
-        
-        if(misProps.length === 0) { 
-            html += "No tienes propiedades."; 
-        } else {
-            misProps.forEach(pIdx => {
-                let p = mapa[pIdx];
-                html += `<b>${p.n}</b>: 
-                         <input type="number" id="precio-${pIdx}" placeholder="251" min="251" max="999" style="width: 60px;"> 
-                         <select id="sel-${pIdx}">`;
-                
-                data.jugadores.forEach((j, i) => { 
-                    if(i !== miIdx) html += `<option value="${i}">${nombres[i]}</option>`; 
-                });
-                
-                html += `</select> <button class="btn" onclick="proponerVenta(${pIdx})">Vender</button><br><br>`;
-            });
-        }
-        html += `</div>`;
-        
-        document.getElementById('modal-text').innerHTML = html;
-        document.getElementById('modal').style.display = 'block';
-    });
-};
         
    window.mostrarAvisoIntercambio = function() {
     let modal = document.getElementById('modal');
