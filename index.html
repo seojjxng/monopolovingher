@@ -209,20 +209,11 @@
             <div id="chat-log" style="height: 90px; overflow-y: auto;"></div>
             <input type="text" id="chat-msg" class="input-field" placeholder="Mensaje...">
             <button class="btn" onclick="enviarChat()">Enviar</button>
-        <button class="btn" onclick="abrirModal('Modo 2v2', 'El modo 2v2 está en desarrollo. La actualización se hará tan pronto como sea posible.')">
+        <button class="btn" onclick="abrirAvisoDesarrollo()">
     Activar Modo 2v2
 </button>
-    <div id="modal-2v2" class="modal" style="display: none;">
-    <div class="modal-body">
-        <span class="close" onclick="document.getElementById('modal-2v2').style.display='none'">&times;</span>
-        <h2>Modo 2v2</h2>
-        <div class="modal-content-scroll">
-            <p>El modo 2v2 requiere 4 jugadores.</p>
-        </div>
-        <div id="modal-extra">
-            <button class="btn" onclick="document.getElementById('modal-2v2').style.display='none'">Aceptar</button>
-        </div>
-    </div>
+
+<div id="modal-extra">
 </div>
 
 <div id="modal-misiones" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;">
@@ -1525,6 +1516,26 @@ window.comprar = function(pos) {
         }
     });
 };
+
+
+        window.abrirAvisoDesarrollo = function() {
+    let modal = document.getElementById('modal');
+    let modalTitle = document.getElementById('modal-title');
+    let modalText = document.getElementById('modal-text');
+    let modalExtra = document.getElementById('modal-extra');
+
+    if (!modal) return;
+
+    modalTitle.innerText = "Modo 2v2";
+    modalText.innerHTML = `<p>El modo 2v2 está en desarrollo. La actualización se hará tan pronto como sea posible.</p>`;
+    
+    // El botón de cierre unificado
+    modalExtra.innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Entendido</button>`;
+    
+    modal.style.display = 'block';
+};
+
+        
 function mejorar(pos) {
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val();
