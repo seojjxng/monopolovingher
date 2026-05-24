@@ -1432,7 +1432,7 @@ function inicializarEquipos() {
         });
     });
 };
-       window.verPropiedad = function(pos) {
+       window.verPropiedad = function(pos, esCaida = false) {
     let modal = document.getElementById('modal');
     let modalText = document.getElementById('modal-text');
     let modalExtra = document.getElementById('modal-extra');
@@ -1441,41 +1441,83 @@ function inicializarEquipos() {
     if (!modal || !modalText || !mapa[pos]) return;
 
     let p = mapa[pos];
-
-    // --- MANEJO DE CASILLAS ESPECIALES ---
-    // Si la casilla no tiene precio (p=0) o es una de estas, es especial
-    if (p.p === 0 || p.n === "?" || p.n === "ARCA COMUNAL" || p.n === "Salida" || p.n === "Impuesto" || p.n === "Carcel") {
+    if (p.p === 0) {
         modalTitle.innerText = p.n;
-        modalText.innerHTML = `<div class="card-property"><p>Has caído en: <b>${p.n}</b></p></div>`;
-        modalExtra.innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Cerrar</button>`;
+        modalText.innerHTML = "Casilla especial: " + p.n;
         modal.style.display = 'block';
         return;
     }
-
-    // --- MANEJO DE PROPIEDADES ---
+    
+    let g = obtenerGrupo(pos);
+    let esFerrocarril = (g && g.color === "#f5f5dc");
+    let iconos = { 8: "https://i.imgur.com/24NquXH.png", 24: "https://i.imgur.com/QMFz9pn.png", 26: "https://i.imgur.com/AINz8Jt.png", 27: "https://i.imgur.com/ZaN9ZUG.png" };
+    
+    modalExtra.innerHTML = "";
+    
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val() || {};
         let prop = data.propiedades ? data.propiedades[pos] : null;
         
+        let multClima = data.clima !== undefined ? climas[data.clima].mult : 1.0;
+        let nombreClima = data.clima !== undefined ? climas[data.clima].n : 'Normal';
+        let porcentajes = [0.10, 0.15, 0.20, 0.30, 0.40, 0.50];
+        let nivelesNombres = ["Base", "1 Casa", "2 Casas", "3 Casas", "4 Casas", "Hotel"];
+        
+        let listaAlquileres = "";
+        porcentajes.forEach((porc, i) => {
+            let precioNormal = Math.floor(p.p * porc);
+            let precioClima = Math.floor(precioNormal * multClima);
+            let notaClima = (multClima !== 1) ? ` <small style="color:red;">(c/clima: $${precioClima})</small>` : "";
+            listaAlquileres += `<li>${nivelesNombres[i]}: $${precioNormal}${notaClima}</li>`;
+        });
+        
         modalTitle.innerText = "Tarjeta de Propiedad";
         let htmlCard = `<div class="card-property"><div class="card-header">${p.n}</div>`;
-        htmlCard += `<p>Valor: <b>$${p.p}</b></p>`;
+        if (esFerrocarril && iconos[pos]) {
+            htmlCard += `<div style="width: 80px; height: 80px; margin: 30px auto 10px auto; background-color: #ff80bf; -webkit-mask: url('${iconos[pos]}') no-repeat center / contain; mask: url('${iconos[pos]}') no-repeat center / contain;"></div>`;
+        }
+        htmlCard += `<p>Valor de compra: <b>$${esFerrocarril ? 600 : p.p}</b></p>`;
 
         if (!prop) {
             htmlCard += `<p>Estado: <b>Disponible</b></p>`;
-            modalExtra.innerHTML = `<button class="btn" onclick="comprar(${pos})">Comprar ($${p.p})</button>`;
+            if(esCaida) {
+                let precioCompra = esFerrocarril ? 600 : p.p;
+                modalExtra.innerHTML = `<button class="btn" onclick="comprar(${pos})">Comprar ($${precioCompra})</button>`;
+            }
         } else if (prop.owner === miIdx) {
             htmlCard += `<p>Dueño: <b>Tú</b></p>`;
-            modalExtra.innerHTML = `<button class="btn" onclick="mejorar(${pos})">Mejorar ($50)</button>`;
+            if (!esFerrocarril) htmlCard += `<p>Nivel: <b>${nivelesNombres[prop.nivel || 0]}</b></p>`;
+            if (!prop.hipotecada) {
+                if (!esFerrocarril && prop.nivel < 5) modalExtra.innerHTML += `<button class="btn" onclick="mejorar(${pos})">Mejorar ($50)</button>`;
+                modalExtra.innerHTML += `<button class="btn" style="background: #ad0c0c;" onclick="hipotecar(${pos})">Hipotecar</button>`;
+            } else {
+                modalExtra.innerHTML += `<button class="btn" onclick="liberar(${pos})">Liberar</button>`;
+            }
         } else {
             htmlCard += `<p>Dueño: <b>${nombres[prop.owner]}</b></p>`;
-            htmlCard += `<button class="btn" onclick="procesarPago(${miIdx}, ${prop.owner}, ${Math.floor(p.p * 0.1)})">Pagar Alquiler</button>`;
+            let alqFinal = 0;
+            if (esFerrocarril) {
+                let transportes = [8, 24, 26, 27];
+                let count = transportes.filter(idx => data.propiedades && data.propiedades[idx] && data.propiedades[idx].owner === prop.owner).length;
+                let tabla = { 1: 200, 2: 250, 3: 350, 4: 450 };
+                alqFinal = tabla[count] || 200;
+            } else {
+                alqFinal = Math.floor(p.p * porcentajes[prop.nivel || 0] * multClima);
+            }
+            htmlCard += `<p>Alquiler a pagar: <b>$${alqFinal}</b></p>`;
+            if(esCaida && !prop.hipotecada) {
+                modalExtra.innerHTML = `<button class="btn" onclick="procesarPago(${miIdx}, ${prop.owner}, ${alqFinal})">Pagar Alquiler</button>`;
+            }
         }
         
-        modalText.innerHTML = htmlCard + `</div>`;
+        htmlCard += `<hr><p style="font-size: 11px;"><b>${esFerrocarril ? "Alquiler según transportes:" : "Precios de Alquiler ("+nombreClima+"): "}</b></p>
+                     <ul style="font-size: 11px; padding-left: 20px;">${esFerrocarril ? "<li>Si se poseen: $200</li><li>Si se poseen: $250</li><li>Si se poseen: $350</li><li>Si se poseen: $450</li>" : listaAlquileres}</ul></div>`;
+        
+        modalText.innerHTML = htmlCard;
         modal.style.display = 'block';
     });
 }
+
 function comprar(pos) { 
     log(nombres[miIdx] + " compró " + mapa[pos].n); 
     
@@ -1628,15 +1670,23 @@ function mejorar(pos) {
     input.value = ""; // Limpiar input
 }
     window.sincronizar = function() {
-    if (!yaEntro || !sala) return;
+    // PROTECCIÓN TOTAL: Si no hemos entrado, no intentamos sincronizar nada.
+    if (!yaEntro || !sala) {
+        console.log("Sincronización en espera: Usuario no ha entrado a la sala.");
+        return;
+    }
 
-    // 1. Chat (Optimizado para solo añadir nuevos mensajes)
-    db.ref('salas/' + sala + '/chat').on('child_added', msgSnap => {
+    // 1. Sincronización del Chat
+    db.ref('salas/' + sala + '/chat').on('value', snap => {
+        if (!yaEntro) return; 
         let chatLog = document.getElementById('chat-log');
         if (!chatLog) return;
-        let m = msgSnap.val();
-        let hora = m.t ? `<small style="color:gray;">[${m.t}]</small> ` : "";
-        chatLog.innerHTML += `<div>${hora}<b>${m.n}:</b> ${m.m}</div>`;
+        chatLog.innerHTML = ""; 
+        snap.forEach(msgSnap => {
+            let m = msgSnap.val();
+            let hora = m.t ? `<small style="color:gray;">[${m.t}]</small> ` : "";
+            chatLog.innerHTML += `<div>${hora}<b>${m.n}:</b> ${m.m}</div>`;
+        });
         chatLog.scrollTop = chatLog.scrollHeight;
     });
 
@@ -1646,52 +1696,84 @@ function mejorar(pos) {
         let s = snap.val(); 
         if(!s) return; 
 
-        // Actualizar dinero e interfaz básica
+        // Actualizar dinero
         if (s.jugadores && s.jugadores[miIdx]) {
-            let elDinero = document.getElementById('dinero-mio');
-            if(elDinero && elDinero.innerText != s.jugadores[miIdx].dinero) 
-                elDinero.innerText = s.jugadores[miIdx].dinero;
+            document.getElementById('dinero-mio').innerText = s.jugadores[miIdx].dinero;
         }
 
-        // Actualizar Fichas (Sin recrear el DOM)
+        // Actualizar Turnos
+        let turnoText = document.getElementById('turno-text');
+        if (turnoText && s.turno !== undefined && typeof nombres !== 'undefined') {
+            turnoText.innerText = "Turno: " + (nombres[s.turno] || "Jugador " + (s.turno + 1));
+        }
+
+        // Actualizar Clima
+        if(s.clima !== undefined && typeof climas !== 'undefined') { 
+            let c = climas[s.clima]; 
+            document.getElementById('clima-display').innerText = "Estación: " + c.n; 
+        }
+
+        // Actualizar Fichas de jugadores
         if (s.jugadores) {
             s.jugadores.forEach((j, i) => { 
                 let el = document.getElementById('p' + i); 
-                let cell = document.getElementById('cell-' + j.pos); 
-                if (el && cell) {
-                    el.style.display = 'block';
-                    el.style.left = (cell.offsetLeft + 30) + 'px'; 
-                    el.style.top = (cell.offsetTop + 30) + 'px';
+                if (el && j) {
+                    el.style.display = 'block'; 
+                    let cell = document.getElementById('cell-' + j.pos); 
+                    if (cell) {
+                        el.style.left = (cell.offsetLeft + 30) + 'px'; 
+                        el.style.top = (cell.offsetTop + 30) + 'px';
+                    }
                 }
             });
         }
 
-        // Actualizar Propiedades (Solo cambiar colores/clases si es necesario)
+        // Actualizar Propiedades
         if(s.propiedades) { 
             Object.keys(s.propiedades).forEach(pos => { 
                 let cell = document.getElementById('cell-' + pos);
-                let prop = s.propiedades[pos];
                 if(cell) {
-                    // Actualizar color de propiedad
                     if (typeof colores !== 'undefined') {
-                        cell.style.backgroundColor = prop.hipotecada ? "#ccc" : colores[prop.owner];
+                        cell.style.backgroundColor = s.propiedades[pos].hipotecada ? "#ccc" : colores[s.propiedades[pos].owner];
                     }
-                    // Actualizar casas
                     let hc = cell.querySelector('.house-container'); 
                     if (hc) {
-                        let nivel = prop.nivel || 0;
-                        // Solo actualizamos si el HTML contenido es distinto (evita parpadeo)
-                        let nuevoHtml = "";
-                        if(nivel > 0 && nivel < 5) { for(let i=0; i<nivel; i++) nuevoHtml += '<div class="house"></div>'; }
-                        else if(nivel === 5) nuevoHtml = '<div class="hotel"></div>';
-                        
-                        if (hc.innerHTML !== nuevoHtml) hc.innerHTML = nuevoHtml;
+                        hc.innerHTML = "";
+                        let nivel = s.propiedades[pos].nivel || 0;
+                        if(nivel > 0 && nivel < 5) { for(let i=0; i<nivel; i++) { let h = document.createElement('div'); h.className = 'house'; hc.appendChild(h); } }
+                        else if(nivel === 5) { let h = document.createElement('div'); h.className = 'hotel'; hc.appendChild(h); }
                     }
                 }
             }); 
         }
-        
-        // ... (resto de tu lógica de misiones)
+
+        // Actualizar Log
+        if(s.log) { 
+            let h = ""; Object.values(s.log).forEach(l => h += l + "<br>"); 
+            let logEl = document.getElementById('log');
+            if(logEl) logEl.innerHTML = h; 
+        }
+
+        // Misiones
+        if (s.jugadores && s.jugadores[miIdx]) {
+            if (typeof verificarMisionCajaFuerte === 'function') verificarMisionCajaFuerte(miIdx, s.jugadores[miIdx].dinero);
+            if (s.jugadores[miIdx].ultimaMision) {
+                let m = s.jugadores[miIdx].ultimaMision;
+                const mensajes = {
+                    "negociador": "¡Has ganado $400 por tu primer intercambio!",
+                    "inversor": "¡Felicidades! Has ganado $200 por ser un Inversor Inicial.",
+                    "coleccionista": "¡Felicidades! Has ganado $300 por completar un set de color.",
+                    "cajafuerte": "¡Felicidades! Has acumulado $2,000. ¡Un premio de $650 irá directo a tu caja fuerte!",
+                    "intocable": "¡El Intocable! Otros jugadores han caído 5 veces en tus propiedades. ¡Has ganado $400!",
+                    "renovador": "¡Excelente constructor! Has construido 5 casas en total. ¡Has ganado $500!",
+                    "monopolioTotal": "¡INCREÍBLE! Has conseguido el Monopolio Total. ¡Premio de $1,500!"
+                };
+                if (mensajes[m]) {
+                    if (typeof mostrarNotificacionMision === 'function') mostrarNotificacionMision(mensajes[m]);
+                    db.ref('salas/' + sala + '/jugadores/' + miIdx + '/ultimaMision').remove();
+                }
+            }
+        }
     });
 };
         
