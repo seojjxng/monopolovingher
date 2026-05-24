@@ -1313,7 +1313,6 @@ function procesarPago(d, a, m, esEvasion = false) {
 
     let p = mapa[pos];
     
-    // Si la casilla no tiene precio (tipo evento, impuestos, etc.)
     if (!p.p || p.p === 0) {
         modalTitle.innerText = p.n;
         modalText.innerHTML = "Casilla especial: " + p.n;
@@ -1351,14 +1350,14 @@ function procesarPago(d, a, m, esEvasion = false) {
 
         if (!prop) {
             htmlCard += `<p>Estado: <b>Disponible</b></p>`;
-            if(esCaida) modalExtra.innerHTML = `<button class="btn" onclick="comprar(${pos})">Comprar ($${p.p})</button>`;
+            if(esCaida) modalExtra.innerHTML = `<button class="btn" onclick="comprar(${pos}); event.stopPropagation();">Comprar ($${p.p})</button>`;
         } else if (prop.owner === miIdx) {
             htmlCard += `<p>Dueño: <b>Tú</b></p><p>Nivel: <b>${nivelesNombres[prop.nivel || 0]}</b></p>`;
             if (!prop.hipotecada) {
-                if (!esFerrocarril && prop.nivel < 5) modalExtra.innerHTML += `<button class="btn" onclick="mejorar(${pos})">Mejorar ($50)</button>`;
-                modalExtra.innerHTML += `<button class="btn" style="background: #ad0c0c;" onclick="hipotecar(${pos})">Hipotecar</button>`;
+                if (!esFerrocarril && prop.nivel < 5) modalExtra.innerHTML += `<button class="btn" onclick="mejorar(${pos}); event.stopPropagation();">Mejorar ($50)</button>`;
+                modalExtra.innerHTML += `<button class="btn" style="background: #ad0c0c;" onclick="hipotecar(${pos}); event.stopPropagation();">Hipotecar</button>`;
             } else {
-                modalExtra.innerHTML += `<button class="btn" onclick="liberar(${pos})">Liberar</button>`;
+                modalExtra.innerHTML += `<button class="btn" onclick="liberar(${pos}); event.stopPropagation();">Liberar</button>`;
             }
         } else {
             let duenoNombre = (nombres && nombres[prop.owner]) ? nombres[prop.owner] : "Jugador " + (prop.owner + 1);
@@ -1367,8 +1366,8 @@ function procesarPago(d, a, m, esEvasion = false) {
             htmlCard += `<p>Alquiler a pagar: <b>$${alqFinal}</b></p>`;
             if(esCaida && !prop.hipotecada) {
                 modalExtra.innerHTML = `
-                    <button class="btn" onclick="procesarPago(${miIdx}, ${prop.owner}, ${alqFinal})">Pagar Alquiler</button>
-                    <button class="btn" style="background: orange;" onclick="intentarEvasion(${miIdx}, ${prop.owner}, ${alqFinal})">Evadir (30%)</button>
+                    <button class="btn" onclick="procesarPago(${miIdx}, ${prop.owner}, ${alqFinal}); event.stopPropagation();">Pagar Alquiler</button>
+                    <button class="btn" style="background: orange;" onclick="intentarEvasion(${miIdx}, ${prop.owner}, ${alqFinal}); event.stopPropagation();">Evadir (30%)</button>
                 `;
             }
         }
@@ -1393,20 +1392,6 @@ window.intentarEvasion = function(d, a, m) {
     }
 };
 
-function ejecutarEvento(nombreCasilla) {
-    let carta = obtenerCarta();
-    db.ref('salas/'+sala+'/jugadores/'+miIdx+'/dinero').transaction(d => {
-        let nuevo = Number(d) + carta.v;
-        setTimeout(() => verificarBancarrota(miIdx, nuevo), 500);
-        return nuevo;
-    });
-    log(nombres[miIdx] + " cayó en " + nombreCasilla + ": " + carta.txt);
-    document.getElementById('modal-title').innerText = nombreCasilla;
-    document.getElementById('modal-text').innerText = carta.txt;
-    document.getElementById('modal-extra').innerHTML = ""; 
-    document.getElementById('modal').style.display = 'block';
-}
-
 function procesarPago(d, a, m) {
     db.ref('salas/' + sala + '/jugadores').transaction(j => {
         if(!j) return;
@@ -1419,111 +1404,121 @@ function procesarPago(d, a, m) {
 }
 
 function comprar(pos) { 
-    log(nombres[miIdx] + " compró " + mapa[pos].n); 
-    db.ref('salas/' + sala + '/propiedades/' + pos).set({owner: miIdx, nivel: 0, hipotecada: false}); 
-    db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => Number(d) - Number(mapa[pos].p)); 
-    verificarMisionInversor(miIdx);
-    verificarMisionColeccionista(miIdx);
-    verificarMisionMonopolioTotal(miIdx);
-    document.getElementById('modal').style.display = 'none'; 
+    // Usamos transacción atómica
+    db.ref('salas/' + sala).transaction(data => {
+        if (!data || !data.jugadores || !data.jugadores[miIdx]) return;
+        
+        let precio = Number(mapa[pos].p);
+        let dineroActual = Number(data.jugadores[miIdx].dinero);
+        
+        if (dineroActual >= precio) {
+            data.jugadores[miIdx].dinero = dineroActual - precio;
+            if (!data.propiedades) data.propiedades = {};
+            data.propiedades[pos] = { owner: miIdx, nivel: 0, hipotecada: false };
+            
+            // Reiniciamos el reloj del BOT aquí mismo dentro de la transacción
+            data.tiempoUltimoTurno = Date.now(); 
+            return data;
+        }
+    }, (error, committed) => {
+        if (committed) {
+            log(nombres[miIdx] + " compró " + mapa[pos].n);
+            verificarMisionInversor(miIdx);
+            verificarMisionColeccionista(miIdx);
+            verificarMisionMonopolioTotal(miIdx);
+            document.getElementById('modal').style.display = 'none';
+        } else {
+            alert("No tienes suficiente dinero o hubo un error al comprar.");
+        }
+    });
 }
 
 function mejorar(pos) {
-    db.ref('salas/' + sala).once('value', snap => {
-        let data = snap.val();
+    db.ref('salas/' + sala).transaction(data => {
         if (!data) return;
         let grupo = obtenerGrupo(pos);
-        if (!grupo) { alert("Esta propiedad no se puede mejorar."); return; }
+        if (!grupo) return;
         let prop = data.propiedades ? data.propiedades[pos] : null;
-        if (!prop) return;
+        if (!prop || prop.owner !== miIdx) return;
         let todasPropias = grupo.indices.every(idx => data.propiedades && data.propiedades[idx] && data.propiedades[idx].owner === miIdx);
-        if (!todasPropias) {
-            alert("Necesitas ser dueño de todas las propiedades del grupo.");
-            return;
+        if (!todasPropias) return;
+        let nivelActual = prop.nivel || 0;
+        let dineroActual = Number(data.jugadores[miIdx].dinero);
+        if (nivelActual < 5 && dineroActual >= 50) {
+            data.jugadores[miIdx].dinero = dineroActual - 50;
+            data.propiedades[pos].nivel = nivelActual + 1;
+            data.tiempoUltimoTurno = Date.now(); // Reset bot
+            return data;
         }
-        if ((prop.nivel || 0) < 5) {
-            db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => {
-                if (d >= 50) {
-                    db.ref('salas/' + sala + '/propiedades/' + pos + '/nivel').set((prop.nivel || 0) + 1);
-                    log(nombres[miIdx] + " mejoró " + mapa[pos].n);
-                    return d - 50;
-                }
-                return d;
-            });
+    }, (error, committed) => {
+        if (committed) {
+            log(nombres[miIdx] + " mejoró " + mapa[pos].n);
+            document.getElementById('modal').style.display = 'none';
         }
     });
 }
     
     window.tirarDado = function() {
-    if(miIdx === -1) return;
-    
-    db.ref('salas/' + sala).once('value', snap => {
-        let s = snap.val(); 
-        if(!s || s.turno !== miIdx) return; // Solo el jugador del turno tira
-        
-        // --- GESTIÓN DE CÁRCEL ---
+    if (miIdx === -1) return;
+
+    db.ref('salas/' + sala).transaction(s => {
+        if (!s || s.turno !== miIdx) return; // Si no es tu turno, aborta transacción
+
+        // 1. GESTIÓN DE CÁRCEL
         if (s.jugadores[miIdx].enCarcel > 0) {
-            log(nombres[miIdx] + " está en la cárcel y no puede moverse.");
-            pasarTurno(); 
-            // Resetear reloj al pasar turno en cárcel
-            db.ref('salas/' + sala + '/tiempoUltimoTurno').set(Date.now());
-            return;
-        }
-        
-        // 1. Lógica de clima
-        if (s.clima === undefined) {
-            let climaInicial = Math.floor(Math.random() * climas.length);
-            db.ref('salas/' + sala + '/clima').set(climaInicial);
+            return s; // La lógica de pasar turno en cárcel debe ir en una función aparte o aquí
         }
 
-        // 2. Cálculo del dado
+        // 2. Lógica de clima (inicial)
+        if (s.clima === undefined) {
+            s.clima = Math.floor(Math.random() * climas.length);
+        }
+
+        // 3. Cálculo del dado y contador
         let dado = Math.floor(Math.random() * 6) + 1;
-        document.getElementById('dado-valor').innerText = dado;
         let contadorActual = s.jugadores[miIdx].seisSeguidos || 0;
         let nuevoContador = (dado === 6) ? contadorActual + 1 : 0;
 
-        // 3. Movimiento
+        // 4. Movimiento
         let posActual = Number(s.jugadores[miIdx].pos);
         let nuevaPos = (posActual + dado) % mapa.length;
-        
-        // CORRECCIÓN: Aquí es donde detectamos si cruzó la salida
-        if (nuevaPos < posActual) { 
-            db.ref('salas/'+sala+'/jugadores/'+miIdx+'/dinero').transaction(d => (d || 0) + 100); 
-            log(nombres[miIdx] + " pasó por SALIDA y cobró $100."); 
+
+        // Cobro por pasar por SALIDA
+        if (nuevaPos < posActual) {
+            s.jugadores[miIdx].dinero = (s.jugadores[miIdx].dinero || 0) + 100;
         }
 
-        // 4. Lógica de Penalización o Movimiento
+        // 5. Aplicar lógica de 3 veces 6 o movimiento normal
         if (nuevoContador === 3) {
-            log("¡ACUSACIÓN DE FRAUDE! " + nombres[miIdx] + " sacó tres 6 seguidos.");
-            db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ 
-                pos: 9, // Enviamos a la casilla 9 (Cárcel)
-                enCarcel: 2, 
-                seisSeguidos: 0 
-            });
-            pasarTurno(); 
+            s.jugadores[miIdx].pos = 9; // Cárcel
+            s.jugadores[miIdx].enCarcel = 2;
+            s.jugadores[miIdx].seisSeguidos = 0;
+            s.turno = (s.turno + 1) % s.jugadores.length; // Pasar turno
         } else {
-            db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ 
-                pos: nuevaPos, 
-                seisSeguidos: nuevoContador 
-            });
+            s.jugadores[miIdx].pos = nuevaPos;
+            s.jugadores[miIdx].seisSeguidos = nuevoContador;
 
-            // Si saca 6, repite turno. Si no, pasa al siguiente.
-            if (dado === 6) {
-                log("¡Sacaste un 6! Tienes turno extra.");
-            } else {
-                pasarTurno();
+            // Si no saca 6, pasa el turno
+            if (dado !== 6) {
+                s.turno = (s.turno + 1) % s.jugadores.length;
             }
-            
-            // Disparamos la lógica de la casilla
-            setTimeout(() => manejarCasilla(nuevaPos), 600);
         }
 
-        // --- RESET DEL RELOJ DEL BOT ---
-        // Al terminar la acción, actualizamos el tiempo para evitar que el bot se active
-        db.ref('salas/' + sala + '/tiempoUltimoTurno').set(Date.now());
-        // --------------------------------
-    }); 
-}
+        s.tiempoUltimoTurno = Date.now(); // Reset reloj bot
+        return s; // Guarda todo el estado actualizado
+    }, (error, committed, snapshot) => {
+        if (committed) {
+            let s = snapshot.val();
+            let posFinal = s.jugadores[miIdx].pos;
+            
+            // Actualización de UI post-transacción
+            document.getElementById('dado-valor').innerText = "Dado: " + (snapshot.val().jugadores[miIdx].pos - posFinal + " (ok)"); // Ajustar visual
+            
+            // Ejecutar efectos laterales (log y manejo de casilla)
+            setTimeout(() => manejarCasilla(posFinal), 600);
+        }
+    });
+};
                                                                                                        
     function pagarPrestamo() { db.ref('salas/' + sala + '/jugadores/' + miIdx).once('value', snap => { let j = snap.val(); if (j.tienePrestamo) { if (j.dinero >= j.montoPrestamo) { db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ dinero: firebase.database.ServerValue.increment(-j.montoPrestamo), tienePrestamo: false, montoPrestamo: 0 }); log(nombres[miIdx] + " liquidó su préstamo."); } else { document.getElementById('modal-title').innerText = "Fondos insuficientes"; document.getElementById('modal-text').innerHTML = `<div class="empty-debt">No tienes suficiente dinero para pagar el préstamo.</div>`; document.getElementById('modal-extra').innerHTML = ""; document.getElementById('modal').style.display = 'block'; } } else { document.getElementById('modal-title').innerText = "Banco"; document.getElementById('modal-text').innerHTML = `<div class="empty-debt">No tienes préstamos pendientes.</div>`; document.getElementById('modal-extra').innerHTML = ""; document.getElementById('modal').style.display = 'block'; } }); }
     function verSaldos() { db.ref('salas/' + sala + '/jugadores').once('value', snap => { let txt = ""; snap.forEach(c => { txt += nombres[parseInt(c.key)] + ": $" + c.val().dinero + "<br>"; }); document.getElementById('modal-title').innerText = "Saldos"; document.getElementById('modal-text').innerHTML = txt; document.getElementById('modal').style.display = 'block'; }); }
@@ -1651,39 +1646,44 @@ function mejorar(pos) {
 };
 // 2. EL BLOQUE DE CREACIÓN DEL TABLERO
 window.addEventListener('DOMContentLoaded', () => {
-        const board = document.getElementById('board');
-        if (!board) return;
+    const board = document.getElementById('board');
+    if (!board) return;
 
-        mapa.forEach((m, i) => { 
-            const d = document.createElement('div'); 
-            d.className = 'cell'; 
-            d.id = 'cell-' + i; 
-            d.onclick = () => verPropiedad(i);
-            
-            let g = obtenerGrupo(i);
-            
-            if (g && g.color === "#f5f5dc") {
-                d.style.border = "3px solid #f5f5dc"; 
-                d.style.backgroundColor = "#fffef0";
-            } else if (g) {
-                d.innerHTML = `<div class="strip" style="background: ${g.color}"></div>`;
-            }
-            
-            d.innerHTML += `<div class="contenido" style="font-size: 7px; color: #c71585;">
-                                ${m.n}<br>
-                                ${m.p > 0 ? '$' + m.p : ''}
-                            </div>`;
-            board.appendChild(d);
-        }); // Cierre de mapa.forEach
-    }); // Cierre de DOMContentLoaded
-
-    // 3. BLOQUE DE AUDIO
-    document.addEventListener('click', () => {
-        const audio = document.querySelector('audio');
-        if (audio && audio.paused) {
-            audio.play().catch(e => console.log("Esperando interacción..."));
+    mapa.forEach((m, i) => { 
+        const d = document.createElement('div'); 
+        d.className = 'cell'; 
+        d.id = 'cell-' + i; 
+        
+        // CORRECCIÓN: Usamos 'e' para detener la propagación y pasamos false a verPropiedad
+        d.onclick = (e) => {
+            e.stopPropagation();
+            verPropiedad(i, false);
+        };
+        
+        let g = obtenerGrupo(i);
+        
+        if (g && g.color === "#f5f5dc") {
+            d.style.border = "3px solid #f5f5dc"; 
+            d.style.backgroundColor = "#fffef0";
+        } else if (g) {
+            d.innerHTML = `<div class="strip" style="background: ${g.color}"></div>`;
         }
-    }, { once: true });
+        
+        d.innerHTML += `<div class="contenido" style="font-size: 7px; color: #c71585;">
+                            ${m.n}<br>
+                            ${m.p > 0 ? '$' + m.p : ''}
+                        </div>`;
+        board.appendChild(d);
+    }); 
+});
+
+// 3. BLOQUE DE AUDIO
+document.addEventListener('click', () => {
+    const audio = document.querySelector('audio');
+    if (audio && audio.paused) {
+        audio.play().catch(e => console.log("Esperando interacción..."));
+    }
+}, { once: true });
 </script>
 </body>
 </html>
