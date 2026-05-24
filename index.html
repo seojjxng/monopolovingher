@@ -184,16 +184,22 @@
             <img src="https://i.imgur.com/fRZJfP8.png" id="p1" class="token" style="display:none" alt="Ficha del jugador Horse">
             <img src="https://i.imgur.com/u2AtssG.png" id="p2" class="token" style="display:none" alt="Ficha del jugador Hat">
             <img src="https://i.imgur.com/ekQp8WL.png" id="p3" class="token" style="display:none" alt="Ficha del jugador Car">
-
-            <div id="modal" class="modal">
-    <div class="modal-body">
-        <span class="close" onclick="document.getElementById('modal').style.display='none'">&times;</span>
+          
+<script>
+    function abrirModal(titulo, mensaje, contenidoExtra = "") {
+        const modal = document.getElementById('modal');
+        if (!modal) {
+            console.error("No se encontró el elemento con id='modal'");
+            return;
+        }
         
-        <h2 id="modal-title"></h2>
-        <div id="modal-text" class="modal-content-scroll"></div>
-        <div id="modal-extra"></div>
-    </div>
-</div>
+        document.getElementById('modal-title').innerText = titulo;
+        document.getElementById('modal-text').innerHTML = mensaje;
+        document.getElementById('modal-extra').innerHTML = contenidoExtra;
+        
+        modal.style.display = 'flex';
+    }
+</script>
             
             <div class="center-zone">
     <div class="reputacion-wrapper">
@@ -235,7 +241,15 @@
             <strong>Chat</strong><div id="chat-log"></div>
             <input type="text" id="chat-msg" class="input-field" placeholder="Mensaje...">
             <button class="btn" onclick="enviarChat()">Enviar</button>
-        </div>
+        <button class="btn" onclick="abrirModal('Modo 2v2', 'El modo 2v2 está en desarrollo. La actualización se hará tan pronto como sea posible.')">
+    Activar Modo 2v2
+</button>
+    <div id="modal" class="modal" style="display: none;">
+    <div class="modal-body">
+        <span class="close" onclick="document.getElementById('modal').style.display='none'">&times;</span>
+        <h2 id="modal-title"></h2>
+        <div id="modal-text" class="modal-content-scroll"></div>
+        <div id="modal-extra"></div>
     </div>
 </div>
 
