@@ -522,6 +522,28 @@ window.unirse = function() {
     });
 };
 
+window.crearNuevaSala = function(nombreSala) {
+    // Definimos la estructura inicial para evitar errores de referencia
+    db.ref('salas/' + nombreSala).set({
+        estado: 'esperando',
+        jugadores: [],
+        turno: 0,
+        propiedades: {},
+        chat: [{ n: "Sistema", m: "Sala creada con éxito." }]
+    }).then(() => {
+        document.getElementById('modal').style.display = 'none';
+        procederConUnion(nombreSala);
+        
+        // ACTIVACIÓN DE OFERTAS
+        if (typeof escucharOfertas === 'function') {
+            escucharOfertas();
+        }
+    }).catch(error => {
+        console.error("Error al crear la sala:", error);
+        alert("No se pudo crear la sala.");
+    });
+};
+
 // Función principal de unión (con reconexión)
 window.procederConUnion = function(nombreSala) {
     // 1. RESETEO DE SESIÓN
