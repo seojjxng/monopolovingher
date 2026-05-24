@@ -544,26 +544,42 @@ window.crearNuevaSala = function(nombreSala) {
 function procederConUnion(nombreSala) {
     sala = nombreSala;
     if (yaEntro) return;
-    yaEntro = true;
     
     let btn = document.getElementById('btn-unirse');
     if (btn) btn.disabled = true;
 
     db.ref('salas/' + sala + '/jugadores').once('value', snap => {
-        miIdx = snap.numChildren();
+        let jugadores = snap.val() || [];
+        let idGuardado = localStorage.getItem('monopoly_player_id');
+        let encontrado = false;
+
+        // Lógica de reconexión: ¿El ID guardado es válido en esta sala?
+        if (idGuardado !== null && jugadores[idGuardado]) {
+            miIdx = parseInt(idGuardado);
+            encontrado = true;
+            console.log("Reconectado a la partida existente como jugador: " + miIdx);
+        } else {
+            // Jugador nuevo: asignamos el siguiente índice disponible
+            miIdx = jugadores.length;
+            localStorage.setItem('monopoly_player_id', miIdx);
+            console.log("Nuevo jugador asignado al índice: " + miIdx);
+        }
+
+        yaEntro = true;
         let miNombre = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
         let jugadorRef = db.ref('salas/' + sala + '/jugadores/' + miIdx);
         
-        jugadorRef.set({
-            pos: 0,
-            dinero: 1000,
-            enCarcel: 0,
+        // Usamos update para no borrar datos si ya existe (ej: posición o dinero actual)
+        jugadorRef.update({
+            pos: jugadores[miIdx] ? jugadores[miIdx].pos : 0,
+            dinero: jugadores[miIdx] ? jugadores[miIdx].dinero : 1000,
+            enCarcel: jugadores[miIdx] ? jugadores[miIdx].enCarcel : 0,
             nombre: miNombre,
-            tienePrestamo: false,
-            montoPrestamo: 0,
+            tienePrestamo: jugadores[miIdx] ? jugadores[miIdx].tienePrestamo : false,
+            montoPrestamo: jugadores[miIdx] ? jugadores[miIdx].montoPrestamo : 0,
             // --- NUEVAS PROPIEDADES PARA LOGROS ---
-            escudo: false,
-            quiebraTecnica: 0
+            escudo: jugadores[miIdx] ? jugadores[miIdx].escudo : false,
+            quiebraTecnica: jugadores[miIdx] ? jugadores[miIdx].quiebraTecnica : 0
             // --------------------------------------
         }).then(() => {
             // Guardamos sala para reconexión
@@ -576,13 +592,13 @@ function procederConUnion(nombreSala) {
             let chatRef = db.ref('salas/' + sala + '/chat').push();
             chatRef.onDisconnect().set({ n: "Sistema", m: miNombre + " ha abandonado." });
             
-            // 3. ENVIAMOS MENSAJE DE ENTRADA
+            // 3. ENVIAMOS MENSAJE DE ENTRADA O RECONEXIÓN
             db.ref('salas/' + sala + '/chat').push({ 
                 n: "Sistema", 
-                m: miNombre + " ha entrado a la sala." 
+                m: miNombre + (encontrado ? " ha vuelto a la partida." : " ha entrado a la sala.") 
             });
 
-            if (miIdx === 0) {
+            if (miIdx === 0 && !encontrado) {
                 db.ref('salas/' + sala + '/turno').set(0);
                 if (typeof iniciarRelojClima === 'function') iniciarRelojClima();
             }
