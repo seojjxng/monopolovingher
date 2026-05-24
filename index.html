@@ -489,8 +489,7 @@ window.unirse = function() {
     
     let nombreSala = inputSala.value.trim();
 
-    // Solo desconectamos las escuchas de la sala anterior, no de todo 'salas/'
-    // Esto evita que si tienes otros oyentes globales se rompan.
+    // Solo desconectamos las escuchas de la sala anterior
     if (typeof sala !== 'undefined' && sala) {
         db.ref('salas/' + sala).off();
     }
@@ -522,9 +521,8 @@ window.unirse = function() {
         }
     });
 };
-};
 
-// 3. Función principal de unión (con reconexión)
+// Función principal de unión (con reconexión)
 window.procederConUnion = function(nombreSala) {
     // 1. RESETEO DE SESIÓN
     sala = nombreSala;
@@ -541,7 +539,7 @@ window.procederConUnion = function(nombreSala) {
         localStorage.setItem('monopoly_uid', miID);
     }
 
-    // 2. TRANSACCIÓN ATÓMICA PARA SEGURIDAD TOTAL
+    // 2. TRANSACCIÓN ATÓMICA
     db.ref('salas/' + sala + '/jugadores').transaction(jugadores => {
         if (!jugadores) jugadores = [];
 
@@ -559,7 +557,7 @@ window.procederConUnion = function(nombreSala) {
         let miNombre = (nombreGuardado === "Dog" || !nombreGuardado) ? nombrePorIndice : nombreGuardado;
         localStorage.setItem('monopoly_nombre', miNombre);
 
-        // Preparamos los datos del jugador (conservando lo anterior si reconecta)
+        // Preparamos los datos del jugador
         let jActual = jugadores[idx] || {};
         jugadores[idx] = {
             ...jActual,
@@ -575,28 +573,24 @@ window.procederConUnion = function(nombreSala) {
             quiebraTecnica: jActual.quiebraTecnica || 0
         };
 
-        miIdx = idx; // Asignamos el índice para el alcance global
+        miIdx = idx; 
         return jugadores;
     }, (error, committed, snap) => {
         if (committed) {
             yaEntro = true;
             localStorage.setItem('monopoly_sala', sala);
             
-            // Configurar desconexión automática
             db.ref('salas/' + sala + '/jugadores/' + miIdx).onDisconnect().update({ status: 'offline' });
             
-            // Notificar chat
             db.ref('salas/' + sala + '/chat').push({ 
                 n: "Sistema", 
-                m: localStorage.getItem('monopoly_nombre') + (miIdx >= 0 ? " ha vuelto o se ha unido a la sala." : " ha entrado.") 
+                m: localStorage.getItem('monopoly_nombre') + " se ha conectado a la partida." 
             });
 
-            // Si es el primero, inicializa el turno
             if (miIdx === 0) {
                 db.ref('salas/' + sala + '/turno').transaction(t => (t === null ? 0 : t));
                 if (typeof iniciarRelojClima === 'function') iniciarRelojClima();
             }
-
             sincronizar();
         } else {
             console.error("Error al unir a la sala:", error);
