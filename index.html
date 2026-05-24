@@ -1115,34 +1115,6 @@ window.confirmarCompra = function(ofertaKey) {
     });
 };
 
-       window.confirmarCompra = function(ofertaKey) {
-    if (!sala) return;
-    
-    db.ref('salas/' + sala + '/ofertas/' + ofertaKey).once('value', snap => {
-        let o = snap.val();
-        if (!o) return;
-
-        db.ref('salas/' + sala).transaction(data => {
-            if (!data || !data.jugadores[o.para]) return;
-            let precio = Number(o.precio);
-            if (Number(data.jugadores[o.para].dinero) < precio) return;
-
-            data.jugadores[o.para].dinero -= precio;
-            data.jugadores[o.de].dinero += precio;
-            
-            if (!data.propiedades) data.propiedades = {};
-            data.propiedades[o.prop] = { owner: parseInt(o.para) };
-            return data;
-        }, (error, committed) => {
-            if (committed) {
-                db.ref('salas/' + sala + '/ofertas/' + ofertaKey).remove();
-                document.getElementById('modal').style.display = 'none';
-                log("¡Venta completada!");
-            }
-        });
-    });
-};
-
 // Función corregida para mostrar la oferta
 window.escucharOfertas = function() {
     if (!sala) return;
@@ -1518,32 +1490,46 @@ function inicializarEquipos() {
     });
 }
 
-function comprar(pos) { 
-    log(nombres[miIdx] + " compró " + mapa[pos].n); 
+window.comprar = function(pos) {
+    let propRef = db.ref('salas/' + sala + '/propiedades/' + pos);
     
-    // Obtenemos el equipo del jugador actual de forma segura
-    let equipoJugador = (jugadores && jugadores[miIdx]) ? (jugadores[miIdx].equipo || null) : null;
-    
-    // Guardamos la propiedad en Firebase con su dueño, nivel inicial y su equipo asociado
-    db.ref('salas/' + sala + '/propiedades/' + pos).set({
-        owner: miIdx, 
-        nivel: 0, 
-        hipotecada: false,
-        equipo: equipoJugador // Etiquetamos la propiedad para las validaciones de alianza
-    }); 
-    
-    // Restamos el dinero del jugador
-    db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => Number(d) - Number(mapa[pos].p)); 
-    
-    // Verificamos el progreso de las misiones
-    verificarMisionInversor(miIdx);
-    verificarMisionColeccionista(miIdx);
-    verificarMisionMonopolioTotal(miIdx);
-    
-    // Cerramos el modal tras la compra
-    document.getElementById('modal').style.display = 'none'; 
-}
-
+    // Usamos una transacción para verificar si la propiedad sigue libre
+    propRef.transaction(currentProp => {
+        if (currentProp !== null) {
+            // Si ya existe un dueño, abortamos la compra (retornamos undefined para cancelar)
+            return; 
+        }
+        
+        // Si es null, guardamos la propiedad
+        let equipoJugador = (typeof jugadores !== 'undefined' && jugadores[miIdx]) ? (jugadores[miIdx].equipo || null) : null;
+        
+        return {
+            owner: miIdx,
+            nivel: 0,
+            hipotecada: false,
+            equipo: equipoJugador
+        };
+    }, (error, committed, snapshot) => {
+        if (committed) {
+            // Si la transacción tuvo éxito, restamos el dinero
+            db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => Number(d) - Number(mapa[pos].p));
+            
+            log(nombres[miIdx] + " compró " + mapa[pos].n);
+            
+            // Verificamos misiones
+            if (typeof verificarMisionInversor === 'function') verificarMisionInversor(miIdx);
+            if (typeof verificarMisionColeccionista === 'function') verificarMisionColeccionista(miIdx);
+            if (typeof verificarMisionMonopolioTotal === 'function') verificarMisionMonopolioTotal(miIdx);
+            
+            // Cerramos el modal
+            document.getElementById('modal').style.display = 'none';
+        } else {
+            // Si no se pudo completar (porque alguien la compró antes), avisamos al usuario
+            alert("¡Lo siento, esta propiedad ya fue comprada por otro jugador!");
+            document.getElementById('modal').style.display = 'none';
+        }
+    });
+};
 function mejorar(pos) {
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val();
@@ -1676,7 +1662,7 @@ function mejorar(pos) {
         return;
     }
 
-    // 1. Sincronización del Chat
+    // 1. Sincronización del Chat (Optimizado)
     db.ref('salas/' + sala + '/chat').on('value', snap => {
         if (!yaEntro) return; 
         let chatLog = document.getElementById('chat-log');
@@ -1696,9 +1682,20 @@ function mejorar(pos) {
         let s = snap.val(); 
         if(!s) return; 
 
-        // Actualizar dinero
+        // Actualizar dinero y REPUTACIÓN
         if (s.jugadores && s.jugadores[miIdx]) {
-            document.getElementById('dinero-mio').innerText = s.jugadores[miIdx].dinero;
+            let player = s.jugadores[miIdx];
+            // Actualizar dinero
+            document.getElementById('dinero-mio').innerText = player.dinero;
+            
+            // --- NUEVO: Actualizar Barra de Reputación ---
+            let rep = player.reputacion || 100; // Valor por defecto 100
+            let barra = document.getElementById('barra-reputacion');
+            if (barra) {
+                barra.style.width = rep + "%";
+                // Opcional: cambio de color dinámico
+                barra.style.backgroundColor = rep < 30 ? "#ff4d4d" : (rep < 60 ? "#ffa500" : "#4caf50");
+            }
         }
 
         // Actualizar Turnos
@@ -1713,7 +1710,7 @@ function mejorar(pos) {
             document.getElementById('clima-display').innerText = "Estación: " + c.n; 
         }
 
-        // Actualizar Fichas de jugadores
+        // Actualizar Fichas
         if (s.jugadores) {
             s.jugadores.forEach((j, i) => { 
                 let el = document.getElementById('p' + i); 
