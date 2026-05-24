@@ -550,32 +550,35 @@ function procederConUnion(nombreSala) {
 
     db.ref('salas/' + sala + '/jugadores').once('value', snap => {
         let jugadores = snap.val() || [];
-        let miNombreGuardado = localStorage.getItem('monopoly_nombre'); // Guardaremos el nombre
+        let miNombreGuardado = localStorage.getItem('monopoly_nombre');
         let encontrado = false;
-        let miIdx = -1;
+        let indexEncontrado = -1;
 
-        // 1. BUSCAR POR NOMBRE: Si el jugador ya estaba, lo reconectamos
-        if (miNombreGuardado) {
-            jugadores.forEach((j, index) => {
-                if (j && j.nombre === miNombreGuardado) {
-                    miIdx = index;
-                    encontrado = true;
-                }
-            });
-        }
+        // 1. BUSCAR POR NOMBRE: Si el nombre ya existe en la sala, reconectamos
+        jugadores.forEach((j, index) => {
+            if (j && j.nombre === miNombreGuardado) {
+                indexEncontrado = index;
+                encontrado = true;
+            }
+        });
 
-        // 2. Si no lo encontramos, asignar nuevo
-        if (!encontrado) {
+        // 2. Asignar miIdx correctamente
+        if (encontrado) {
+            miIdx = indexEncontrado;
+            console.log("Reconectado como: " + miNombreGuardado + " en índice: " + miIdx);
+        } else {
+            // Nuevo jugador: usamos el primer índice disponible o el final
             miIdx = jugadores.length;
-            // Definir nombre inicial
-            let nombreBase = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
-            localStorage.setItem('monopoly_nombre', nombreBase);
+            let nuevoNombre = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
+            localStorage.setItem('monopoly_nombre', nuevoNombre);
+            console.log("Nuevo jugador registrado como: " + nuevoNombre);
         }
 
         yaEntro = true;
         let miNombre = localStorage.getItem('monopoly_nombre');
         let jugadorRef = db.ref('salas/' + sala + '/jugadores/' + miIdx);
         
+        // Usamos update para mantener datos previos si existían
         jugadorRef.update({
             pos: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].pos : 0,
             dinero: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].dinero : 1000,
@@ -588,14 +591,13 @@ function procederConUnion(nombreSala) {
         }).then(() => {
             localStorage.setItem('monopoly_sala', sala);
             
-            // YA NO USAMOS .remove() porque eso borra tu progreso al salir
-            // Simplemente mantenemos la sesión activa
-            
+            // Mensaje en chat
             db.ref('salas/' + sala + '/chat').push({ 
                 n: "Sistema", 
                 m: miNombre + (encontrado ? " ha vuelto a la partida." : " ha entrado a la sala.") 
             });
 
+            // Solo el primero inicia el clima
             if (miIdx === 0 && !encontrado) {
                 db.ref('salas/' + sala + '/turno').set(0);
                 if (typeof iniciarRelojClima === 'function') iniciarRelojClima();
@@ -603,6 +605,7 @@ function procederConUnion(nombreSala) {
 
             sincronizar();
         }).catch(error => {
+            console.error(error);
             yaEntro = false;
             if (btn) btn.disabled = false;
         });
