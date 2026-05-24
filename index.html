@@ -1075,38 +1075,52 @@ window.escucharOfertas = function() {
 };
         
 window.abrirIntercambio = function() {
+    // 1. Limpieza inicial del modal
+    document.getElementById('modal-extra').innerHTML = "";
+    
     db.ref('salas/' + sala).once('value', snap => {
         if (!snap.exists()) return;
         let data = snap.val();
         let misProps = [];
         
+        // 2. Extraer propiedades del dueño actual
         if(data.propiedades) {
             Object.keys(data.propiedades).forEach(pIdx => {
                 if(data.propiedades[pIdx].owner === miIdx) misProps.push(pIdx);
             });
         }
         
+        // 3. Caso: No tiene propiedades
         if (misProps.length === 0) {
             document.getElementById('modal-title').innerText = "¡Atención!";
             document.getElementById('modal-text').innerHTML = '<div class="card-property"><p style="text-align: center; padding: 10px;">No tienes propiedades disponibles para vender.</p></div>';
-            document.getElementById('modal-extra').innerHTML = "";
+            document.getElementById('modal-extra').innerHTML = '<button class="btn" onclick="document.getElementById(\'modal\').style.display=\'none\'">Cerrar</button>';
             document.getElementById('modal').style.display = 'block';
             return;
         }
         
+        // 4. Caso: Construir formulario de venta
         document.getElementById('modal-title').innerText = "Revender Propiedad";
         let html = '<div class="card-property">Selecciona propiedad, precio (100-999) y comprador:<br><br>';
         
         misProps.forEach(pIdx => {
             let p = mapa[pIdx];
-            html += `<b>${p.n}</b>:<br><input type="number" id="precio-${pIdx}" min="100" max="999" style="width: 80px;"> <select id="sel-${pIdx}">`;
-            data.jugadores.forEach((j, i) => { if(i !== miIdx) html += `<option value="${i}">${nombres[i]}</option>`; });
+            html += `<b>${p.n}</b>:<br><input type="number" id="precio-${pIdx}" min="100" max="999" value="250" style="width: 80px;"> <select id="sel-${pIdx}">`;
+            
+            // Validación extra: Verificar que existan jugadores antes de iterar
+            if (data.jugadores) {
+                data.jugadores.forEach((j, i) => { 
+                    if(i !== miIdx) html += `<option value="${i}">${nombres[i]}</option>`; 
+                });
+            }
+            
             html += `</select> <button class="btn" onclick="proponerVenta(${pIdx})">Vender</button><br><br>`;
         });
         
         html += '</div>';
         document.getElementById('modal-text').innerHTML = html;
-        document.getElementById('modal-extra').innerHTML = "";
+        // Botón de cierre en el extra
+        document.getElementById('modal-extra').innerHTML = '<button class="btn" onclick="document.getElementById(\'modal\').style.display=\'none\'">Cerrar</button>';
         document.getElementById('modal').style.display = 'block';
     });
 };
@@ -1375,19 +1389,16 @@ function inicializarEquipos() {
         let data = snap.val() || {};
         let prop = data.propiedades ? data.propiedades[pos] : null;
         
-        // Cálculos de Clima
         let multClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].mult : 1.0;
         let nombreClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].n : 'Normal';
         
         let porcentajes = [0.10, 0.15, 0.20, 0.30, 0.40, 0.50];
         let nivelesNombres = ["Base", "1 Casa", "2 Casas", "3 Casas", "4 Casas", "Hotel"];
         
-        // --- Generación de lista con cálculos visibles ---
         let listaAlquileres = "";
         porcentajes.forEach((porc, i) => {
             let precioNormal = Math.floor(p.p * porc);
             let precioClima = Math.floor(precioNormal * multClima);
-            // La nota solo aparece si el clima cambia el precio
             let notaClima = (multClima !== 1) ? ` <small style="color:red;">(c/clima: $${precioClima})</small>` : "";
             listaAlquileres += `<li>${nivelesNombres[i]}: $${precioNormal}${notaClima}</li>`;
         });
@@ -1404,14 +1415,12 @@ function inicializarEquipos() {
 
         modalText.innerHTML = htmlCard;
 
-        // Lógica de botones
         if (!prop && esCaida) {
             modalExtra.innerHTML = `<button class="btn" onclick="comprar(${pos})">Comprar ($${esFerrocarril ? 600 : p.p})</button>`;
         } else if (prop && prop.owner === miIdx) {
             if (!esFerrocarril && (prop.nivel || 0) < 5) modalExtra.innerHTML += `<button class="btn" onclick="mejorar(${pos})">Mejorar ($50)</button>`;
             modalExtra.innerHTML += `<button class="btn" style="background: #ad0c0c;" onclick="hipotecar(${pos})">${prop.hipotecada ? "Liberar" : "Hipotecar"}</button>`;
         } else if (prop && prop.owner !== miIdx && esCaida && !prop.hipotecada) {
-            // El pago final siempre debe usar el precio afectado por el clima
             let alqFinal = esFerrocarril ? 200 : Math.floor(Math.floor(p.p * porcentajes[prop.nivel || 0]) * multClima);
             modalExtra.innerHTML = `<button class="btn" onclick="procesarPago(${miIdx}, ${prop.owner}, ${alqFinal})">Pagar Alquiler ($${alqFinal})</button>`;
         }
@@ -1420,7 +1429,6 @@ function inicializarEquipos() {
         modal.style.display = 'block';
     });
 };
-
         window.abrirAvisoDesarrollo = function() {
     let modal = document.getElementById('modal');
     let modalTitle = document.getElementById('modal-title');
