@@ -1620,7 +1620,6 @@ window.addEventListener('DOMContentLoaded', () => {
         d.className = 'cell'; 
         d.id = 'cell-' + i; 
         
-        // Usamos e.stopPropagation para evitar clics fantasma
         d.onclick = (e) => {
             e.stopPropagation();
             verPropiedad(i, false);
@@ -1650,6 +1649,5 @@ document.addEventListener('click', () => {
         audio.play().catch(e => console.log("Esperando interacción..."));
     }
 }, { once: true });
-</script>
 </body>
 </html>
