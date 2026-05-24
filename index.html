@@ -1398,8 +1398,8 @@ function inicializarEquipos() {
     if (!modal || !modalText || !mapa[pos]) return;
 
     let p = mapa[pos];
-    // Limpiamos los botones antes de cargar nada
     modalExtra.innerHTML = "";
+    modalText.innerHTML = "";
 
     if (p.p === 0) {
         modalTitle.innerText = p.n;
@@ -1411,112 +1411,56 @@ function inicializarEquipos() {
     
     let g = (typeof obtenerGrupo === 'function') ? obtenerGrupo(pos) : null;
     let esFerrocarril = (g && g.color === "#f5f5dc");
-    let iconos = { 8: "https://i.imgur.com/24NquXH.png", 24: "https://i.imgur.com/QMFz9pn.png", 26: "https://i.imgur.com/AINz8Jt.png", 27: "https://i.imgur.com/ZaN9ZUG.png" };
     
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val() || {};
         let prop = data.propiedades ? data.propiedades[pos] : null;
         
+        // Cálculos de Clima
         let multClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].mult : 1.0;
         let nombreClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].n : 'Normal';
+        
         let porcentajes = [0.10, 0.15, 0.20, 0.30, 0.40, 0.50];
         let nivelesNombres = ["Base", "1 Casa", "2 Casas", "3 Casas", "4 Casas", "Hotel"];
         
-        // --- INFORMACIÓN DETALLADA (Siempre visible) ---
+        // --- Generación de lista con cálculos visibles ---
         let listaAlquileres = "";
         porcentajes.forEach((porc, i) => {
-            let val = Math.floor(p.p * porc * multClima);
-            listaAlquileres += `<li>${nivelesNombres[i]}: $${val}</li>`;
+            let precioNormal = Math.floor(p.p * porc);
+            let precioClima = Math.floor(precioNormal * multClima);
+            // La nota solo aparece si el clima cambia el precio
+            let notaClima = (multClima !== 1) ? ` <small style="color:red;">(c/clima: $${precioClima})</small>` : "";
+            listaAlquileres += `<li>${nivelesNombres[i]}: $${precioNormal}${notaClima}</li>`;
         });
 
         modalTitle.innerText = "Tarjeta de Propiedad";
         let htmlCard = `<div class="card-property"><div class="card-header">${p.n}</div>`;
-        
-        if (esFerrocarril && iconos[pos]) {
-            htmlCard += `<div style="width: 80px; height: 80px; margin: 10px auto; background-color: #ff80bf; -webkit-mask: url('${iconos[pos]}') no-repeat center / contain; mask: url('${iconos[pos]}') no-repeat center / contain;"></div>`;
-        }
-        
         htmlCard += `<p>Valor compra: <b>$${esFerrocarril ? 600 : p.p}</b></p>`;
+        htmlCard += prop ? `<p>Dueño: <b>${nombres[prop.owner]}</b></p>` : `<p>Estado: <b>Disponible</b></p>`;
+        
+        htmlCard += `<hr><p><b>Alquileres (Clima: ${nombreClima}):</b></p>
+                     <ul style="font-size: 0.9em; padding-left: 20px;">
+                     ${esFerrocarril ? "<li>Si se poseen: $200, $250, $350, $450</li>" : listaAlquileres}
+                     </ul></div>`;
 
-        if (prop) {
-            htmlCard += `<p>Dueño: <b>${nombres[prop.owner]}</b></p>`;
-            if (!esFerrocarril) htmlCard += `<p>Nivel: <b>${nivelesNombres[prop.nivel || 0]}</b></p>`;
-            if (prop.hipotecada) htmlCard += `<p style="color:red;"><b>¡HIPOTECADA!</b></p>`;
-        } else {
-            htmlCard += `<p>Estado: <b>Disponible</b></p>`;
-        }
+        modalText.innerHTML = htmlCard;
 
-        htmlCard += `<hr><p style="font-size: 0.9em;"><b>Alquileres (${nombreClima}):</b></p>
-                     <ul style="font-size: 0.85em; padding-left: 20px;">${esFerrocarril ? "<li>Si se poseen: $200, $250, $350, $450</li>" : listaAlquileres}</ul>`;
-        htmlCard += `</div>`;
-
-        // --- LÓGICA DE BOTONES (Exclusiva) ---
+        // Lógica de botones
         if (!prop && esCaida) {
-            let precioCompra = esFerrocarril ? 600 : p.p;
-            modalExtra.innerHTML = `<button class="btn" onclick="comprar(${pos})">Comprar ($${precioCompra})</button>`;
+            modalExtra.innerHTML = `<button class="btn" onclick="comprar(${pos})">Comprar ($${esFerrocarril ? 600 : p.p})</button>`;
         } else if (prop && prop.owner === miIdx) {
             if (!esFerrocarril && (prop.nivel || 0) < 5) modalExtra.innerHTML += `<button class="btn" onclick="mejorar(${pos})">Mejorar ($50)</button>`;
             modalExtra.innerHTML += `<button class="btn" style="background: #ad0c0c;" onclick="hipotecar(${pos})">${prop.hipotecada ? "Liberar" : "Hipotecar"}</button>`;
         } else if (prop && prop.owner !== miIdx && esCaida && !prop.hipotecada) {
-            let alqFinal = 0;
-            if (esFerrocarril) {
-                let trans = [8, 24, 26, 27];
-                let count = trans.filter(idx => data.propiedades && data.propiedades[idx] && data.propiedades[idx].owner === prop.owner).length;
-                let tabla = { 1: 200, 2: 250, 3: 350, 4: 450 };
-                alqFinal = tabla[count] || 200;
-            } else {
-                alqFinal = Math.floor(p.p * porcentajes[prop.nivel || 0] * multClima);
-            }
+            // El pago final siempre debe usar el precio afectado por el clima
+            let alqFinal = esFerrocarril ? 200 : Math.floor(Math.floor(p.p * porcentajes[prop.nivel || 0]) * multClima);
             modalExtra.innerHTML = `<button class="btn" onclick="procesarPago(${miIdx}, ${prop.owner}, ${alqFinal})">Pagar Alquiler ($${alqFinal})</button>`;
         }
 
         modalExtra.innerHTML += `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Cerrar</button>`;
-        
-        modalText.innerHTML = htmlCard;
         modal.style.display = 'block';
     });
 };
-window.comprar = function(pos) {
-    let propRef = db.ref('salas/' + sala + '/propiedades/' + pos);
-    
-    // Usamos una transacción para verificar si la propiedad sigue libre
-    propRef.transaction(currentProp => {
-        if (currentProp !== null) {
-            // Si ya existe un dueño, abortamos la compra (retornamos undefined para cancelar)
-            return; 
-        }
-        
-        // Si es null, guardamos la propiedad
-        let equipoJugador = (typeof jugadores !== 'undefined' && jugadores[miIdx]) ? (jugadores[miIdx].equipo || null) : null;
-        
-        return {
-            owner: miIdx,
-            nivel: 0,
-            hipotecada: false,
-            equipo: equipoJugador
-        };
-    }, (error, committed, snapshot) => {
-        if (committed) {
-            // Si la transacción tuvo éxito, restamos el dinero
-            db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => Number(d) - Number(mapa[pos].p));
-            
-            log(nombres[miIdx] + " compró " + mapa[pos].n);
-            
-            // Verificamos misiones
-            if (typeof verificarMisionInversor === 'function') verificarMisionInversor(miIdx);
-            if (typeof verificarMisionColeccionista === 'function') verificarMisionColeccionista(miIdx);
-            if (typeof verificarMisionMonopolioTotal === 'function') verificarMisionMonopolioTotal(miIdx);
-            
-            // Cerramos el modal
-            document.getElementById('modal').style.display = 'none';
-        } else {
-            // Si no se pudo completar (porque alguien la compró antes), avisamos al usuario
-            alert("¡Lo siento, esta propiedad ya fue comprada por otro jugador!");
-            document.getElementById('modal').style.display = 'none';
-        }
-    });
-};
-
 
         window.abrirAvisoDesarrollo = function() {
     let modal = document.getElementById('modal');
@@ -1535,7 +1479,7 @@ window.comprar = function(pos) {
     modal.style.display = 'block';
 };
 
-        
+
 function mejorar(pos) {
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val();
