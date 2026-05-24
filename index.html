@@ -1193,11 +1193,18 @@ window.abrirIntercambio = function() {
     function liberar(pos) { db.ref('salas/'+sala+'/propiedades/'+pos).update({hipotecada: false}); db.ref('salas/'+sala+'/jugadores/'+miIdx+'/dinero').transaction(d => d - Math.floor(mapa[pos].p*0.6)); log(nombres[miIdx] + " liberó " + mapa[pos].n); document.getElementById('modal').style.display = 'none'; }
     function intentarEvasion(d, a, m) { let exito = Math.random() < 0.30; if(exito) { let montoFinal = Math.floor(m / 2); procesarPago(d, a, montoFinal, true); log(nombres[d] + " evadió el alquiler exitosamente. Pagará $" + montoFinal); } else { let montoFinal = m + 50; procesarPago(d, a, montoFinal, false); log(nombres[d] + " falló su evasión de pago. Paga $" + montoFinal); } }
 
-   function manejarCasilla(pos) {
-    // NUEVA VALIDACIÓN: BLOQUEO EN CÁRCEL
+   window.manejarCasilla = function(pos) {
+    // 1. PROTECCIÓN DE DATOS GLOBAL
+    if (typeof mapa === 'undefined' || !mapa[pos]) {
+        console.error("Mapa no cargado correctamente.");
+        return;
+    }
+
+    let p = mapa[pos];
+
+    // 2. CASO CÁRCEL (Posición 9)
     if (pos === 9) {
         log(nombres[miIdx] + " ha caído en la CÁRCEL.");
-        
         db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ enCarcel: 2 });
 
         document.getElementById('modal-title').innerText = "Cárcel";
@@ -1208,24 +1215,26 @@ window.abrirIntercambio = function() {
             <button class="btn" onclick="document.getElementById('modal').style.display = 'none'; pasarTurno();">Quedarse</button>
         `;
         document.getElementById('modal').style.display = 'block';
-        turnosSeis = 0;
+        if (typeof turnosSeis !== 'undefined') turnosSeis = 0;
         return;
     }
 
-    let p = mapa[pos];
-    
-    // CASO EVENTOS
+    // 3. CASO EVENTOS (Protegido contra ReferenceError)
     if (p.n === "?" || p.n === "ARCA COMUNAL") { 
-        ejecutarEvento(p.n); 
+        if (typeof ejecutarEvento === 'function') {
+            ejecutarEvento(p.n);
+        } else {
+            console.error("ejecutarEvento no está definida.");
+        }
         return; 
     }
-    
-    // CASO PARADA
+
+    // 4. CASO PARADA
     if (p.n === "PARADA") {
         db.ref('salas/' + sala + '/impuestosAcumulados').once('value', snap => {
             let acumulado = snap.val() || 0;
             if (acumulado > 0) {
-                db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => d + acumulado);
+                db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => (d || 0) + acumulado);
                 log(nombres[miIdx] + " llegó a la PARADA y cobró $" + acumulado + " de impuestos.");
                 db.ref('salas/' + sala + '/impuestosAcumulados').set(0);
             } else {
@@ -1234,12 +1243,14 @@ window.abrirIntercambio = function() {
         });
         return; 
     }
-    
-    // CASO IMPUESTOS
+
+    // 5. CASO IMPUESTOS
     if (p.n === "IMPUESTOS") {
         db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => {
             let nuevo = Number(d) - 100;
-            setTimeout(() => verificarBancarrota(miIdx, nuevo), 500);
+            if (typeof verificarBancarrota === 'function') {
+                setTimeout(() => verificarBancarrota(miIdx, nuevo), 500);
+            }
             return nuevo;
         });
         db.ref('salas/' + sala + '/impuestosAcumulados').transaction(a => (a || 0) + 100);
@@ -1247,22 +1258,22 @@ window.abrirIntercambio = function() {
         return;
     }
 
-    // CASO FERROCARRILES (Color crema)
-    let g = obtenerGrupo(pos);
+    // 6. CASO FERROCARRILES (Color crema)
+    let g = (typeof obtenerGrupo === 'function') ? obtenerGrupo(pos) : null;
     if (g && g.color === "#f5f5dc") {
         db.ref('salas/' + sala).once('value', snap => {
-            let data = snap.val();
+            let data = snap.val() || {};
             let prop = data.propiedades ? data.propiedades[pos] : null;
             
             if (!prop) {
                 verPropiedad(pos, true);
             } else if (prop.owner !== miIdx) {
-                // Validación de aliado para Ferrocarril
+                // Validación de aliado
                 if (prop.equipo && jugadores[miIdx] && prop.equipo === jugadores[miIdx].equipo) {
                     log("¡Es propiedad de tu aliado " + nombres[prop.owner] + ", estás a salvo!");
                 } else {
                     let trans = [8, 24, 26, 27];
-                    let count = trans.filter(i => data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
+                    let count = trans.filter(i => data.propiedades && data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
                     let tabla = { 1: 100, 2: 150, 3: 250, 4: 300 };
                     let alquiler = tabla[count] || 100;
                     procesarPago(miIdx, prop.owner, alquiler);
@@ -1275,21 +1286,18 @@ window.abrirIntercambio = function() {
         return;
     }
 
-    // CASO PROPIEDAD NORMAL
+    // 7. CASO PROPIEDAD NORMAL
     db.ref('salas/' + sala + '/propiedades/' + pos).once('value', snap => {
         let prop = snap.val();
-        // Si tiene dueño y no soy yo, verificamos alianza
         if (prop && prop.owner !== miIdx && prop.owner !== undefined) {
             if (prop.equipo && jugadores[miIdx] && prop.equipo === jugadores[miIdx].equipo) {
                 log("¡Es propiedad de tu aliado " + nombres[prop.owner] + ", estás a salvo!");
                 return;
             }
         }
-        // Si no es aliado, procedemos con el flujo normal de compra/pago
         verPropiedad(pos, true);
     });
-}
-
+};
 
         function toggleModo2v2() {
     db.ref('salas/' + sala + '/jugadores').once('value', snap => {
