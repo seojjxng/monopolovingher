@@ -279,7 +279,6 @@
     {color: "#a5d8ff", indices: [7, 10, 11, 13]},
     {color: "#b2f2bb", indices: [14, 15, 16, 17]},
     {color: "#ffd8a8", indices: [19, 20, 21, 23]}, 
-    // Grupo Ferrocarriles (Metro, Moto, Avión, Tren): índices 8, 24, 26, 27
     {color: "#f5f5dc", indices: [8, 24, 26, 27]} 
 ];
 
@@ -295,16 +294,10 @@
 ];
 
         function obtenerGrupo(pos) {
-    // 1. Verificamos que 'grupos' exista y sea un array
-    if (typeof grupos === 'undefined' || !Array.isArray(grupos)) {
-        return null;
-    }
-
-    // 2. Buscamos el grupo de forma segura
-    // Usamos ?. (encadenamiento opcional) para evitar errores si 'indices' falta
+    if (typeof grupos === 'undefined') return null;
+    // Buscamos el grupo de forma segura
     return grupos.find(g => g.indices && g.indices.includes(pos)) || null;
 }
-
     // Variables de clima ampliadas
    const climas = [
         {n: "Primavera Soleada", mult: 1.0}, {n: "Primavera Lluviosa, ¡los valores del mercado se mantienen igual!", mult: 1.0},
@@ -541,20 +534,27 @@ window.crearNuevaSala = function(nombreSala) {
 };
 
 // 3. Función principal de unión (con reconexión)
-function procederConUnion(nombreSala) {
+window.procederConUnion = function(nombreSala) {
+    // 1. RESETEO DE SESIÓN: Limpiamos variables antes de entrar a la nueva sala
+    sala = null;
+    miIdx = null;
+    yaEntro = false; 
+    
     sala = nombreSala;
-    if (yaEntro) return;
     
     let btn = document.getElementById('btn-unirse');
     if (btn) btn.disabled = true;
 
     db.ref('salas/' + sala + '/jugadores').once('value', snap => {
-        let jugadores = snap.val() || [];
+        let data = snap.val();
+        // SEGURIDAD: Convertimos a array limpio aunque Firebase devuelva un objeto
+        let jugadores = Array.isArray(data) ? data : (data ? Object.values(data) : []);
+        
         let miNombreGuardado = localStorage.getItem('monopoly_nombre');
         let encontrado = false;
         let indexEncontrado = -1;
 
-        // 1. BUSCAR POR NOMBRE: Si el nombre ya existe en la sala, reconectamos
+        // Búsqueda segura del jugador
         jugadores.forEach((j, index) => {
             if (j && j.nombre === miNombreGuardado) {
                 indexEncontrado = index;
@@ -562,7 +562,7 @@ function procederConUnion(nombreSala) {
             }
         });
 
-        // 2. Asignar miIdx correctamente
+        // 2. Asignación correcta
         if (encontrado) {
             miIdx = indexEncontrado;
             console.log("Reconectado como: " + miNombreGuardado + " en índice: " + miIdx);
@@ -577,30 +577,30 @@ function procederConUnion(nombreSala) {
         let miNombre = localStorage.getItem('monopoly_nombre');
         let jugadorRef = db.ref('salas/' + sala + '/jugadores/' + miIdx);
         
-        // Usamos update para mantener datos previos y marcar estatus online
+        // Datos actuales del jugador para persistencia
+        let jActual = (encontrado && jugadores[miIdx]) ? jugadores[miIdx] : {};
+
         jugadorRef.update({
-            pos: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].pos : 0,
-            dinero: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].dinero : 1000,
-            enCarcel: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].enCarcel : 0,
+            pos: jActual.pos || 0,
+            dinero: jActual.dinero !== undefined ? jActual.dinero : 1000,
+            enCarcel: jActual.enCarcel || 0,
             nombre: miNombre,
-            tienePrestamo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].tienePrestamo : false,
-            montoPrestamo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].montoPrestamo : 0,
-            escudo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].escudo : false,
-            quiebraTecnica: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].quiebraTecnica : 0,
+            tienePrestamo: jActual.tienePrestamo || false,
+            montoPrestamo: jActual.montoPrestamo || 0,
+            escudo: jActual.escudo || false,
+            quiebraTecnica: jActual.quiebraTecnica || 0,
             status: 'online'
         }).then(() => {
             localStorage.setItem('monopoly_sala', sala);
             
-            // NO BORRAMOS EL JUGADOR. Solo marcamos offline al desconectar.
+            // Marcamos offline al cerrar/desconectar
             jugadorRef.onDisconnect().update({ status: 'offline' });
             
-            // Mensaje en chat
             db.ref('salas/' + sala + '/chat').push({ 
                 n: "Sistema", 
                 m: miNombre + (encontrado ? " ha vuelto a la partida." : " ha entrado a la sala.") 
             });
 
-            // Solo el primero inicia el clima
             if (miIdx === 0 && !encontrado) {
                 db.ref('salas/' + sala + '/turno').set(0);
                 if (typeof iniciarRelojClima === 'function') iniciarRelojClima();
@@ -608,13 +608,12 @@ function procederConUnion(nombreSala) {
 
             sincronizar();
         }).catch(error => {
-            console.error(error);
+            console.error("Error al entrar a la sala:", error);
             yaEntro = false;
             if (btn) btn.disabled = false;
         });
     });
-}
-
+};
 
         function calcularAlquiler(precioBase, duenoIdx) {
     // Si no tiene reputación, por defecto es 50
@@ -991,22 +990,34 @@ function mostrarNotificacionMision(titulo) {
 };
 
 window.proponerVenta = function(event, pIdx) {
-    // PREVENIR EL BUG DEL DADO: Detenemos la propagación del clic
-    if (event) { event.stopPropagation(); event.preventDefault(); }
+    // PREVENIR EL BUG DEL DADO: Detenemos la propagación del clic para que no afecte al tablero
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+        event.preventDefault();
+    }
 
     let sel = document.getElementById('sel-' + pIdx);
     let input = document.getElementById('precio-' + pIdx);
+    
     if (!sel || !input) return;
 
+    // Convertimos a entero de forma segura
     let comprador = parseInt(sel.value);
     let precio = parseInt(input.value);
 
-    if (isNaN(comprador)) { alert("Error: Debes seleccionar un comprador."); return; }
+    // Validación de comprador
+    if (isNaN(comprador)) {
+        alert("Error: Debes seleccionar un comprador válido.");
+        return;
+    }
+
+    // Validación de precio
     if (isNaN(precio) || precio < 100 || precio > 999) {
         window.mostrarAvisoIntercambio();
         return;
     }
 
+    // Push a Firebase con valores numéricos limpios
     db.ref('salas/' + sala + '/ofertas').push({
         prop: parseInt(pIdx), 
         de: parseInt(miIdx), 
@@ -1014,12 +1025,12 @@ window.proponerVenta = function(event, pIdx) {
         precio: precio
     });
 
-    log(nombres[miIdx] + " propuso vender " + (mapa[pIdx] ? mapa[pIdx].n : "propiedad") + " por $" + precio);
+    log(nombres[miIdx] + " propuso vender " + (mapa[pIdx] ? mapa[pIdx].n : "propiedad") + " a " + nombres[comprador] + " por $" + precio);
     document.getElementById('modal').style.display = 'none';
 };
 
 window.confirmarCompra = function(ofertaKey) {
-    if (!sala) return;
+    if (typeof sala === 'undefined' || !sala) return;
     
     db.ref('salas/' + sala + '/ofertas/' + ofertaKey).once('value', snap => {
         let o = snap.val();
@@ -1027,16 +1038,18 @@ window.confirmarCompra = function(ofertaKey) {
 
         db.ref('salas/' + sala).transaction(data => {
             // Protección: verificamos que exista 'data', 'jugadores' y el jugador específico
-            if (!data || !data.jugadores || !data.jugadores[o.para]) return;
+            if (!data || !data.jugadores || !data.jugadores[o.para] || !data.jugadores[o.de]) return;
             
             let precio = Number(o.precio);
             let dineroComprador = Number(data.jugadores[o.para].dinero);
             
             if (dineroComprador < precio) return;
 
+            // Transferencia de fondos
             data.jugadores[o.para].dinero = dineroComprador - precio;
             data.jugadores[o.de].dinero = Number(data.jugadores[o.de].dinero) + precio;
             
+            // Actualización de propiedad
             if (!data.propiedades) data.propiedades = {};
             data.propiedades[o.prop] = { owner: parseInt(o.para) };
             
@@ -1422,8 +1435,18 @@ window.abrirIntercambio = function() {
     function mejorar(pos) {
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val();
+        if (!data) return;
+
         let grupo = obtenerGrupo(pos);
+        
+        // SEGURIDAD: Si no pertenece a un grupo, no se puede mejorar
+        if (!grupo) {
+            alert("Esta propiedad no se puede mejorar.");
+            return;
+        }
+
         let prop = data.propiedades ? data.propiedades[pos] : null;
+        if (!prop) return;
 
         // Validar que el jugador posee todas las propiedades del grupo
         let todasPropias = grupo.indices.every(idx => 
@@ -1442,17 +1465,19 @@ window.abrirIntercambio = function() {
         // Si pasa la validación, procedemos a mejorar
         if (prop.nivel < 5) {
             db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => {
-                if (d >= 50) {
-                    // Actualizamos el nivel en la propiedad
-                    db.ref('salas/' + sala + '/propiedades/' + pos + '/nivel').set(prop.nivel + 1);
-                    log(nombres[miIdx] + " mejoró " + mapa[pos].n + " al nivel " + (prop.nivel + 1));
-                    cerrarModal();
+                if (d !== null && d >= 50) {
+                    // Actualizamos el nivel
+                    db.ref('salas/' + sala + '/propiedades/' + pos + '/nivel').set((prop.nivel || 0) + 1);
+                    log(nombres[miIdx] + " mejoró " + (mapa[pos] ? mapa[pos].n : "propiedad") + " al nivel " + ((prop.nivel || 0) + 1));
+                    if(typeof cerrarModal === 'function') cerrarModal();
                     return d - 50;
                 } else {
                     alert("No tienes suficiente dinero.");
                     return d;
                 }
             });
+        } else {
+            alert("Ya tiene el nivel máximo.");
         }
     });
 }
