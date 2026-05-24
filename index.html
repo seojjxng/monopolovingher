@@ -1692,109 +1692,77 @@ function mejorar(pos) {
         }
     });
 };
+        // 1. AVISO REPUTACIÓN
+    window.mostrarAvisoReputacion = function() {
+        if (typeof yaEntro !== 'undefined' && yaEntro) return;
+        let modal = document.getElementById('modal');
+        if (modal) {
+            document.getElementById('modal-title').innerText = "Estado de Reputación";
+            document.getElementById('modal-text').innerText = "Cargando datos de jugador...";
+            document.getElementById('modal-extra').innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Entendido</button>`;
+            modal.style.display = 'block';
+        }
+    };
 
-
-        window.mostrarAvisoReputacion = function() {
-    // Si ya entró, no hacemos nada (o dejamos que el juego fluya)
-    if (typeof yaEntro !== 'undefined' && yaEntro) return;
-
-    let modal = document.getElementById('modal');
-    let modalTitle = document.getElementById('modal-title');
-    let modalText = document.getElementById('modal-text');
-    let modalExtra = document.getElementById('modal-extra');
-
-    if (modal && modalTitle && modalText) {
-        modalTitle.innerText = "Estado de Reputación";
-        modalText.innerText = "Cargando datos de jugador... espera un momento.";
-        
-        // Limpiamos los botones y solo dejamos el de cerrar
-        modalExtra.innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Entendido</button>`;
-        
-        modal.style.display = 'block';
-    }
-};
-        
-    // 1. EL BLOQUE DE RECONEXIÓN (Fuera de todo)
-// BLOQUE DE RECONEXIÓN: Solo rellena el input, NO entra automáticamente
-window.addEventListener('load', () => {
-    let salaGuardada = localStorage.getItem('monopoly_sala');
-    
-    // Solo rellenamos el input si el usuario tenía una sala guardada
-    // Pero NO llamamos a procederConUnion(), para que se quede en el Lobby
-    if (salaGuardada) {
-        let input = document.getElementById('sala-id');
-        if (input) {
-            // input.value = salaGuardada; // <-- COMENTA ESTA LÍNEA
+    // 2. RECONEXIÓN
+    window.addEventListener('load', () => {
+        let salaGuardada = localStorage.getItem('monopoly_sala');
+        if (salaGuardada) {
             console.log("Sesión ignorada para empezar en blanco.");
         }
-    }
-});
+    });
 
-    // Aseguramos que la función sea global para que el botón la encuentre
+    // 3. FUNCIÓN COMPRA (ÚNICA Y DEFINITIVA)
     window.comprar = function(pos) {
-        // Obtenemos la sala actual
-        let salaId = localStorage.getItem('monopoly_sala');
-        if (!salaId || typeof miIdx === 'undefined') {
-            console.error("No se pudo identificar la sala o el jugador.");
+        if (typeof sala === 'undefined' || !sala) {
+            console.error("Error: La sala no está definida.");
             return;
         }
-
-        let propRef = db.ref('salas/' + salaId + '/propiedades/' + pos);
+        
         let precio = mapa[pos].p;
-
-        // Transacción segura en Firebase
+        let propRef = db.ref('salas/' + sala + '/propiedades/' + pos);
+        
         propRef.transaction(currentProp => {
-            if (currentProp !== null) return; // Si ya existe, no se compra
-            return {
-                owner: miIdx,
-                nivel: 0,
-                hipotecada: false
-            };
-        }, (error, committed, snapshot) => {
+            if (currentProp !== null) return; 
+            return { owner: miIdx, nivel: 0, hipotecada: false };
+        }, (error, committed) => {
             if (committed) {
-                // Descontamos el dinero al jugador
-                db.ref('salas/' + salaId + '/jugadores/' + miIdx + '/dinero')
+                db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero')
                   .transaction(d => (d || 0) - (precio || 0));
-                
                 log(nombres[miIdx] + " compró " + mapa[pos].n);
                 document.getElementById('modal').style.display = 'none';
-                
-                // Actualizamos la vista (opcional, si tienes una función para refrescar)
                 if (typeof recargarTablero === 'function') recargarTablero();
             } else {
-                alert("La propiedad ya fue comprada por otro jugador.");
+                alert("La propiedad ya fue comprada.");
             }
         });
     };
-        
-// 2. EL BLOQUE DE CREACIÓN DEL TABLERO
-window.addEventListener('DOMContentLoaded', () => {
-    const board = document.getElementById('board');
-    if (!board) return;
+    console.log("Sistema de compra cargado correctamente.");
 
-    mapa.forEach((m, i) => { 
-        const d = document.createElement('div'); 
-        d.className = 'cell'; 
-        d.id = 'cell-' + i; 
-        d.onclick = () => verPropiedad(i);
-        
-        let g = obtenerGrupo(i);
-        
-        if (g && g.color === "#f5f5dc") {
-            d.style.border = "3px solid #f5f5dc"; 
-            d.style.backgroundColor = "#fffef0";
-        } else if (g) {
-            d.innerHTML = `<div class="strip" style="background: ${g.color}"></div>`;
-        }
-        
-        // Mantenemos la lógica original de concatenar el contenido
-        d.innerHTML += `<div class="contenido" style="font-size: 7px; color: #c71585;">
-                            ${m.n}<br>
-                            ${m.p > 0 ? '$' + m.p : ''}
-                        </div>`;
-        board.appendChild(d);
+    // 4. CREACIÓN DEL TABLERO
+    window.addEventListener('DOMContentLoaded', () => {
+        const board = document.getElementById('board');
+        if (!board) return;
+
+        mapa.forEach((m, i) => { 
+            const d = document.createElement('div'); 
+            d.className = 'cell'; 
+            d.id = 'cell-' + i; 
+            d.onclick = () => verPropiedad(i);
+            
+            let g = obtenerGrupo(i);
+            if (g && g.color === "#f5f5dc") {
+                d.style.border = "3px solid #f5f5dc"; 
+                d.style.backgroundColor = "#fffef0";
+            } else if (g) {
+                d.innerHTML = `<div class="strip" style="background: ${g.color}"></div>`;
+            }
+            
+            d.innerHTML += `<div class="contenido" style="font-size: 7px; color: #c71585;">
+                            ${m.n}<br>${m.p > 0 ? '$' + m.p : ''}</div>`;
+            board.appendChild(d);
+        });
     });
-});
 </script>
 </body>
 </html>
