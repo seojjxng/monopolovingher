@@ -532,21 +532,8 @@ window.crearNuevaSala = function(nombreSala) {
         chat: [{ n: "Sistema", m: "Sala creada con éxito." }]
     }).then(() => {
         document.getElementById('modal').style.display = 'none';
-        procederConUnion(nombreSala);
-        
-        // ACTIVACIÓN DE OFERTAS
-        if (typeof escucharOfertas === 'function') {
-            escucharOfertas();
-        }
-    }).catch(error => {
-        console.error("Error al crear la sala:", error);
-        alert("No se pudo crear la sala.");
-    });
-};
-
-// Función principal de unión (con reconexión)
-window.procederConUnion = function(nombreSala) {
-    // 1. RESETEO DE SESIÓN
+        window.procederConUnion = function(nombreSala) {
+    // 1. RESETEO DE SESIÓN LOCAL
     sala = nombreSala;
     miIdx = null;
     yaEntro = false;
@@ -554,21 +541,24 @@ window.procederConUnion = function(nombreSala) {
     let btn = document.getElementById('btn-unirse');
     if (btn) btn.disabled = true;
 
-    // Identificación única
+    // Identificación única persistente
     let miID = localStorage.getItem('monopoly_uid');
     if (!miID) {
         miID = 'player_' + Math.random().toString(36).substr(2, 9);
         localStorage.setItem('monopoly_uid', miID);
     }
 
-    // 2. TRANSACCIÓN ATÓMICA DE SEGURIDAD
+    // 2. TRANSACCIÓN ATÓMICA: Asegura coherencia de datos
     db.ref('salas/' + sala + '/jugadores').transaction(jugadores => {
         if (!jugadores) jugadores = [];
 
-        // Buscamos si ya existe por UID (Reconexión)
+        // LIMPIEZA: Eliminamos entradas nulas para evitar desplazamientos de índice
+        jugadores = jugadores.filter(j => j !== null);
+
+        // BUSCAR: ¿Este UID ya estaba en la sala?
         let idx = jugadores.findIndex(j => j && j.uid === miID);
         
-        // Si no existe, lo asignamos al siguiente índice disponible
+        // Si no existe, lo asignamos al final
         if (idx === -1) {
             idx = jugadores.length;
         }
@@ -579,13 +569,13 @@ window.procederConUnion = function(nombreSala) {
         let miNombre = (nombreGuardado === "Dog" || !nombreGuardado) ? nombrePorIndice : nombreGuardado;
         localStorage.setItem('monopoly_nombre', miNombre);
 
-        // Preparamos los datos del jugador (conservando estado anterior)
+        // Actualización de datos del jugador
         let jActual = jugadores[idx] || {};
         jugadores[idx] = {
             ...jActual,
             uid: miID,
             nombre: miNombre,
-            status: 'online', // Siempre marcamos online al entrar
+            status: 'online',
             pos: jActual.pos || 0,
             dinero: jActual.dinero !== undefined ? jActual.dinero : 1000,
             enCarcel: jActual.enCarcel || 0,
@@ -602,10 +592,10 @@ window.procederConUnion = function(nombreSala) {
             yaEntro = true;
             localStorage.setItem('monopoly_sala', sala);
             
-            // Configurar aviso de desconexión en el servidor
+            // Configurar desconexión automática
             db.ref('salas/' + sala + '/jugadores/' + miIdx).onDisconnect().update({ status: 'offline' });
             
-            // Notificar al chat
+            // Notificar chat
             db.ref('salas/' + sala + '/chat').push({ 
                 n: "Sistema", 
                 m: localStorage.getItem('monopoly_nombre') + " se ha conectado a la partida." 
@@ -617,8 +607,12 @@ window.procederConUnion = function(nombreSala) {
                 if (typeof iniciarRelojClima === 'function') iniciarRelojClima();
             }
             
-            // Ejecutar la sincronización general
+            // ACTIVACIÓN DE SERVICIOS
             sincronizar();
+            if (typeof escucharOfertas === 'function') {
+                escucharOfertas();
+            }
+            
         } else {
             console.error("Error al unir a la sala:", error);
             if (btn) btn.disabled = false;
