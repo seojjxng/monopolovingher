@@ -978,12 +978,8 @@ function mostrarNotificacionMision(titulo) {
         
    window.mostrarAvisoIntercambio = function() {
     let modal = document.getElementById('modal');
-    let modalTitle = document.getElementById('modal-title');
-    let modalText = document.getElementById('modal-text');
-    let modalExtra = document.getElementById('modal-extra');
-
-    modalTitle.innerText = "¡Error!";
-    modalText.innerHTML = `
+    document.getElementById('modal-title').innerText = "¡Error!";
+    document.getElementById('modal-text').innerHTML = `
         <div class="card-property">
             <div class="card-header" style="background: #ad0c0c; color: white; padding: 5px;">Alerta</div>
             <div style="padding: 20px; text-align: center;">
@@ -991,37 +987,26 @@ function mostrarNotificacionMision(titulo) {
             </div>
         </div>
     `;
-    
-    // IMPORTANTE: Esta línea es la que hace que la ventana aparezca físicamente
     modal.style.display = 'block';
 };
-        
-  window.proponerVenta = function(pIdx) {
+
+window.proponerVenta = function(event, pIdx) {
+    // PREVENIR EL BUG DEL DADO: Detenemos la propagación del clic
+    if (event) { event.stopPropagation(); event.preventDefault(); }
+
     let sel = document.getElementById('sel-' + pIdx);
     let input = document.getElementById('precio-' + pIdx);
-    
     if (!sel || !input) return;
 
-    // Convertimos a entero de forma segura
     let comprador = parseInt(sel.value);
     let precio = parseInt(input.value);
 
-    // Validación de comprador (aseguramos que no sea NaN)
-    if (isNaN(comprador)) {
-        alert("Error: Debes seleccionar un comprador válido.");
-        return;
-    }
-
-    // Validación de precio
+    if (isNaN(comprador)) { alert("Error: Debes seleccionar un comprador."); return; }
     if (isNaN(precio) || precio < 100 || precio > 999) {
-        document.getElementById('modal-title').innerText = "¡Atención!";
-        document.getElementById('modal-text').innerHTML = '<div class="card-property"><p style="text-align: center; padding: 10px;">Por favor, ingresa un precio válido entre 100 y 999.</p></div>';
-        document.getElementById('modal-extra').innerHTML = '<button class="btn" onclick="abrirIntercambio()">Volver</button>';
-        document.getElementById('modal').style.display = 'block';
+        window.mostrarAvisoIntercambio();
         return;
     }
 
-    // Push a Firebase con valores numéricos limpios
     db.ref('salas/' + sala + '/ofertas').push({
         prop: parseInt(pIdx), 
         de: parseInt(miIdx), 
@@ -1029,50 +1014,11 @@ function mostrarNotificacionMision(titulo) {
         precio: precio
     });
 
-    log(nombres[miIdx] + " propuso vender " + (mapa[pIdx] ? mapa[pIdx].n : "propiedad") + " a " + nombres[comprador] + " por $" + precio);
+    log(nombres[miIdx] + " propuso vender " + (mapa[pIdx] ? mapa[pIdx].n : "propiedad") + " por $" + precio);
     document.getElementById('modal').style.display = 'none';
 };
 
 window.confirmarCompra = function(ofertaKey) {
-    if (typeof sala === 'undefined' || !sala) return;
-
-    db.ref('salas/' + sala + '/ofertas/' + ofertaKey).once('value', snap => {
-        let o = snap.val();
-        if (!o) return;
-
-        // Validamos que los datos de la oferta sean números
-        let pIdx = parseInt(o.prop);
-        let compradorIdx = parseInt(o.para);
-        let vendedorIdx = parseInt(o.de);
-        let precio = parseInt(o.precio);
-
-        db.ref('salas/' + sala).transaction(data => {
-            if (!data || !data.jugadores || !data.jugadores[compradorIdx] || !data.jugadores[vendedorIdx]) return;
-
-            let dineroComprador = Number(data.jugadores[compradorIdx].dinero);
-
-            if (dineroComprador < precio) return;
-
-            // Transferencia
-            data.jugadores[compradorIdx].dinero = dineroComprador - precio;
-            data.jugadores[vendedorIdx].dinero = Number(data.jugadores[vendedorIdx].dinero) + precio;
-
-            // Actualizar propiedad
-            if (!data.propiedades) data.propiedades = {};
-            data.propiedades[pIdx] = { owner: compradorIdx };
-
-            return data;
-        }, (error, committed) => {
-            if (committed) {
-                db.ref('salas/' + sala + '/ofertas/' + ofertaKey).remove();
-                document.getElementById('modal').style.display = 'none';
-                log("¡Venta completada!");
-            }
-        });
-    });
-};
-
-       window.confirmarCompra = function(ofertaKey) {
     if (!sala) return;
     
     db.ref('salas/' + sala + '/ofertas/' + ofertaKey).once('value', snap => {
@@ -1080,15 +1026,20 @@ window.confirmarCompra = function(ofertaKey) {
         if (!o) return;
 
         db.ref('salas/' + sala).transaction(data => {
-            if (!data || !data.jugadores[o.para]) return;
+            // Protección: verificamos que exista 'data', 'jugadores' y el jugador específico
+            if (!data || !data.jugadores || !data.jugadores[o.para]) return;
+            
             let precio = Number(o.precio);
-            if (Number(data.jugadores[o.para].dinero) < precio) return;
+            let dineroComprador = Number(data.jugadores[o.para].dinero);
+            
+            if (dineroComprador < precio) return;
 
-            data.jugadores[o.para].dinero -= precio;
-            data.jugadores[o.de].dinero += precio;
+            data.jugadores[o.para].dinero = dineroComprador - precio;
+            data.jugadores[o.de].dinero = Number(data.jugadores[o.de].dinero) + precio;
             
             if (!data.propiedades) data.propiedades = {};
             data.propiedades[o.prop] = { owner: parseInt(o.para) };
+            
             return data;
         }, (error, committed) => {
             if (committed) {
@@ -1099,6 +1050,24 @@ window.confirmarCompra = function(ofertaKey) {
         });
     });
 };
+        
+window.abrirIntercambio = function() {
+    db.ref('salas/' + sala).once('value', snap => {
+        if (!snap.exists()) return;
+        let data = snap.val();
+        let misProps = [];
+        
+        if(data.propiedades) {
+            Object.keys(data.propiedades).forEach(pIdx => {
+                if(data.propiedades[pIdx].owner === miIdx) misProps.push(pIdx);
+            });
+        }
+        
+        // ... (resto de tu lógica de renderizado igual)
+        // IMPORTANTE: Al generar el botón, usa: onclick="proponerVenta(event, ${pIdx})"
+    });
+};
+
 
 // Función corregida para mostrar la oferta
 window.escucharOfertas = function() {
