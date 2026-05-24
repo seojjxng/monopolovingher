@@ -1660,8 +1660,8 @@ window.addEventListener('load', () => {
     if (salaGuardada) {
         let input = document.getElementById('sala-id');
         if (input) {
-            input.value = salaGuardada;
-            console.log("Sesión detectada, sala rellenada en el campo de texto. Esperando acción del usuario.");
+            // input.value = salaGuardada; // <-- COMENTA ESTA LÍNEA
+            console.log("Sesión ignorada para empezar en blanco.");
         }
     }
 });
