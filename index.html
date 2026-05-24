@@ -547,7 +547,6 @@ window.procederConUnion = function(nombreSala) {
 
     db.ref('salas/' + sala + '/jugadores').once('value', snap => {
         let data = snap.val();
-        // SEGURIDAD: Convertimos a array limpio
         let jugadores = Array.isArray(data) ? data : (data ? Object.values(data) : []);
         
         // --- CORRECCIÓN UID: Identificación única por navegador ---
@@ -560,7 +559,7 @@ window.procederConUnion = function(nombreSala) {
         let encontrado = false;
         let indexEncontrado = -1;
 
-        // Búsqueda por UID único, para evitar que varios se llamen igual o tomen el mismo lugar
+        // Búsqueda por UID único
         jugadores.forEach((j, index) => {
             if (j && j.uid === miID) {
                 indexEncontrado = index;
@@ -574,21 +573,25 @@ window.procederConUnion = function(nombreSala) {
             console.log("Reconectado con UID: " + miID + " en índice: " + miIdx);
         } else {
             miIdx = jugadores.length;
-            // Usamos nombre guardado o el que toque por defecto
-            let miNombre = localStorage.getItem('monopoly_nombre') || (typeof nombres !== 'undefined' ? nombres[miIdx] : ("Jugador " + (miIdx + 1)));
+            // --- CORRECCIÓN DE NOMBRE ---
+            // Si el nombre guardado es "Dog" o no existe, forzamos el nombre según el índice del array 'nombres'
+            let nombrePorIndice = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
+            let nombreGuardado = localStorage.getItem('monopoly_nombre');
+            
+            let miNombre = (nombreGuardado === "Dog" || !nombreGuardado) ? nombrePorIndice : nombreGuardado;
+            
             localStorage.setItem('monopoly_nombre', miNombre);
-            console.log("Nuevo jugador registrado con UID: " + miID);
+            console.log("Nuevo jugador registrado con UID: " + miID + " y nombre: " + miNombre);
         }
 
         yaEntro = true;
         let miNombre = localStorage.getItem('monopoly_nombre');
         let jugadorRef = db.ref('salas/' + sala + '/jugadores/' + miIdx);
         
-        // Datos actuales del jugador para persistencia
         let jActual = (encontrado && jugadores[miIdx]) ? jugadores[miIdx] : {};
 
         jugadorRef.update({
-            uid: miID, // Guardamos el identificador único en Firebase
+            uid: miID, 
             pos: jActual.pos || 0,
             dinero: jActual.dinero !== undefined ? jActual.dinero : 1000,
             enCarcel: jActual.enCarcel || 0,
@@ -600,8 +603,6 @@ window.procederConUnion = function(nombreSala) {
             status: 'online'
         }).then(() => {
             localStorage.setItem('monopoly_sala', sala);
-            
-            // Marcamos offline al cerrar/desconectar
             jugadorRef.onDisconnect().update({ status: 'offline' });
             
             db.ref('salas/' + sala + '/chat').push({ 
