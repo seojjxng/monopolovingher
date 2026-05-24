@@ -1583,6 +1583,19 @@ window.abrirIntercambio = function() {
         let s = snap.val(); 
         if(!s) return; 
 
+        // --- BLOQUEO DE INTERACCIÓN FUERA DE TURNO ---
+        const board = document.getElementById('board');
+        if (board) {
+            if (s.turno !== miIdx) {
+                board.style.pointerEvents = "none"; // Desactiva clicks fuera de turno
+                board.style.opacity = "0.8";       // Efecto visual de espera
+            } else {
+                board.style.pointerEvents = "auto"; // Habilita clicks en tu turno
+                board.style.opacity = "1";
+            }
+        }
+        // ----------------------------------------------
+
         // Actualizar dinero
         if (s.jugadores && s.jugadores[miIdx]) {
             document.getElementById('dinero-mio').innerText = s.jugadores[miIdx].dinero;
