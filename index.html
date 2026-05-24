@@ -496,6 +496,9 @@ window.unirse = function() {
     
     let nombreSala = inputSala.value.trim();
 
+    // Desactivamos oyentes previos para evitar duplicidad al reconectar
+    db.ref('salas/').off();
+
     db.ref('salas/' + nombreSala).once('value', snap => {
         if (!snap.exists()) {
             // La sala no existe: Abrimos modal para ofrecer crearla
@@ -516,13 +519,10 @@ window.unirse = function() {
             // La sala existe: Entramos directamente
             procederConUnion(nombreSala);
             
-            // --- NUEVA LÍNEA: Escucha constante para tener 'jugadores' siempre actualizado ---
-            db.ref('salas/' + nombreSala + '/jugadores').on('value', (snap) => {
-                window.jugadores = snap.val();
-            });
-            // -----------------------------------------------------------------------------
+            // Lógica de escucha simplificada (se controla desde sincronizar o una sola vez aquí)
+            // Ya no es necesario el .on dentro de unirse si tu función sincronizar ya escucha la sala
             
-            // ACTIVACIÓN DE OFERTAS: Al entrar, empezamos a escuchar si alguien nos vende algo
+            // ACTIVACIÓN DE OFERTAS: Solo se llama una vez
             if (typeof escucharOfertas === 'function') {
                 escucharOfertas();
             }
@@ -1620,17 +1620,20 @@ window.abrirIntercambio = function() {
             }
         }
 
-        // --- SISTEMA DE BOT POR INACTIVIDAD (CORREGIDO PARA EVITAR BUCLE) ---
-        if (s.turno === miIdx) {
-            let ultimoTiempo = s.tiempoUltimoTurno || 0;
+        // --- SISTEMA DE BOT POR INACTIVIDAD (PROTEGIDO) ---
+        // Solo verificamos el bot si el turno es del usuario actual (miIdx) 
+        // y si existe la variable tiempoUltimoTurno
+        if (s.turno === miIdx && s.tiempoUltimoTurno !== undefined) {
             let ahora = Date.now();
+            let diferencia = (ahora - s.tiempoUltimoTurno) / 1000;
 
-            // Solo actuamos si han pasado más de 10s (10000ms)
-            if (ahora - ultimoTiempo > 10000) {
-                // 1. Actualizamos el tiempo ANTES de llamar a tirarDado para evitar bucles
-                db.ref('salas/' + sala + '/tiempoUltimoTurno').set(ahora);
+            // Solo activamos si pasaron más de 10s
+            // IMPORTANTE: Solo dejamos que el jugador actual (el del navegador) procese esto
+            if (diferencia > 10) {
+                // Actualizamos el tiempo a un valor futuro inmediato para que 
+                // ningún otro proceso de sincronización lo vuelva a detectar por unos segundos
+                db.ref('salas/' + sala + '/tiempoUltimoTurno').set(ahora + 5000);
 
-                // 2. Ejecutamos la acción
                 log("El jugador " + (typeof nombres !== 'undefined' ? nombres[miIdx] : "Jugador " + (miIdx + 1)) + " no respondió, el bot tomó el control.");
                 console.log("¡Bot activado: inactividad detectada!");
                 
