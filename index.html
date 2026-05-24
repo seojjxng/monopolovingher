@@ -1729,6 +1729,44 @@ window.addEventListener('load', () => {
         }
     }
 });
+
+    // Aseguramos que la función sea global para que el botón la encuentre
+    window.comprar = function(pos) {
+        // Obtenemos la sala actual
+        let salaId = localStorage.getItem('monopoly_sala');
+        if (!salaId || typeof miIdx === 'undefined') {
+            console.error("No se pudo identificar la sala o el jugador.");
+            return;
+        }
+
+        let propRef = db.ref('salas/' + salaId + '/propiedades/' + pos);
+        let precio = mapa[pos].p;
+
+        // Transacción segura en Firebase
+        propRef.transaction(currentProp => {
+            if (currentProp !== null) return; // Si ya existe, no se compra
+            return {
+                owner: miIdx,
+                nivel: 0,
+                hipotecada: false
+            };
+        }, (error, committed, snapshot) => {
+            if (committed) {
+                // Descontamos el dinero al jugador
+                db.ref('salas/' + salaId + '/jugadores/' + miIdx + '/dinero')
+                  .transaction(d => (d || 0) - (precio || 0));
+                
+                log(nombres[miIdx] + " compró " + mapa[pos].n);
+                document.getElementById('modal').style.display = 'none';
+                
+                // Actualizamos la vista (opcional, si tienes una función para refrescar)
+                if (typeof recargarTablero === 'function') recargarTablero();
+            } else {
+                alert("La propiedad ya fue comprada por otro jugador.");
+            }
+        });
+    };
+        
 // 2. EL BLOQUE DE CREACIÓN DEL TABLERO
 window.addEventListener('DOMContentLoaded', () => {
     const board = document.getElementById('board');
