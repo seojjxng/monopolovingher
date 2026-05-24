@@ -999,7 +999,6 @@ function mostrarNotificacionMision(titulo) {
 };
 
 window.proponerVenta = function(event, pIdx) {
-    // PREVENIR EL BUG DEL DADO: Detenemos la propagación del clic para que no afecte al tablero
     if (event && typeof event.stopPropagation === 'function') {
         event.stopPropagation();
         event.preventDefault();
@@ -1010,23 +1009,19 @@ window.proponerVenta = function(event, pIdx) {
     
     if (!sel || !input) return;
 
-    // Convertimos a entero de forma segura
     let comprador = parseInt(sel.value);
     let precio = parseInt(input.value);
 
-    // Validación de comprador
     if (isNaN(comprador)) {
         alert("Error: Debes seleccionar un comprador válido.");
         return;
     }
 
-    // Validación de precio
     if (isNaN(precio) || precio < 100 || precio > 999) {
         window.mostrarAvisoIntercambio();
         return;
     }
 
-    // Push a Firebase con valores numéricos limpios
     db.ref('salas/' + sala + '/ofertas').push({
         prop: parseInt(pIdx), 
         de: parseInt(miIdx), 
@@ -1039,14 +1034,13 @@ window.proponerVenta = function(event, pIdx) {
 };
 
 window.confirmarCompra = function(ofertaKey) {
-    if (typeof sala === 'undefined' || !sala) return;
+    if (!sala) return;
     
     db.ref('salas/' + sala + '/ofertas/' + ofertaKey).once('value', snap => {
         let o = snap.val();
         if (!o) return;
 
         db.ref('salas/' + sala).transaction(data => {
-            // Protección: verificamos que exista 'data', 'jugadores' y el jugador específico
             if (!data || !data.jugadores || !data.jugadores[o.para] || !data.jugadores[o.de]) return;
             
             let precio = Number(o.precio);
@@ -1054,13 +1048,11 @@ window.confirmarCompra = function(ofertaKey) {
             
             if (dineroComprador < precio) return;
 
-            // Transferencia de fondos
             data.jugadores[o.para].dinero = dineroComprador - precio;
             data.jugadores[o.de].dinero = Number(data.jugadores[o.de].dinero) + precio;
             
-            // Actualización de propiedad
             if (!data.propiedades) data.propiedades = {};
-            data.propiedades[o.prop] = { owner: parseInt(o.para) };
+            data.propiedades[o.prop] = { owner: parseInt(o.para), nivel: 0, hipotecada: false };
             
             return data;
         }, (error, committed) => {
@@ -1072,54 +1064,28 @@ window.confirmarCompra = function(ofertaKey) {
         });
     });
 };
-        
-window.abrirIntercambio = function() {
-    db.ref('salas/' + sala).once('value', snap => {
-        if (!snap.exists()) return;
-        let data = snap.val();
-        let misProps = [];
-        
-        if(data.propiedades) {
-            Object.keys(data.propiedades).forEach(pIdx => {
-                if(data.propiedades[pIdx].owner === miIdx) misProps.push(pIdx);
-            });
-        }
-        
-        // ... (resto de tu lógica de renderizado igual)
-        // IMPORTANTE: Al generar el botón, usa: onclick="proponerVenta(event, ${pIdx})"
-    });
-};
 
-
-// Función corregida para mostrar la oferta
 window.escucharOfertas = function() {
     if (!sala) return;
-    
-    // IMPORTANTE: .off() evita duplicar escuchadores si se llama varias veces
     db.ref('salas/' + sala + '/ofertas').off('child_added'); 
-    
     db.ref('salas/' + sala + '/ofertas').on('child_added', snap => {
         let o = snap.val();
         if (o && o.para === miIdx) {
             document.getElementById('modal-title').innerText = "¡Oferta de Venta!";
-            document.getElementById('modal-text').innerHTML = 
-                `<p>${nombres[o.de] || 'Alguien'} te vende una propiedad por $${o.precio}</p>`;
-            
+            document.getElementById('modal-text').innerHTML = `<p>${nombres[o.de]} te vende una propiedad por $${o.precio}</p>`;
             document.getElementById('modal-extra').innerHTML = 
                 `<button class="btn" onclick="confirmarCompra('${snap.key}')">Aceptar</button>
                  <button class="btn" onclick="document.getElementById('modal').style.display='none'">Cancelar</button>`;
-            
             document.getElementById('modal').style.display = 'block';
         }
     });
 };
-        
+
 window.abrirIntercambio = function() {
     db.ref('salas/' + sala).once('value', snap => {
         if (!snap.exists()) return;
         let data = snap.val();
         let misProps = [];
-        
         if(data.propiedades) {
             Object.keys(data.propiedades).forEach(pIdx => {
                 if(data.propiedades[pIdx].owner === miIdx) misProps.push(pIdx);
@@ -1128,20 +1094,20 @@ window.abrirIntercambio = function() {
         
         if (misProps.length === 0) {
             document.getElementById('modal-title').innerText = "¡Atención!";
-            document.getElementById('modal-text').innerHTML = '<div class="card-property"><p style="text-align: center; padding: 10px;">No tienes propiedades disponibles para vender.</p></div>';
+            document.getElementById('modal-text').innerHTML = '<div class="card-property"><p style="text-align: center;">No tienes propiedades para vender.</p></div>';
             document.getElementById('modal-extra').innerHTML = "";
             document.getElementById('modal').style.display = 'block';
             return;
         }
         
         document.getElementById('modal-title').innerText = "Revender Propiedad";
-        let html = '<div class="card-property">Selecciona propiedad, precio (100-999) y comprador:<br><br>';
-        
+        let html = '<div class="card-property">Selecciona propiedad, precio y comprador:<br><br>';
         misProps.forEach(pIdx => {
             let p = mapa[pIdx];
-            html += `<b>${p.n}</b>:<br><input type="number" id="precio-${pIdx}" min="100" max="999" style="width: 80px;"> <select id="sel-${pIdx}">`;
+            html += `<b>${p.n}</b>:<br><input type="number" id="precio-${pIdx}" value="100" min="100" max="999"> <select id="sel-${pIdx}">`;
             data.jugadores.forEach((j, i) => { if(i !== miIdx) html += `<option value="${i}">${nombres[i]}</option>`; });
-            html += `</select> <button class="btn" onclick="proponerVenta(${pIdx})">Vender</button><br><br>`;
+            // CORRECCIÓN: Pasamos el 'event' para que la función proponerVenta no falle
+            html += `</select> <button class="btn" onclick="proponerVenta(event, ${pIdx})">Vender</button><br><br>`;
         });
         
         html += '</div>';
@@ -1154,7 +1120,42 @@ window.abrirIntercambio = function() {
 
     function hipotecar(pos) { db.ref('salas/'+sala+'/propiedades/'+pos).update({hipotecada: true}); db.ref('salas/'+sala+'/jugadores/'+miIdx+'/dinero').transaction(d => d + Math.floor(mapa[pos].p/2)); log(nombres[miIdx] + " hipotecó " + mapa[pos].n); document.getElementById('modal').style.display = 'none'; }
     function liberar(pos) { db.ref('salas/'+sala+'/propiedades/'+pos).update({hipotecada: false}); db.ref('salas/'+sala+'/jugadores/'+miIdx+'/dinero').transaction(d => d - Math.floor(mapa[pos].p*0.6)); log(nombres[miIdx] + " liberó " + mapa[pos].n); document.getElementById('modal').style.display = 'none'; }
-    function intentarEvasion(d, a, m) { let exito = Math.random() < 0.30; if(exito) { let montoFinal = Math.floor(m / 2); procesarPago(d, a, montoFinal, true); log(nombres[d] + " evadió el alquiler exitosamente. Pagará $" + montoFinal); } else { let montoFinal = m + 50; procesarPago(d, a, montoFinal, false); log(nombres[d] + " falló su evasión de pago. Paga $" + montoFinal); } }
+    function intentarEvasion(d, a, m) {
+    let exito = Math.random() < 0.30;
+    
+    // Cerramos el modal primero para evitar interacciones duplicadas
+    document.getElementById('modal').style.display = 'none';
+
+    if(exito) {
+        let montoFinal = Math.floor(m / 2);
+        // Pasamos 'true' para indicar que es una evasión exitosa
+        procesarPago(d, a, montoFinal, true); 
+        log(nombres[d] + " evadió el alquiler exitosamente. Pagará $" + montoFinal);
+    } else {
+        let montoFinal = m + 50;
+        // Pasamos 'false' para indicar que falló (pagará el alquiler + penalización)
+        procesarPago(d, a, montoFinal, true); // true para que no loguee el pago normal
+        log(nombres[d] + " falló su evasión de pago. Paga $" + montoFinal);
+    }
+}
+
+// Asegúrate de que tu procesarPago acepte el log silencioso:
+function procesarPago(d, a, m, esEvasion = false) {
+    db.ref('salas/' + sala + '/jugadores').transaction(j => {
+        if(!j) return;
+        j[d].dinero = Number(j[d].dinero) - m;
+        j[a].dinero = Number(j[a].dinero) + m;
+        return j;
+    });
+    
+    // Solo loguea el pago genérico si NO es una evasión (ya que la evasión tiene su propio log)
+    if (!esEvasion) {
+        log(nombres[d] + " pagó $" + m + " a " + nombres[a]);
+    }
+    
+    alquilerPendiente = null;
+    // El modal se cerró antes en la función llamante
+}
 
    function manejarCasilla(pos) {
     // NUEVA VALIDACIÓN: BLOQUEO EN CÁRCEL
