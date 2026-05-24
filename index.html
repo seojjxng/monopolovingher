@@ -567,7 +567,6 @@ function procederConUnion(nombreSala) {
             miIdx = indexEncontrado;
             console.log("Reconectado como: " + miNombreGuardado + " en índice: " + miIdx);
         } else {
-            // Nuevo jugador: usamos el primer índice disponible o el final
             miIdx = jugadores.length;
             let nuevoNombre = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
             localStorage.setItem('monopoly_nombre', nuevoNombre);
@@ -578,7 +577,7 @@ function procederConUnion(nombreSala) {
         let miNombre = localStorage.getItem('monopoly_nombre');
         let jugadorRef = db.ref('salas/' + sala + '/jugadores/' + miIdx);
         
-        // Usamos update para mantener datos previos si existían
+        // Usamos update para mantener datos previos y marcar estatus online
         jugadorRef.update({
             pos: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].pos : 0,
             dinero: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].dinero : 1000,
@@ -587,9 +586,13 @@ function procederConUnion(nombreSala) {
             tienePrestamo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].tienePrestamo : false,
             montoPrestamo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].montoPrestamo : 0,
             escudo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].escudo : false,
-            quiebraTecnica: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].quiebraTecnica : 0
+            quiebraTecnica: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].quiebraTecnica : 0,
+            status: 'online'
         }).then(() => {
             localStorage.setItem('monopoly_sala', sala);
+            
+            // NO BORRAMOS EL JUGADOR. Solo marcamos offline al desconectar.
+            jugadorRef.onDisconnect().update({ status: 'offline' });
             
             // Mensaje en chat
             db.ref('salas/' + sala + '/chat').push({ 
@@ -1494,9 +1497,9 @@ window.abrirIntercambio = function() {
         // --- GESTIÓN DE CÁRCEL ---
         if (s.jugadores[miIdx].enCarcel > 0) {
             log(nombres[miIdx] + " está en la cárcel y no puede moverse.");
-            // Si quieres que el jugador pueda salir sacando un 6, puedes añadirlo aquí.
-            // Por ahora, solo pasa turno tras el log.
             pasarTurno(); 
+            // Resetear reloj al pasar turno en cárcel
+            db.ref('salas/' + sala + '/tiempoUltimoTurno').set(Date.now());
             return;
         }
         
@@ -1544,9 +1547,14 @@ window.abrirIntercambio = function() {
                 pasarTurno();
             }
             
-            // Disparamos la lógica de la casilla (aquí es donde se activa el modal de la cárcel)
+            // Disparamos la lógica de la casilla
             setTimeout(() => manejarCasilla(nuevaPos), 600);
         }
+
+        // --- RESET DEL RELOJ DEL BOT ---
+        // Al terminar la acción, actualizamos el tiempo para evitar que el bot se active
+        db.ref('salas/' + sala + '/tiempoUltimoTurno').set(Date.now());
+        // --------------------------------
     }); 
 }
                                                                                                        
@@ -1603,14 +1611,27 @@ window.abrirIntercambio = function() {
         const board = document.getElementById('board');
         if (board) {
             if (s.turno !== miIdx) {
-                board.style.pointerEvents = "none"; // Desactiva clicks fuera de turno
-                board.style.opacity = "0.8";       // Efecto visual de espera
+                board.style.pointerEvents = "none";
+                board.style.opacity = "0.8";
             } else {
-                board.style.pointerEvents = "auto"; // Habilita clicks en tu turno
+                board.style.pointerEvents = "auto";
                 board.style.opacity = "1";
             }
         }
-        // ----------------------------------------------
+
+        // --- SISTEMA DE BOT POR INACTIVIDAD ---
+        if (s.tiempoUltimoTurno && s.turno === miIdx) {
+            let ahora = Date.now();
+            let diferencia = (ahora - s.tiempoUltimoTurno) / 1000;
+
+            if (diferencia > 10) {
+                log("El jugador " + nombres[miIdx] + " no respondió, el bot tomó el control.");
+                console.log("¡Bot activado: inactividad detectada!");
+                if (typeof tirarDado === 'function') {
+                    tirarDado(); 
+                }
+            }
+        }
 
         // Actualizar dinero
         if (s.jugadores && s.jugadores[miIdx]) {
@@ -1690,7 +1711,7 @@ window.abrirIntercambio = function() {
                 }
             }
         }
-    });
+    }); // <--- CIERRE
 };
         
     // 1. EL BLOQUE DE RECONEXIÓN (Fuera de todo)
