@@ -329,19 +329,16 @@ function verificarMonopolioEquipo(pos, equipo, data) {
 
     // Variables de clima ampliadas
    const climas = [
-    { n: "Primavera Soleada", mult: 1.0, msg: "¡El sol está radiante! No tienes que preocuparte por la bolsa de valores." },
-    { n: "Primavera Lluviosa", mult: 1.0, msg: "Lluvia ligera, los valores del mercado se mantienen estables." },
-    { n: "Verano Caluroso", mult: 1.0, msg: "Hace mucho calor, pero el mercado sigue su ritmo normal." },
-    { n: "Verano Nublado", mult: 1.0, msg: "Nublado y fresco, los valores del mercado se mantienen igual." },
-    { n: "Otoño Fresco", mult: 1.0, msg: "Un día perfecto, el mercado no muestra cambios bruscos." },
-    { n: "Otoño Ventoso", mult: 1.0, msg: "Viento suave, los valores del mercado se mantienen igual." },
-    // Climas adversos
-    { n: "Lluvia Fuerte", mult: 0.7, msg: "¡La lluvia ha hecho que los inquilinos pidan una rebaja temporal!" },
-    { n: "Tormenta Eléctrica", mult: 0.5, msg: "¡El mal tiempo ahuyenta a los clientes, los alquileres caen!" },
-    { n: "Ventisca", mult: 0.6, msg: "El frío extremo está afectando el valor de tus propiedades." },
-    { n: "Nevada Intensa", mult: 0.6, msg: "La nieve cubre la ciudad y reduce los ingresos por alquiler." },
-    { n: "Tornado", mult: 0.5, msg: "¡Peligro! El tornado ha dañado la confianza del mercado." }
-];
+        {n: "Primavera Soleada", mult: 1.0}, {n: "Primavera Lluviosa, ¡los valores del mercado se mantienen igual!", mult: 1.0},
+        {n: "Verano Caluroso", mult: 1.0}, {n: "Verano Nublado, ¡los valores del mercado se mantienen igual!", mult: 1.0},
+        {n: "Otoño Fresco", mult: 1.0}, {n: "Otoño Ventoso, ¡los valores del mercado se mantienen igual!", mult: 1.0},
+        // Climas adversos que reducen alquiler (porcentaje azar entre 50% y 80%)
+        {n: "Lluvia Fuerte. ¡Oh, no!", mult: 0.7}, 
+        {n: "Tormenta Eléctrica. ¡Oh, no!", mult: 0.5},
+        {n: "Ventisca. ¡Oh, no!", mult: 0.6}, 
+        {n: "Nevada Intensa. ¡Oh, no!", mult: 0.6},
+        {n: "Tornado. ¡Oh, no!", mult: 0.5}
+    ];
 
     function iniciarRelojClima() {
         setInterval(() => {
@@ -1424,16 +1421,8 @@ function inicializarEquipos() {
     if (!modal || !modalText || !mapa[pos]) return;
 
     let p = mapa[pos];
+    // Limpiamos los botones antes de cargar nada
     modalExtra.innerHTML = "";
-
-    // 1. SOLUCIÓN: Si es evento, mostramos el nombre del evento en lugar de ignorarlo
-    if (p.n === "?" || p.n === "ARCA COMUNAL") {
-        modalTitle.innerText = "Evento";
-        modalText.innerHTML = `<div class="card-property"><h3>${p.n}</h3><p>Al caer aquí, se activará un evento sorpresa.</p></div>`;
-        modalExtra.innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Cerrar</button>`;
-        modal.style.display = 'block';
-        return;
-    }
 
     if (p.p === 0) {
         modalTitle.innerText = p.n;
@@ -1445,18 +1434,18 @@ function inicializarEquipos() {
     
     let g = (typeof obtenerGrupo === 'function') ? obtenerGrupo(pos) : null;
     let esFerrocarril = (g && g.color === "#f5f5dc");
+    let iconos = { 8: "https://i.imgur.com/24NquXH.png", 24: "https://i.imgur.com/QMFz9pn.png", 26: "https://i.imgur.com/AINz8Jt.png", 27: "https://i.imgur.com/ZaN9ZUG.png" };
     
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val() || {};
         let prop = data.propiedades ? data.propiedades[pos] : null;
         
         let multClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].mult : 1.0;
-        let msgClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].msg : '¡El clima está tranquilo!';
         let nombreClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].n : 'Normal';
-        
         let porcentajes = [0.10, 0.15, 0.20, 0.30, 0.40, 0.50];
         let nivelesNombres = ["Base", "1 Casa", "2 Casas", "3 Casas", "4 Casas", "Hotel"];
         
+        // --- INFORMACIÓN DETALLADA (Siempre visible) ---
         let listaAlquileres = "";
         porcentajes.forEach((porc, i) => {
             let val = Math.floor(p.p * porc * multClima);
@@ -1466,8 +1455,10 @@ function inicializarEquipos() {
         modalTitle.innerText = "Tarjeta de Propiedad";
         let htmlCard = `<div class="card-property"><div class="card-header">${p.n}</div>`;
         
-        // Mensaje personalizado del clima
-        htmlCard += `<p style="color: #6a1b9a; font-size: 0.85em; font-style: italic;">"${msgClima}"</p>`;
+        if (esFerrocarril && iconos[pos]) {
+            htmlCard += `<div style="width: 80px; height: 80px; margin: 10px auto; background-color: #ff80bf; -webkit-mask: url('${iconos[pos]}') no-repeat center / contain; mask: url('${iconos[pos]}') no-repeat center / contain;"></div>`;
+        }
+        
         htmlCard += `<p>Valor compra: <b>$${esFerrocarril ? 600 : p.p}</b></p>`;
 
         if (prop) {
@@ -1479,11 +1470,13 @@ function inicializarEquipos() {
         }
 
         htmlCard += `<hr><p style="font-size: 0.9em;"><b>Alquileres (${nombreClima}):</b></p>
-                     <ul style="font-size: 0.85em; padding-left: 20px;">${esFerrocarril ? "<li>Si se poseen: $200, $250, $350, $450</li>" : listaAlquileres}</ul></div>`;
+                     <ul style="font-size: 0.85em; padding-left: 20px;">${esFerrocarril ? "<li>Si se poseen: $200, $250, $350, $450</li>" : listaAlquileres}</ul>`;
+        htmlCard += `</div>`;
 
-        // LÓGICA DE BOTONES (Sin alterar el funcionamiento de juego)
+        // --- LÓGICA DE BOTONES (Exclusiva) ---
         if (!prop && esCaida) {
-            modalExtra.innerHTML = `<button class="btn" onclick="comprar(${pos})">Comprar ($${esFerrocarril ? 600 : p.p})</button>`;
+            let precioCompra = esFerrocarril ? 600 : p.p;
+            modalExtra.innerHTML = `<button class="btn" onclick="comprar(${pos})">Comprar ($${precioCompra})</button>`;
         } else if (prop && prop.owner === miIdx) {
             if (!esFerrocarril && (prop.nivel || 0) < 5) modalExtra.innerHTML += `<button class="btn" onclick="mejorar(${pos})">Mejorar ($50)</button>`;
             modalExtra.innerHTML += `<button class="btn" style="background: #ad0c0c;" onclick="hipotecar(${pos})">${prop.hipotecada ? "Liberar" : "Hipotecar"}</button>`;
@@ -1492,7 +1485,8 @@ function inicializarEquipos() {
             if (esFerrocarril) {
                 let trans = [8, 24, 26, 27];
                 let count = trans.filter(idx => data.propiedades && data.propiedades[idx] && data.propiedades[idx].owner === prop.owner).length;
-                alqFinal = { 1: 200, 2: 250, 3: 350, 4: 450 }[count] || 200;
+                let tabla = { 1: 200, 2: 250, 3: 350, 4: 450 };
+                alqFinal = tabla[count] || 200;
             } else {
                 alqFinal = Math.floor(p.p * porcentajes[prop.nivel || 0] * multClima);
             }
@@ -1500,11 +1494,11 @@ function inicializarEquipos() {
         }
 
         modalExtra.innerHTML += `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Cerrar</button>`;
+        
         modalText.innerHTML = htmlCard;
         modal.style.display = 'block';
     });
 };
-        
 window.comprar = function(pos) {
     let propRef = db.ref('salas/' + sala + '/propiedades/' + pos);
     
@@ -1671,77 +1665,117 @@ function mejorar(pos) {
     input.value = ""; // Limpiar input
 }
     window.sincronizar = function() {
-    if (!yaEntro || !sala) return;
+    // PROTECCIÓN TOTAL: Si no hemos entrado, no intentamos sincronizar nada.
+    if (!yaEntro || !sala) {
+        console.log("Sincronización en espera: Usuario no ha entrado a la sala.");
+        return;
+    }
 
-    // 1. Sincronización del Chat (Mejorada: solo se ejecuta si el chat cambia)
+    // 1. Sincronización del Chat (Optimizado)
     db.ref('salas/' + sala + '/chat').on('value', snap => {
+        if (!yaEntro) return; 
         let chatLog = document.getElementById('chat-log');
         if (!chatLog) return;
-        
-        // Guardamos si el usuario estaba al final del scroll
-        let isAtBottom = chatLog.scrollHeight - chatLog.clientHeight <= chatLog.scrollTop + 1;
-        
         chatLog.innerHTML = ""; 
         snap.forEach(msgSnap => {
             let m = msgSnap.val();
             let hora = m.t ? `<small style="color:gray;">[${m.t}]</small> ` : "";
             chatLog.innerHTML += `<div>${hora}<b>${m.n}:</b> ${m.m}</div>`;
         });
-        
-        if (isAtBottom) chatLog.scrollTop = chatLog.scrollHeight;
+        chatLog.scrollTop = chatLog.scrollHeight;
     });
 
     // 2. Sincronización del Juego
     db.ref('salas/' + sala).on('value', snap => { 
+        if (!yaEntro) return; 
         let s = snap.val(); 
         if(!s) return; 
 
-        // Actualizar dinero y REPUTACIÓN (Validar que el elemento existe antes de asignar)
+        // Actualizar dinero y REPUTACIÓN
         if (s.jugadores && s.jugadores[miIdx]) {
             let player = s.jugadores[miIdx];
-            let dineroEl = document.getElementById('dinero-mio');
-            if (dineroEl) dineroEl.innerText = player.dinero;
+            // Actualizar dinero
+            document.getElementById('dinero-mio').innerText = player.dinero;
             
+            // --- NUEVO: Actualizar Barra de Reputación ---
+            let rep = player.reputacion || 100; // Valor por defecto 100
             let barra = document.getElementById('barra-reputacion');
             if (barra) {
-                let rep = player.reputacion || 100;
                 barra.style.width = rep + "%";
+                // Opcional: cambio de color dinámico
                 barra.style.backgroundColor = rep < 30 ? "#ff4d4d" : (rep < 60 ? "#ffa500" : "#4caf50");
             }
         }
 
-        // Actualizar Turnos y Clima
+        // Actualizar Turnos
         let turnoText = document.getElementById('turno-text');
-        if (turnoText && s.turno !== undefined) {
+        if (turnoText && s.turno !== undefined && typeof nombres !== 'undefined') {
             turnoText.innerText = "Turno: " + (nombres[s.turno] || "Jugador " + (s.turno + 1));
         }
 
+        // Actualizar Clima
         if(s.clima !== undefined && typeof climas !== 'undefined') { 
-            let climaDisplay = document.getElementById('clima-display');
-            if(climaDisplay) climaDisplay.innerText = "Estación: " + climas[s.clima].n; 
+            let c = climas[s.clima]; 
+            document.getElementById('clima-display').innerText = "Estación: " + c.n; 
         }
 
-        // Actualizar Fichas y Propiedades (Sin cambios de lógica, solo mayor seguridad)
+        // Actualizar Fichas
         if (s.jugadores) {
             s.jugadores.forEach((j, i) => { 
                 let el = document.getElementById('p' + i); 
-                let cell = document.getElementById('cell-' + j.pos); 
-                if (el && cell) {
+                if (el && j) {
                     el.style.display = 'block'; 
-                    el.style.left = (cell.offsetLeft + 30) + 'px'; 
-                    el.style.top = (cell.offsetTop + 30) + 'px';
+                    let cell = document.getElementById('cell-' + j.pos); 
+                    if (cell) {
+                        el.style.left = (cell.offsetLeft + 30) + 'px'; 
+                        el.style.top = (cell.offsetTop + 30) + 'px';
+                    }
                 }
             });
         }
 
-        // Misiones (Lógica intacta)
+        // Actualizar Propiedades
+        if(s.propiedades) { 
+            Object.keys(s.propiedades).forEach(pos => { 
+                let cell = document.getElementById('cell-' + pos);
+                if(cell) {
+                    if (typeof colores !== 'undefined') {
+                        cell.style.backgroundColor = s.propiedades[pos].hipotecada ? "#ccc" : colores[s.propiedades[pos].owner];
+                    }
+                    let hc = cell.querySelector('.house-container'); 
+                    if (hc) {
+                        hc.innerHTML = "";
+                        let nivel = s.propiedades[pos].nivel || 0;
+                        if(nivel > 0 && nivel < 5) { for(let i=0; i<nivel; i++) { let h = document.createElement('div'); h.className = 'house'; hc.appendChild(h); } }
+                        else if(nivel === 5) { let h = document.createElement('div'); h.className = 'hotel'; hc.appendChild(h); }
+                    }
+                }
+            }); 
+        }
+
+        // Actualizar Log
+        if(s.log) { 
+            let h = ""; Object.values(s.log).forEach(l => h += l + "<br>"); 
+            let logEl = document.getElementById('log');
+            if(logEl) logEl.innerHTML = h; 
+        }
+
+        // Misiones
         if (s.jugadores && s.jugadores[miIdx]) {
             if (typeof verificarMisionCajaFuerte === 'function') verificarMisionCajaFuerte(miIdx, s.jugadores[miIdx].dinero);
             if (s.jugadores[miIdx].ultimaMision) {
                 let m = s.jugadores[miIdx].ultimaMision;
-                const mensajes = { /* ... tus mensajes ... */ };
-                if (mensajes[m] && typeof mostrarNotificacionMision === 'function') {
-                    mostrarNotificacionMision(mensajes[m]);
+                const mensajes = {
+                    "negociador": "¡Has ganado $400 por tu primer intercambio!",
+                    "inversor": "¡Felicidades! Has ganado $200 por ser un Inversor Inicial.",
+                    "coleccionista": "¡Felicidades! Has ganado $300 por completar un set de color.",
+                    "cajafuerte": "¡Felicidades! Has acumulado $2,000. ¡Un premio de $650 irá directo a tu caja fuerte!",
+                    "intocable": "¡El Intocable! Otros jugadores han caído 5 veces en tus propiedades. ¡Has ganado $400!",
+                    "renovador": "¡Excelente constructor! Has construido 5 casas en total. ¡Has ganado $500!",
+                    "monopolioTotal": "¡INCREÍBLE! Has conseguido el Monopolio Total. ¡Premio de $1,500!"
+                };
+                if (mensajes[m]) {
+                    if (typeof mostrarNotificacionMision === 'function') mostrarNotificacionMision(mensajes[m]);
                     db.ref('salas/' + sala + '/jugadores/' + miIdx + '/ultimaMision').remove();
                 }
             }
