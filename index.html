@@ -1364,14 +1364,33 @@ function procesarPago(d, a, m, esEvasion = false) {
             let duenoNombre = (nombres && nombres[prop.owner]) ? nombres[prop.owner] : "Jugador " + (prop.owner + 1);
             htmlCard += `<p>Dueño: <b>${duenoNombre}</b></p>`;
             let alqFinal = esFerrocarril ? obtenerAlquilerFerrocarril(prop.owner, data.propiedades || {}) : Math.floor(p.p * porcentajes[prop.nivel || 0] * multClima);
-            htmlCard += `<p>Alquiler: <b>$${alqFinal}</b></p>`;
-            if(esCaida && !prop.hipotecada) modalExtra.innerHTML = `<button class="btn" onclick="procesarPago(${miIdx}, ${prop.owner}, ${alqFinal})">Pagar Alquiler</button>`;
+            htmlCard += `<p>Alquiler a pagar: <b>$${alqFinal}</b></p>`;
+            if(esCaida && !prop.hipotecada) {
+                modalExtra.innerHTML = `
+                    <button class="btn" onclick="procesarPago(${miIdx}, ${prop.owner}, ${alqFinal})">Pagar Alquiler</button>
+                    <button class="btn" style="background: orange;" onclick="intentarEvasion(${miIdx}, ${prop.owner}, ${alqFinal})">Evadir (30%)</button>
+                `;
+            }
         }
         
         htmlCard += `<hr><p style="font-size: 11px;"><b>Alquiler (${nombreClima}):</b></p><ul style="font-size: 11px; padding-left: 20px;">${listaAlquileres}</ul></div>`;
         modalText.innerHTML = htmlCard;
         modal.style.display = 'block';
     });
+};
+
+window.intentarEvasion = function(d, a, m) {
+    let exito = Math.random() < 0.30;
+    document.getElementById('modal').style.display = 'none';
+    if(exito) {
+        let montoFinal = Math.floor(m / 2);
+        procesarPago(d, a, montoFinal);
+        log(nombres[d] + " evadió el alquiler. Pagó $" + montoFinal);
+    } else {
+        let montoFinal = m + 50;
+        procesarPago(d, a, montoFinal);
+        log(nombres[d] + " falló la evasión. Pagó $" + montoFinal + " (multa incluida).");
+    }
 };
 
 function ejecutarEvento(nombreCasilla) {
