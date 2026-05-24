@@ -167,102 +167,80 @@
 #cell-15 { grid-column: 2; grid-row: 1; } #cell-16 { grid-column: 3; grid-row: 1; } #cell-17 { grid-column: 4; grid-row: 1; } #cell-18 { grid-column: 5; grid-row: 1; } #cell-19 { grid-column: 6; grid-row: 1; } #cell-20 { grid-column: 7; grid-row: 1; } #cell-21 { grid-column: 8; grid-row: 1; }
 /* Columna derecha (8) */
 #cell-22 { grid-column: 8; grid-row: 2; } #cell-23 { grid-column: 8; grid-row: 3; } #cell-24 { grid-column: 8; grid-row: 4; } #cell-25 { grid-column: 8; grid-row: 5; } #cell-26 { grid-column: 8; grid-row: 6; } #cell-27 { grid-column: 8; grid-row: 7; }
-    <!-- MODAL DE DEDICATORIA: -->
-<div id="dedicatoria-modal" style="display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 240, 243, 0.8); z-index: 1000; justify-content: center; align-items: center;">
-    <div style="background: white; padding: 30px; border-radius: 20px; border: 2px solid #ff80bf; text-align: center; position: relative; width: 300px; color: #c71585;">
-        <span onclick="document.getElementById('dedicatoria-modal').style.display='none'" style="position: absolute; top: 10px; right: 15px; cursor: pointer; font-size: 20px; font-weight: bold;">&times;</span>
-        <p style="font-family: 'Montserrat', sans-serif; font-size: 16px; font-style: italic;">
-            "A Naeun, mi musa; porque todas mis mejores ideas nacen pensando en ella."
-        </p>
-        <p style="font-weight: bold;">- Seojun</p>
-    </div>
-    </style>
-</head>
-<body>
-    <audio loop autoplay>
-        <source src="https://dl.dropbox.com/scl/fi/5oxzgnxoe30zqd4m6hdfh/kawaii-playlist-for-snack-time-BGM-POP.mp3?rlkey=1lw76u3u1w1ck3dj2ej5x7ml7&st=y6j07iwx&dl=1" type="audio/mpeg">
-    </audio>
-
-    <div class="container">
-        <div class="game-column">
-            <div class="board" id="board">
-                <img src="https://i.imgur.com/FGnMi8Y.png" id="p0" class="token" style="display:none" alt="Dog">
-                <img src="https://i.imgur.com/fRZJfP8.png" id="p1" class="token" style="display:none" alt="Horse">
-                <img src="https://i.imgur.com/u2AtssG.png" id="p2" class="token" style="display:none" alt="Hat">
-                <img src="https://i.imgur.com/ekQp8WL.png" id="p3" class="token" style="display:none" alt="Car">
+    </style></head><body><audio loop autoplay>
+    <source src="https://dl.dropbox.com/scl/fi/5oxzgnxoe30zqd4m6hdfh/kawaii-playlist-for-snack-time-BGM-POP.mp3?rlkey=1lw76u3u1w1ck3dj2ej5x7ml7&st=y6j07iwx&dl=1" type="audio/mpeg"></audio><div class="container">
+    <div class="game-column">
+        <div class="board" id="board">
+            <img src="https://i.imgur.com/FGnMi8Y.png" id="p0" class="token" style="display:none" alt="Ficha del jugador Dog">
+            <img src="https://i.imgur.com/fRZJfP8.png" id="p1" class="token" style="display:none" alt="Ficha del jugador Horse">
+            <img src="https://i.imgur.com/u2AtssG.png" id="p2" class="token" style="display:none" alt="Ficha del jugador Hat">
+            <img src="https://i.imgur.com/ekQp8WL.png" id="p3" class="token" style="display:none" alt="Ficha del jugador Car">
 
             <div id="modal" class="modal">
-                <div class="modal-body">
-                    <span class="close" onclick="document.getElementById('modal').style.display='none'">&times;</span>
-                    <h2 id="modal-title"></h2>
-                    <div id="modal-text" class="modal-content-scroll"></div>
-                    <div id="modal-extra"></div>
-                </div>
-            </div>
-
+    <div class="modal-body">
+        <span class="close" onclick="document.getElementById('modal').style.display='none'">&times;</span>
+        
+        <h2 id="modal-title"></h2>
+        <div id="modal-text" class="modal-content-scroll"></div>
+        <div id="modal-extra"></div>
+    </div>
+</div>
+            
             <div class="center-zone">
-                <div class="reputacion-wrapper">
-                    <div class="reputacion-label" style="cursor: pointer;" onclick="abrirInfoReputacion()">Reputación (Click para ver)</div>
-                    <div class="reputacion-container">
-                        <div id="rep-bar" class="reputacion-bar"></div>
-                    </div>
-                </div>
-                <div id="clima-display" style="font-size: 13px; color: #ff59aa; font-weight: bold;">Clima: -</div>
-                <div id="turno-text" style="font-weight:bold;">ESPERANDO...</div>
-                <div id="dado-valor">0</div>
-                <img src="https://i.imgur.com/Nsafzb4.png" style="width:60px; cursor:pointer" onclick="tirarDado()" alt="Lanzar dado">
-                <div>💖 $<span id="dinero-mio">1000</span></div>
-                <div style="font-size: 13px; margin-top: 5px;">Monto de impuestos actuales: $<span id="monto-impuestos">0</span></div>
-                <button class="btn" onclick="abrirModalMisiones()">Ver Misiones</button>
-            </div>
-        </div> <div id="banco-container">
+    <div class="reputacion-wrapper">
+        <div class="reputacion-label" style="cursor: pointer;" onclick="abrirInfoReputacion()">
+    Reputación (Click para ver)
+</div>
+        <div class="reputacion-container">
+            <div id="rep-bar" class="reputacion-bar"></div>
+        </div>
+    </div>
+            <div id="clima-display" style="font-size: 13px; color: #ff59aa; font-weight: bold;">Clima: -</div>
+    <div id="turno-text" style="font-weight:bold;">ESPERANDO...</div>
+    <div id="dado-valor">0</div>
+    <img src="https://i.imgur.com/Nsafzb4.png" style="width:60px; cursor:pointer" onclick="tirarDado()" alt="Lanzar dado">
+    <div>💖 $<span id="dinero-mio">1000</span></div>
+    <div style="font-size: 13px; margin-top: 5px;">Monto de impuestos actuales: $<span id="monto-impuestos">0</span></div>
+    
+    <button class="btn" onclick="abrirModalMisiones()">Ver Misiones</button>
+</div>
+        </div>
+
+    
+        <div id="banco-container">
             <button class="btn" style="width: 140px" onclick="abrirBanco()">🏦 Banco</button>
             <button class="btn" style="width: 140px" onclick="pagarPrestamo()">💳 Pagar Préstamo</button>
             <button class="btn" style="width: 140px" onclick="verSaldos()">💰 Ver Saldos</button>
             <button class="btn" style="width: 140px; background: #ff59aa;" onclick="abrirIntercambio()">🤝 Intercambiar</button>
         </div>
-    </div> <div class="sidebar">
+    </div>
+
+    <div class="sidebar">
         <div class="panel">
             <strong>Unirse a Sala</strong>
             <input type="text" id="sala-id" class="input-field" placeholder="Nombre de la sala">
             <button class="btn" id="btn-unirse" onclick="unirse()">Entrar a la sala</button>
         </div>
         <div class="panel">
-            <strong>Historial</strong>
-            <div id="log"></div>
-            <strong>Chat</strong>
-            <div id="chat-log" style="height: 90px; overflow-y: auto;"></div>
+            <strong>Historial</strong><div id="log"></div>
+            <strong>Chat</strong><div id="chat-log"></div>
             <input type="text" id="chat-msg" class="input-field" placeholder="Mensaje...">
             <button class="btn" onclick="enviarChat()">Enviar</button>
-        <button class="btn" onclick="abrirModal('Modo 2v2', 'El modo 2v2 está en desarrollo. La actualización se hará tan pronto como sea posible.')">
-    Activar Modo 2v2
-</button>
-    <div id="modal-2v2" class="modal" style="display: none;">
-    <div class="modal-body">
-        <span class="close" onclick="document.getElementById('modal-2v2').style.display='none'">&times;</span>
-        <h2>Modo 2v2</h2>
-        <div class="modal-content-scroll">
-            <p>El modo 2v2 requiere 4 jugadores.</p>
-        </div>
-        <div id="modal-extra">
-            <button class="btn" onclick="document.getElementById('modal-2v2').style.display='none'">Aceptar</button>
         </div>
     </div>
 </div>
 
-<div id="modal-misiones" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;">
-    <div style="background: #ffe4e9; padding: 20px; border-radius: 10px; text-align: center;">
+<div id="modal-misiones" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 350px; background: #ffe4e9; padding: 20px; border: 3px solid #ff80bf; border-radius: 15px; text-align: center; z-index: 1000;"> 
         <h3>Misiones Disponibles</h3>
         <ul id="lista-misiones"></ul>
-        <button class="btn" onclick="document.getElementById('modal-misiones').style.display='none'">Cerrar</button>
+        <button class="btn" onclick="document.getElementById('modal-misiones').style.display = 'none'">Cerrar</button>
     </div>
-</div>
 
-<div id="modal-mision-completada" class="modal" style="display: none;">
-    <h3 style="color: #ff59aa;">¡Misión Completada!</h3>
-    <p id="msg-mision" style="font-weight: bold;"></p>
-    <button class="btn" onclick="document.getElementById('modal-mision-completada').style.display = 'none'">¡Genial!</button>
-</div>
+    <div id="modal-mision-completada" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 320px; background: #fff; padding: 20px; border: 4px solid #ff80bf; border-radius: 15px; text-align: center; z-index: 9999;">
+        <h3 style="color: #ff59aa;">¡Misión Completada!</h3>
+        <p id="msg-mision" style="font-weight: bold;"></p>
+        <button class="btn" onclick="document.getElementById('modal-mision-completada').style.display = 'none'">¡Genial!</button>
+    </div>
 
     <script>
     const firebaseConfig = { databaseURL: "https://monopolovely-default-rtdb.firebaseio.com" };
@@ -302,29 +280,6 @@
     // 2. Buscamos el grupo de forma segura
     // Usamos ?. (encadenamiento opcional) para evitar errores si 'indices' falta
     return grupos.find(g => g.indices && g.indices.includes(pos)) || null;
-}
-
-
-        function getColorEquipo(equipo) {
-    if (equipo === "A") return "#4a90e2"; // Azul para equipo A
-    if (equipo === "B") return "#e74c3c"; // Rojo para equipo B
-    return "#cccccc"; // Gris por defecto
-}
-        
-        // Función que verifica si el equipo tiene el monopolio de un color
-function verificarMonopolioEquipo(pos, equipo, data) {
-    let grupoColor = obtenerGrupo(pos).color;
-    let propiedades = data.propiedades || {};
-    let totalNecesario = obtenerGrupo(pos).indices.length;
-    let propiedadesEquipo = 0;
-
-    // Iteramos sobre todas las propiedades buscando coincidencias de equipo y color
-    for (let pId in propiedades) {
-        if (propiedades[pId].color === grupoColor && propiedades[pId].equipo === equipo) {
-            propiedadesEquipo++;
-        }
-    }
-    return propiedadesEquipo === totalNecesario;
 }
 
     // Variables de clima ampliadas
@@ -566,108 +521,68 @@ window.crearNuevaSala = function(nombreSala) {
 function procederConUnion(nombreSala) {
     sala = nombreSala;
     if (yaEntro) return;
+    yaEntro = true;
     
     let btn = document.getElementById('btn-unirse');
     if (btn) btn.disabled = true;
 
     db.ref('salas/' + sala + '/jugadores').once('value', snap => {
-        let jugadores = snap.val() || [];
-        let miNombreGuardado = localStorage.getItem('monopoly_nombre');
-        let encontrado = false;
-        let indexEncontrado = -1;
-
-        // 1. BUSCAR POR NOMBRE: Si el nombre ya existe en la sala, reconectamos
-        jugadores.forEach((j, index) => {
-            if (j && j.nombre === miNombreGuardado) {
-                indexEncontrado = index;
-                encontrado = true;
-            }
-        });
-
-        // 2. Asignar miIdx correctamente
-        if (encontrado) {
-            miIdx = indexEncontrado;
-            console.log("Reconectado como: " + miNombreGuardado + " en índice: " + miIdx);
-        } else {
-            // Nuevo jugador: usamos el primer índice disponible o el final
-            miIdx = jugadores.length;
-            let nuevoNombre = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
-            localStorage.setItem('monopoly_nombre', nuevoNombre);
-            console.log("Nuevo jugador registrado como: " + nuevoNombre);
-        }
-
-        yaEntro = true;
-        let miNombre = localStorage.getItem('monopoly_nombre');
+        miIdx = snap.numChildren();
+        let miNombre = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
         let jugadorRef = db.ref('salas/' + sala + '/jugadores/' + miIdx);
         
-        // Usamos update para mantener datos previos si existían
-        jugadorRef.update({
-            pos: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].pos : 0,
-            dinero: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].dinero : 1000,
-            enCarcel: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].enCarcel : 0,
+        jugadorRef.set({
+            pos: 0,
+            dinero: 1000,
+            enCarcel: 0,
             nombre: miNombre,
-            tienePrestamo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].tienePrestamo : false,
-            montoPrestamo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].montoPrestamo : 0,
-            escudo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].escudo : false,
-            quiebraTecnica: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].quiebraTecnica : 0
+            tienePrestamo: false,
+            montoPrestamo: 0,
+            // --- NUEVAS PROPIEDADES PARA LOGROS ---
+            escudo: false,
+            quiebraTecnica: 0
+            // --------------------------------------
         }).then(() => {
+            // Guardamos sala para reconexión
             localStorage.setItem('monopoly_sala', sala);
             
-            // Mensaje en chat
+            // 1. Limpiamos jugador al desconectar
+            jugadorRef.onDisconnect().remove();
+            
+            // 2. CONFIGURAMOS EL MENSAJE DE ABANDONO
+            let chatRef = db.ref('salas/' + sala + '/chat').push();
+            chatRef.onDisconnect().set({ n: "Sistema", m: miNombre + " ha abandonado." });
+            
+            // 3. ENVIAMOS MENSAJE DE ENTRADA
             db.ref('salas/' + sala + '/chat').push({ 
                 n: "Sistema", 
-                m: miNombre + (encontrado ? " ha vuelto a la partida." : " ha entrado a la sala.") 
+                m: miNombre + " ha entrado a la sala." 
             });
 
-            // Solo el primero inicia el clima
-            if (miIdx === 0 && !encontrado) {
+            if (miIdx === 0) {
                 db.ref('salas/' + sala + '/turno').set(0);
                 if (typeof iniciarRelojClima === 'function') iniciarRelojClima();
             }
 
             sincronizar();
         }).catch(error => {
-            console.error(error);
+            console.error("Error al unirse a la sala:", error);
             yaEntro = false;
             if (btn) btn.disabled = false;
         });
     });
 }
 
-        // Función para disparar la alerta con el mismo estilo
-window.toggleModo2v2 = function() {
-    db.ref('salas/' + sala + '/jugadores').once('value', snap => {
-        let count = snap.numChildren();
-        
-        if (count !== 4) {
-            let modal = document.getElementById('modal-2v2');
-            if (modal) {
-                modal.style.display = 'block';
-            }
-            return;
-        }
-        
-        console.log("Modo 2v2 activado");
-    });
-};
 
         function calcularAlquiler(precioBase, duenoIdx) {
-    // 1. Obtener reputación del dueño para el cálculo del precio
+    // Si no tiene reputación, por defecto es 50
     let rep = (window.jugadores && window.jugadores[duenoIdx]) ? (window.jugadores[duenoIdx].reputacion || 50) : 50;
     let multiplicador = 1.0; 
 
-    if (rep >= 90) multiplicador = 1.10;      // Bonus del dueño: +10%
-    else if (rep <= 30) multiplicador = 0.85; // Rumores del dueño: -15%
+    if (rep >= 90) multiplicador = 1.10;      // Bonus: +10%
+    else if (rep <= 30) multiplicador = 0.85;  // Rumores: -15%
 
-    // 2. Calcular precio base ajustado por reputación
-    let precioAjustado = precioBase * multiplicador;
-
-    // 3. Aplicar descuento de aliado si aplica (usando tu nueva función de bonos)
-    // Asumimos que miIdx es la variable global del jugador actual
-    let bonoAliado = obtenerBonosReputacion(miIdx); 
-    
-    // 4. Retornar el total final
-    return Math.floor(precioAjustado * bonoAliado);
+    return Math.floor(precioBase * multiplicador);
 }
         
 
@@ -1204,20 +1119,7 @@ window.abrirIntercambio = function() {
 };
         
 
-    function hipotecar(pos) { 
-    // Actualizamos solo el estado hipotecado, manteniendo el resto (owner, nivel, equipo) intactos
-    db.ref('salas/' + sala + '/propiedades/' + pos).update({
-        hipotecada: true
-    }); 
-    
-    // Sumamos la mitad del valor original de la propiedad al dinero del jugador
-    db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => d + Math.floor(mapa[pos].p / 2)); 
-    
-    log(nombres[miIdx] + " hipotecó " + mapa[pos].n); 
-    
-    // Cerramos el modal
-    document.getElementById('modal').style.display = 'none'; 
-}
+    function hipotecar(pos) { db.ref('salas/'+sala+'/propiedades/'+pos).update({hipotecada: true}); db.ref('salas/'+sala+'/jugadores/'+miIdx+'/dinero').transaction(d => d + Math.floor(mapa[pos].p/2)); log(nombres[miIdx] + " hipotecó " + mapa[pos].n); document.getElementById('modal').style.display = 'none'; }
     function liberar(pos) { db.ref('salas/'+sala+'/propiedades/'+pos).update({hipotecada: false}); db.ref('salas/'+sala+'/jugadores/'+miIdx+'/dinero').transaction(d => d - Math.floor(mapa[pos].p*0.6)); log(nombres[miIdx] + " liberó " + mapa[pos].n); document.getElementById('modal').style.display = 'none'; }
     function intentarEvasion(d, a, m) { let exito = Math.random() < 0.30; if(exito) { let montoFinal = Math.floor(m / 2); procesarPago(d, a, montoFinal, true); log(nombres[d] + " evadió el alquiler exitosamente. Pagará $" + montoFinal); } else { let montoFinal = m + 50; procesarPago(d, a, montoFinal, false); log(nombres[d] + " falló su evasión de pago. Paga $" + montoFinal); } }
 
@@ -1226,18 +1128,25 @@ window.abrirIntercambio = function() {
     if (pos === 9) {
         log(nombres[miIdx] + " ha caído en la CÁRCEL.");
         
-        db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ enCarcel: 2 });
+        // Primero actualizamos Firebase
+        db.ref('salas/' + sala + '/jugadores/' + miIdx).update({
+            enCarcel: 2 
+        });
 
+        // Ahora configuramos el modal
         document.getElementById('modal-title').innerText = "Cárcel";
         document.getElementById('modal-text').innerText = "¡Estás en la cárcel! Tienes derecho a un abogado.";
+        
         document.getElementById('modal-extra').innerHTML = `
             <button class="btn" onclick="pagarFianza()">Pagar Fianza ($200)</button>
             <button class="btn" onclick="intentarHackeo()">Hackear Sistema (50/50)</button>
             <button class="btn" onclick="document.getElementById('modal').style.display = 'none'; pasarTurno();">Quedarse</button>
         `;
+        
         document.getElementById('modal').style.display = 'block';
         turnosSeis = 0;
-        return;
+        
+        return; // Detiene la ejecución aquí
     }
 
     let p = mapa[pos];
@@ -1285,17 +1194,12 @@ window.abrirIntercambio = function() {
             if (!prop) {
                 verPropiedad(pos, true);
             } else if (prop.owner !== miIdx) {
-                // Validación de aliado para Ferrocarril
-                if (prop.equipo && jugadores[miIdx] && prop.equipo === jugadores[miIdx].equipo) {
-                    log("¡Es propiedad de tu aliado " + nombres[prop.owner] + ", estás a salvo!");
-                } else {
-                    let trans = [8, 24, 26, 27];
-                    let count = trans.filter(i => data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
-                    let tabla = { 1: 100, 2: 150, 3: 250, 4: 300 };
-                    let alquiler = tabla[count] || 100;
-                    procesarPago(miIdx, prop.owner, alquiler);
-                    log(nombres[miIdx] + " pagó $" + alquiler + " de transporte a " + nombres[prop.owner]);
-                }
+                let trans = [8, 24, 26, 27];
+                let count = trans.filter(i => data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
+                let tabla = { 1: 100, 2: 150, 3: 250, 4: 300 };
+                let alquiler = tabla[count] || 100;
+                procesarPago(miIdx, prop.owner, alquiler);
+                log(nombres[miIdx] + " pagó $" + alquiler + " de transporte a " + nombres[prop.owner]);
             } else {
                 verPropiedad(pos, false);
             }
@@ -1303,77 +1207,10 @@ window.abrirIntercambio = function() {
         return;
     }
 
-    // CASO PROPIEDAD NORMAL
-    db.ref('salas/' + sala + '/propiedades/' + pos).once('value', snap => {
-        let prop = snap.val();
-        // Si tiene dueño y no soy yo, verificamos alianza
-        if (prop && prop.owner !== miIdx && prop.owner !== undefined) {
-            if (prop.equipo && jugadores[miIdx] && prop.equipo === jugadores[miIdx].equipo) {
-                log("¡Es propiedad de tu aliado " + nombres[prop.owner] + ", estás a salvo!");
-                return;
-            }
-        }
-        // Si no es aliado, procedemos con el flujo normal de compra/pago
-        verPropiedad(pos, true);
-    });
+    // SI NO ES NINGUNA DE LAS ANTERIORES, ES PROPIEDAD NORMAL
+    verPropiedad(pos, true);
 }
 
-
-        function toggleModo2v2() {
-    db.ref('salas/' + sala + '/jugadores').once('value', snap => {
-        let count = snap.numChildren();
-        
-        if (count !== 4) {
-            alert("El modo 2v2 requiere 4 jugadores.");
-            return;
-        }
-
-        // 1. Inicializamos equipos y reputación de forma segura (sin borrar nombres)
-        let jugadores = snap.val();
-        for (let idx in jugadores) {
-            // Asigna Equipo A a 0 y 1; Equipo B a 2 y 3
-            let equipoAsignado = (idx === "0" || idx === "1") ? "A" : "B";
-            db.ref('salas/' + sala + '/jugadores/' + idx).update({ 
-                equipo: equipoAsignado, 
-                reputacion: 50 
-            });
-        }
-
-        // 2. Guardamos la configuración global de la sala para validar aliados fácilmente
-        db.ref('salas/' + sala + '/config').update({ 
-            modo: '2v2',
-            equipoA: [0, 1],
-            equipoB: [2, 3]
-        });
-        
-        // 3. También lo marcamos en la raíz por compatibilidad
-        db.ref('salas/' + sala + '/modo2v2').set(true);
-
-        log("¡Modo 2v2 ACTIVADO! Equipos A [0,1] y B [2,3] formados.");
-    });
-}
-
-function inicializarEquipos() {
-    // Leemos los jugadores que ya están en la sala para no borrar sus nombres
-    db.ref('salas/' + sala + '/jugadores').once('value', snap => {
-        let jugadores = snap.val();
-        
-        if (!jugadores) return;
-
-        // Iteramos sobre los índices (0, 1, 2, 3) que ya existen en la base de datos
-        for (let idx in jugadores) {
-            // Asignamos el equipo: 0 y 1 son Equipo A, 2 y 3 son Equipo B
-            let equipoAsignado = (idx === "0" || idx === "1") ? "A" : "B";
-            
-            // Actualizamos SOLO el equipo y la reputación, manteniendo el nombre intacto
-            db.ref('salas/' + sala + '/jugadores/' + idx).update({ 
-                equipo: equipoAsignado, 
-                reputacion: 50 // O el valor que prefieras por defecto
-            });
-        }
-        log("Equipos asignados: 0 y 1 son Equipo A, 2 y 3 son Equipo B.");
-    });
-}
 
         function intentarHackeo() {
     let exito = Math.random() < 0.5;
@@ -1438,9 +1275,12 @@ function inicializarEquipos() {
     let modalExtra = document.getElementById('modal-extra');
     let modalTitle = document.getElementById('modal-title');
 
+    // Validación de seguridad para evitar que la función se rompa
     if (!modal || !modalText || !mapa[pos]) return;
 
     let p = mapa[pos];
+    
+    // Si la casilla no tiene precio, mostramos información básica y salimos
     if (p.p === 0) {
         modalTitle.innerText = p.n;
         modalText.innerHTML = "Casilla especial: " + p.n;
@@ -1472,10 +1312,13 @@ function inicializarEquipos() {
         });
         
         modalTitle.innerText = "Tarjeta de Propiedad";
+        
         let htmlCard = `<div class="card-property"><div class="card-header">${p.n}</div>`;
+            
         if (esFerrocarril && iconos[pos]) {
             htmlCard += `<div style="width: 80px; height: 80px; margin: 30px auto 10px auto; background-color: #ff80bf; -webkit-mask: url('${iconos[pos]}') no-repeat center / contain; mask: url('${iconos[pos]}') no-repeat center / contain;"></div>`;
         }
+            
         htmlCard += `<p>Valor de compra: <b>$${esFerrocarril ? 600 : p.p}</b></p>`;
 
         if (!prop) {
@@ -1517,59 +1360,80 @@ function inicializarEquipos() {
         modal.style.display = 'block';
     });
 }
+    function ejecutarEvento(nombreCasilla) {
+        let carta = obtenerCarta();
+        db.ref('salas/'+sala+'/jugadores/'+miIdx+'/dinero').transaction(d => {
+            let nuevo = Number(d) + carta.v;
+            setTimeout(() => verificarBancarrota(miIdx, nuevo), 500);
+            return nuevo;
+        });
+        log(nombres[miIdx] + " cayó en " + nombreCasilla + ": " + carta.txt);
+        document.getElementById('modal-title').innerText = nombreCasilla;
+        document.getElementById('modal-text').innerText = carta.txt;
+        document.getElementById('modal-extra').innerHTML = ""; 
+        document.getElementById('modal').style.display = 'block';
+    }
 
-function comprar(pos) { 
+    function procesarPago(d, a, m, esEvasionLog = false) {
+        db.ref('salas/' + sala + '/jugadores').transaction(j => {
+            if(!j) return;
+            j[d].dinero = Number(j[d].dinero) - m;
+            j[a].dinero = Number(j[a].dinero) + m;
+            setTimeout(() => { db.ref('salas/' + sala + '/jugadores/' + d + '/dinero').once('value', s => verificarBancarrota(d, s.val())); }, 500);
+            return j;
+        });
+        if(!esEvasionLog) log(nombres[d] + " pagó $" + m + " a " + nombres[a]);
+        alquilerPendiente = null;
+        document.getElementById('modal').style.display = 'none';
+    }
+
+    function comprar(pos) { 
     log(nombres[miIdx] + " compró " + mapa[pos].n); 
-    
-    // Obtenemos el equipo del jugador actual de forma segura
-    let equipoJugador = (jugadores && jugadores[miIdx]) ? (jugadores[miIdx].equipo || null) : null;
-    
-    // Guardamos la propiedad en Firebase con su dueño, nivel inicial y su equipo asociado
-    db.ref('salas/' + sala + '/propiedades/' + pos).set({
-        owner: miIdx, 
-        nivel: 0, 
-        hipotecada: false,
-        equipo: equipoJugador // Etiquetamos la propiedad para las validaciones de alianza
-    }); 
-    
-    // Restamos el dinero del jugador
+    db.ref('salas/' + sala + '/propiedades/' + pos).set({owner: miIdx, nivel: 0, hipotecada: false}); 
     db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => Number(d) - Number(mapa[pos].p)); 
     
-    // Verificamos el progreso de las misiones
+    // --- LLAMADAS A LAS MISIONES ---
+    // Verificamos si con esta compra llegó a 3 propiedades
     verificarMisionInversor(miIdx);
+    
+    // Verificamos si con esta compra completó algún set de colores
     verificarMisionColeccionista(miIdx);
+    
+    // Verificamos si completó los sets más caros
+    verificarMisionMonopolioTotal(miIdx);
+
+        // El jugador que realiza la acción es siempre miIdx
     verificarMisionMonopolioTotal(miIdx);
     
-    // Cerramos el modal tras la compra
     document.getElementById('modal').style.display = 'none'; 
 }
-
-function mejorar(pos) {
+    function mejorar(pos) {
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val();
+        let grupo = obtenerGrupo(pos);
         let prop = data.propiedades ? data.propiedades[pos] : null;
-        let miEquipo = jugadores[miIdx].equipo;
 
-        // Ahora usamos la función que acabamos de incluir para validar
-        let tieneMonopolio = verificarMonopolioEquipo(pos, miEquipo, data);
+        // Validar que el jugador posee todas las propiedades del grupo
+        let todasPropias = grupo.indices.every(idx => 
+            data.propiedades && 
+            data.propiedades[idx] && 
+            data.propiedades[idx].owner === miIdx
+        );
 
-        if (!tieneMonopolio) {
-            alert("Necesitas tener el control total del grupo (tú o tu aliado) para mejorar.");
+        if (!todasPropias) {
+            document.getElementById('modal-title').innerText = "¡Acción Bloqueada!";
+            document.getElementById('modal-text').innerText = "Necesitas ser dueño de todas las propiedades del mismo grupo para construir.";
+            document.getElementById('modal').style.display = 'block';
             return;
         }
 
+        // Si pasa la validación, procedemos a mejorar
         if (prop.nivel < 5) {
             db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => {
                 if (d >= 50) {
+                    // Actualizamos el nivel en la propiedad
                     db.ref('salas/' + sala + '/propiedades/' + pos + '/nivel').set(prop.nivel + 1);
-                    
-                    // Log profesional con distinción de quién invierte
-                    if (prop.owner === miIdx) {
-                        log(nombres[miIdx] + " mejoró " + mapa[pos].n + " al nivel " + (prop.nivel + 1));
-                    } else {
-                        log(nombres[miIdx] + " invirtió en una propiedad del Equipo " + miEquipo + ": " + mapa[pos].n + " ahora es nivel " + (prop.nivel + 1));
-                    }
-                    
+                    log(nombres[miIdx] + " mejoró " + mapa[pos].n + " al nivel " + (prop.nivel + 1));
                     cerrarModal();
                     return d - 50;
                 } else {
@@ -1787,8 +1651,8 @@ window.addEventListener('load', () => {
     if (salaGuardada) {
         let input = document.getElementById('sala-id');
         if (input) {
-            // input.value = salaGuardada; // <-- COMENTA ESTA LÍNEA
-            console.log("Sesión ignorada para empezar en blanco.");
+            input.value = salaGuardada;
+            console.log("Sesión detectada, sala rellenada en el campo de texto. Esperando acción del usuario.");
         }
     }
 });
@@ -1812,7 +1676,6 @@ window.addEventListener('DOMContentLoaded', () => {
             d.innerHTML = `<div class="strip" style="background: ${g.color}"></div>`;
         }
         
-        // Mantenemos la lógica original de concatenar el contenido
         d.innerHTML += `<div class="contenido" style="font-size: 7px; color: #c71585;">
                             ${m.n}<br>
                             ${m.p > 0 ? '$' + m.p : ''}
