@@ -561,7 +561,7 @@ window.procederConUnion = function(nombreSala) {
         localStorage.setItem('monopoly_uid', miID);
     }
 
-    // 2. TRANSACCIÓN ATÓMICA
+    // 2. TRANSACCIÓN ATÓMICA DE SEGURIDAD
     db.ref('salas/' + sala + '/jugadores').transaction(jugadores => {
         if (!jugadores) jugadores = [];
 
@@ -573,19 +573,19 @@ window.procederConUnion = function(nombreSala) {
             idx = jugadores.length;
         }
 
-        // Gestión de nombre
+        // Gestión de nombre persistente
         let nombreGuardado = localStorage.getItem('monopoly_nombre');
         let nombrePorIndice = (typeof nombres !== 'undefined' && nombres[idx]) ? nombres[idx] : ("Jugador " + (idx + 1));
         let miNombre = (nombreGuardado === "Dog" || !nombreGuardado) ? nombrePorIndice : nombreGuardado;
         localStorage.setItem('monopoly_nombre', miNombre);
 
-        // Preparamos los datos del jugador
+        // Preparamos los datos del jugador (conservando estado anterior)
         let jActual = jugadores[idx] || {};
         jugadores[idx] = {
             ...jActual,
             uid: miID,
             nombre: miNombre,
-            status: 'online',
+            status: 'online', // Siempre marcamos online al entrar
             pos: jActual.pos || 0,
             dinero: jActual.dinero !== undefined ? jActual.dinero : 1000,
             enCarcel: jActual.enCarcel || 0,
@@ -602,21 +602,27 @@ window.procederConUnion = function(nombreSala) {
             yaEntro = true;
             localStorage.setItem('monopoly_sala', sala);
             
+            // Configurar aviso de desconexión en el servidor
             db.ref('salas/' + sala + '/jugadores/' + miIdx).onDisconnect().update({ status: 'offline' });
             
+            // Notificar al chat
             db.ref('salas/' + sala + '/chat').push({ 
                 n: "Sistema", 
                 m: localStorage.getItem('monopoly_nombre') + " se ha conectado a la partida." 
             });
 
+            // Inicialización de turno si es el primer jugador
             if (miIdx === 0) {
                 db.ref('salas/' + sala + '/turno').transaction(t => (t === null ? 0 : t));
                 if (typeof iniciarRelojClima === 'function') iniciarRelojClima();
             }
+            
+            // Ejecutar la sincronización general
             sincronizar();
         } else {
             console.error("Error al unir a la sala:", error);
             if (btn) btn.disabled = false;
+            alert("No se pudo conectar a la sala. Inténtalo de nuevo.");
         }
     });
 };
@@ -994,84 +1000,72 @@ function mostrarNotificacionMision(titulo) {
     modal.style.display = 'block';
 };
 
-window.proponerVenta = function(event, pIdx) {
-    if (event && typeof event.stopPropagation === 'function') {
-        event.stopPropagation();
-        event.preventDefault();
-    }
-
-    let sel = document.getElementById('sel-' + pIdx);
-    let input = document.getElementById('precio-' + pIdx);
-    
-    if (!sel || !input) return;
-
-    let comprador = parseInt(sel.value);
-    let precio = parseInt(input.value);
-
-    if (isNaN(comprador)) {
-        alert("Error: Debes seleccionar un comprador válido.");
-        return;
-    }
-
-    if (isNaN(precio) || precio < 100 || precio > 999) {
-        window.mostrarAvisoIntercambio();
-        return;
-    }
-
-    db.ref('salas/' + sala + '/ofertas').push({
-        prop: parseInt(pIdx), 
-        de: parseInt(miIdx), 
-        para: comprador, 
-        precio: precio
-    });
-
-    log(nombres[miIdx] + " propuso vender " + (mapa[pIdx] ? mapa[pIdx].n : "propiedad") + " a " + nombres[comprador] + " por $" + precio);
-    document.getElementById('modal').style.display = 'none';
-};
-
 window.confirmarCompra = function(ofertaKey) {
     if (!sala) return;
     
     db.ref('salas/' + sala + '/ofertas/' + ofertaKey).once('value', snap => {
         let o = snap.val();
-        if (!o) return;
+        if (!o) {
+            alert("Esta oferta ya no está disponible.");
+            document.getElementById('modal').style.display = 'none';
+            return;
+        }
 
         db.ref('salas/' + sala).transaction(data => {
             if (!data || !data.jugadores || !data.jugadores[o.para] || !data.jugadores[o.de]) return;
             
-            let precio = Number(o.precio);
-            let dineroComprador = Number(data.jugadores[o.para].dinero);
+            // 1. Verificar propiedad y vendedor
+            if (!data.propiedades || !data.propiedades[o.prop] || data.propiedades[o.prop].owner !== o.de) {
+                return; // Aborta si la propiedad ya no es del vendedor
+            }
             
-            if (dineroComprador < precio) return;
+            // 2. Validar fondos
+            if (Number(data.jugadores[o.para].dinero) < Number(o.precio)) {
+                return; // Aborta si no hay dinero
+            }
 
-            data.jugadores[o.para].dinero = dineroComprador - precio;
-            data.jugadores[o.de].dinero = Number(data.jugadores[o.de].dinero) + precio;
-            
-            if (!data.propiedades) data.propiedades = {};
-            data.propiedades[o.prop] = { owner: parseInt(o.para), nivel: 0, hipotecada: false };
+            // 3. Ejecutar intercambio
+            data.jugadores[o.para].dinero -= Number(o.precio);
+            data.jugadores[o.de].dinero += Number(o.precio);
+            data.propiedades[o.prop].owner = parseInt(o.para);
             
             return data;
         }, (error, committed) => {
+            // SIEMPRE eliminamos la oferta, haya tenido éxito o no la transacción
+            // (Si no tuvo éxito, es porque la oferta ya no es válida)
+            db.ref('salas/' + sala + '/ofertas/' + ofertaKey).remove();
+            
             if (committed) {
-                db.ref('salas/' + sala + '/ofertas/' + ofertaKey).remove();
                 document.getElementById('modal').style.display = 'none';
-                log("¡Venta completada!");
+                log("¡Venta completada! Propiedad transferida.");
+            } else {
+                alert("La compra no pudo realizarse. Revisa si el vendedor aún tiene la propiedad o si tienes fondos.");
             }
         });
     });
 };
-
+        
 window.escucharOfertas = function() {
     if (!sala) return;
-    db.ref('salas/' + sala + '/ofertas').off('child_added'); 
+
+    // 1. Limpiamos TODOS los listeners previos de esta rama de forma agresiva
+    db.ref('salas/' + sala + '/ofertas').off(); 
+
+    // 2. Nos suscribimos una sola vez
     db.ref('salas/' + sala + '/ofertas').on('child_added', snap => {
         let o = snap.val();
+        
+        // Verificamos si existe la oferta y si va dirigida al jugador actual
         if (o && o.para === miIdx) {
             document.getElementById('modal-title').innerText = "¡Oferta de Venta!";
-            document.getElementById('modal-text').innerHTML = `<p>${nombres[o.de]} te vende una propiedad por $${o.precio}</p>`;
-            document.getElementById('modal-extra').innerHTML = 
-                `<button class="btn" onclick="confirmarCompra('${snap.key}')">Aceptar</button>
-                 <button class="btn" onclick="document.getElementById('modal').style.display='none'">Cancelar</button>`;
+            document.getElementById('modal-text').innerHTML = 
+                `<p>${nombres[o.de] || 'Alguien'} te vende una propiedad por $${o.precio}</p>`;
+            
+            document.getElementById('modal-extra').innerHTML = `
+                <button class="btn" onclick="confirmarCompra('${snap.key}')">Aceptar</button>
+                <button class="btn" onclick="document.getElementById('modal').style.display='none'">Cancelar</button>
+            `;
+            
             document.getElementById('modal').style.display = 'block';
         }
     });
