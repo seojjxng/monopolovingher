@@ -89,7 +89,8 @@ window.generarTablero = function() {
     });
 };
 
-// Ejecutar al cargar la página
-window.onload = function() {
+// Asegúrate de que esto esté al final de tu archivo script.js
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("El DOM está listo, generando tablero...");
     window.generarTablero();
-};
+});
