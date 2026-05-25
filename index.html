@@ -2,263 +2,371 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monopoly Naeun Town</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
     <style>
+        * { box-sizing: border-box; }
         body { background: #fff0f3; font-family: 'Montserrat', sans-serif; display: flex; justify-content: center; padding: 20px; color: #c71585; }
-        .container { display: flex; gap: 25px; width: 1000px; }
-        .game-column {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    width: 600px; /* Tamaño fijo para el tablero */
-    flex-shrink: 0; /* IMPEDIR QUE SE ENCOJA */
+    
+.container { display: flex; gap: 25px; width: 1000px; align-items: flex-start; }
+    
+.game-column, .sidebar { display: flex; flex-direction: column; gap: 15px; }
+    
+.sidebar { width: 320px; }
+    
+.board-wrapper, .panel { 
+    background: #fff0f9; padding: 20px; border-radius: 20px; border: 2px solid #ffccd5; 
 }
-        
-        /* Tablero reducido */
-        .board { 
-    display: grid; 
-    grid-template-columns: repeat(8, 70px); 
-    grid-template-rows: repeat(8, 70px); 
-    gap: 5px; 
-    background: #ffccd5; 
-    padding: 10px; 
-    border-radius: 25px; 
-    position: relative; 
-    margin: 0 auto; /* Esto centrará el tablero si el padre es más ancho */
-}
-        .cell { background: white; border: 2px solid #ffccd5; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 7px; font-weight: bold; color: #c71585; text-align: center; position: relative; cursor: pointer; }
-        
-        .strip { width: 100%; height: 10px; position: absolute; top: 0; border-top-left-radius: 8px; border-top-right-radius: 8px; }
-        .house-container { position: absolute; bottom: 2px; display: flex; gap: 1px; }
-        .house { width: 8px; height: 8px; background: #ff59aa; }
-        .hotel { width: 20px; height: 8px; background: #c71585; }
-        .token { width: 25px; height: 25px; position: absolute; z-index: 10; transition: all 0.5s ease; pointer-events: none; }
-        /* Esto afecta a cualquier div que tenga contenido de modal */
-.modal-content-scroll {
-    max-height: 400px; /* Altura máxima antes de que aparezca el scroll */
-    overflow-y: auto;
-    scrollbar-width: none; /* Firefox */
+.actions-divider {
+    width: 100%;
+    height: 2px;
+    background: #ffccd5;
+    margin: 15px 0;
+    border-radius: 1px;
 }
 
-.modal-content-scroll::-webkit-scrollbar {
-    display: none; /* Chrome, Safari, Edge */
-}
-        .close {
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
-    cursor: pointer;
-    color: #c71585;
-    /* Añade estas dos líneas para subirlo: */
-    position: relative;
-    top: -30px; /* Para subirlo más (-15px, -20px, etc.) */
-}
-.close:hover { color: #ff59aa; }
-        /* Contenedor de reputación */
-.reputacion-wrapper {
+/* Contenedor de botones fuera del tablero */
+.actions-bar {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 15px; /* Espacio para que esté "arriba" de lo demás */
-}
-
-.reputacion-label {
-    font-size: 12px;
-    color: #ff59aa; /* Tu color rosa */
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 4px;
-}
-.reputacion-container {
-    width: 120px;
-    height: 10px;
-    background: #ffe0f0; /* Rosa muy clarito de fondo */
-    border-radius: 10px;
-    border: 1px solid #ff59aa;
-    overflow: hidden; /* Corta la barra si se sale de las esquinas redondeadas */
-}
-.reputacion-bar {
-    height: 100%;
-    width: 50%; /* Valor inicial (50%) */
-    background: #ff59aa; /* Rosa vibrante para el progreso */
-    transition: width 0.5s ease-in-out; /* Animación suave */
-}
-      
-#lista-misiones { 
-    list-style: none; 
-    padding: 0; 
-    text-align: left; 
-    max-height: 300px; 
-    overflow-y: auto; 
-    font-size: 12px;
-}
-#lista-misiones li { 
-    margin-bottom: 8px; 
-    border-bottom: 1px solid #ffccd5; 
-    padding-bottom: 5px; 
-}
-        /* Zona central ajustada */
-        .center-zone { grid-column: 3 / 7; grid-row: 3 / 7; background: #fff5f7; border: 3px dashed #ff80bf; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px; }
-        
-        .sidebar { width: 320px; display: flex; flex-direction: column; gap: 20px; }
-        .panel { background: #fff0f9; padding: 20px; border-radius: 20px; border: 2px solid #ffccd5; }
-        .btn { width: 100%; padding: 10px; background: #ff59aa; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; margin: 5px 0; font-size: 12px; }
-        .input-field { width: 93%; padding: 8px; margin: 5px 0; border: 1px solid #ffccd5; border-radius: 8px; }
-        #log { height: 125px; overflow-y: auto; font-size: 11px; color: #c71585; padding: 10px; background: white; border-radius: 10px; border: 1px solid #ffccd5; margin-bottom: 10px; }
-        #chat-log { height: 125px; overflow-y: auto; font-size: 11px; color: #c71585; padding: 10px; background: white; border-radius: 10px; border: 1px solid #ffccd5; margin-bottom: 10px; }
-        #modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 300px; background: #ffe4e9; padding: 20px; border: 3px solid #ff80bf; border-radius: 15px; text-align: center; z-index: 999; }
-        .card-property { border: 2px solid #c71585; padding: 10px; border-radius: 5px; background: white; margin-bottom: 10px; }
-        .card-header { background: #ff80bf; color: white; padding: 5px; font-weight: bold; margin-bottom: 10px; }
-        .empty-debt { padding: 10px; background: #fff; border: 1px solid #ff80bf; border-radius: 10px; color: #ff59aa; font-weight: bold; }
-        #banco-container {
-    display: flex !important;
-    flex-wrap: wrap !important;
-    justify-content: center !important;
-    gap: 10px !important;
-    width: 100% !important; /* Ocupa solo el ancho de su columna */
-    box-sizing: border-box !important;
+    gap: 10px;
+    justify-content: center;
+    padding: 10px;
     background: #fff0f9;
-    padding: 15px;
     border: 2px solid #ffccd5;
     border-radius: 20px;
+    margin-top: 10px;
 }
 
-#banco-container .btn {
-    width: auto !important; 
-    min-width: 120px;      
-    margin: 0 !important;  
+/* Panel específico para el modo 2v2 */
+.mode-panel {
+    background: #fff0f9;
+    padding: 15px;
+    border-radius: 20px;
+    border: 2px solid #ffccd5;
+    text-align: center;
 }
-/* Bordes: 8 columnas de ancho, 8 filas de alto */
-/* Fila inferior (8) */
-#cell-0 { grid-column: 8; grid-row: 8; } #cell-1 { grid-column: 7; grid-row: 8; } #cell-2 { grid-column: 6; grid-row: 8; } #cell-3 { grid-column: 5; grid-row: 8; } #cell-4 { grid-column: 4; grid-row: 8; } #cell-5 { grid-column: 3; grid-row: 8; } #cell-6 { grid-column: 2; grid-row: 8; } #cell-7 { grid-column: 1; grid-row: 8; }
-/* Columna izquierda (1) */
-#cell-8 { grid-column: 1; grid-row: 7; } #cell-9 { grid-column: 1; grid-row: 6; } #cell-10 { grid-column: 1; grid-row: 5; } #cell-11 { grid-column: 1; grid-row: 4; } #cell-12 { grid-column: 1; grid-row: 3; } #cell-13 { grid-column: 1; grid-row: 2; } #cell-14 { grid-column: 1; grid-row: 1; }
-/* Fila superior (1) */
-#cell-15 { grid-column: 2; grid-row: 1; } #cell-16 { grid-column: 3; grid-row: 1; } #cell-17 { grid-column: 4; grid-row: 1; } #cell-18 { grid-column: 5; grid-row: 1; } #cell-19 { grid-column: 6; grid-row: 1; } #cell-20 { grid-column: 7; grid-row: 1; } #cell-21 { grid-column: 8; grid-row: 1; }
-/* Columna derecha (8) */
-#cell-22 { grid-column: 8; grid-row: 2; } #cell-23 { grid-column: 8; grid-row: 3; } #cell-24 { grid-column: 8; grid-row: 4; } #cell-25 { grid-column: 8; grid-row: 5; } #cell-26 { grid-column: 8; grid-row: 6; } #cell-27 { grid-column: 8; grid-row: 7; }
-    <!-- MODAL DE DEDICATORIA: -->
-<div id="dedicatoria-modal" style="display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 240, 243, 0.8); z-index: 1000; justify-content: center; align-items: center;">
-    <div style="background: white; padding: 30px; border-radius: 20px; border: 2px solid #ff80bf; text-align: center; position: relative; width: 300px; color: #c71585;">
-        <span onclick="document.getElementById('dedicatoria-modal').style.display='none'" style="position: absolute; top: 10px; right: 15px; cursor: pointer; font-size: 20px; font-weight: bold;">&times;</span>
-        <p style="font-family: 'Montserrat', sans-serif; font-size: 16px; font-style: italic;">
-            "A Naeun, mi musa; porque todas mis mejores ideas nacen pensando en ella."
-        </p>
-        <p style="font-weight: bold;">- Seojun</p>
-    </div>
-    </style>
+
+/* Tablero */
+.board { 
+    display: grid; 
+    grid-template-columns: repeat(8, 70px); 
+    grid-template-rows: repeat(8, 70px);    
+    gap: 2px; 
+    background: #ffccd5; 
+    padding: 5px; 
+    width: 100%; 
+    max-width: 600px; 
+    aspect-ratio: 1 / 1;
+    position: relative; /* Clave para el control de hijos */
+}
+    
+/* Contenedores inferiores */
+#banco-container { display: flex; gap: 5px; justify-content: center; }
+#modo-2v2-container { margin-top: 10px; }
+
+/* Botones - Ajustados para que no se deformen */
+.btn { width: 100%; padding: 10px; background: #ff59aa; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 12px; }
+#banco-container .btn { width: auto; flex: 1; font-size: 10px; padding: 8px 5px; }
+    
+/* Ajustes críticos para Chat y Log */
+#log, #chat-log { 
+    height: 125px !important; 
+    overflow-y: auto; 
+    font-size: 11px; 
+    color: #c71585; 
+    padding: 10px; 
+    background: white; 
+    border-radius: 10px; 
+    border: 1px solid #ffccd5; 
+    margin: 5px 0 15px 0; 
+    width: 100%;
+}
+
+.input-field { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ffccd5; border-radius: 8px; }
+    
+/* Asegurar que la zona central tenga espacio */
+.center-zone { 
+    grid-column: 3 / 7; 
+    grid-row: 3 / 7; 
+    background: #fff5f7; 
+    border: 3px dashed #ff80bf; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center; 
+    padding: 10px;
+    border-radius: 15px; 
+    z-index: 999; /* Mucho más alto para que nada lo tape */
+    position: relative;
+    pointer-events: auto; /* Asegura que los clicks funcionen */
+}
+    
+/* Modales - Centrado y Estandarizado */
+#modal {
+    display: none; 
+    position: fixed; 
+    top: 0; left: 0; 
+    width: 100%; height: 100%; 
+    background: rgba(0,0,0,0.7); 
+    z-index: 10000; 
+    justify-content: center; 
+    align-items: center; 
+}
+.modal-content { 
+    width: 90%; 
+    max-width: 400px; 
+    background: #ffe4e9; 
+    padding: 30px; 
+    border: 3px solid #ff80bf; 
+    border-radius: 20px; 
+    text-align: center; 
+    position: relative; 
+}
+.btn-cerrar-x {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 35px;
+    cursor: pointer;
+    color: #c71585;
+}
+    
+.token { width: 25px; height: 25px; position: absolute; z-index: 10; pointer-events: none; }
+.board div[id^="cell-"] {
+    background: #ffffff;
+    border-left: 8px solid #ffccd5; /* Tu efecto de franja */
+    border-top: 1px solid #ffccd5;
+    border-right: 1px solid #ffccd5;
+    border-bottom: 1px solid #ffccd5;
+    border-radius: 4px;
+    z-index: 1; /* Detrás de la zona central */
+}
+    
+.reputacion-container { width: 100px; height: 10px; background: #ffe0f0; border-radius: 10px; border: 1px solid #ff59aa; overflow: hidden; margin: 5px 0; }
+.reputacion-bar { height: 100%; width: 50%; background: #ff59aa; transition: width 0.5s ease-in-out; }
+#lista-misiones { list-style: none; padding: 0; text-align: left; max-height: 300px; overflow-y: auto; font-size: 13px; }
+    
+    /* Coordenadas celdas */
+    #cell-0 { grid-column: 8; grid-row: 8; } #cell-1 { grid-column: 7; grid-row: 8; } #cell-2 { grid-column: 6; grid-row: 8; } #cell-3 { grid-column: 5; grid-row: 8; } #cell-4 { grid-column: 4; grid-row: 8; } #cell-5 { grid-column: 3; grid-row: 8; } #cell-6 { grid-column: 2; grid-row: 8; } #cell-7 { grid-column: 1; grid-row: 8; }
+    #cell-8 { grid-column: 1; grid-row: 7; } #cell-9 { grid-column: 1; grid-row: 6; } #cell-10 { grid-column: 1; grid-row: 5; } #cell-11 { grid-column: 1; grid-row: 4; } #cell-12 { grid-column: 1; grid-row: 3; } #cell-13 { grid-column: 1; grid-row: 2; } #cell-14 { grid-column: 1; grid-row: 1; }
+    #cell-15 { grid-column: 2; grid-row: 1; } #cell-16 { grid-column: 3; grid-row: 1; } #cell-17 { grid-column: 4; grid-row: 1; } #cell-18 { grid-column: 5; grid-row: 1; } #cell-19 { grid-column: 6; grid-row: 1; } #cell-20 { grid-column: 7; grid-row: 1; } #cell-21 { grid-column: 8; grid-row: 1; }
+    #cell-22 { grid-column: 8; grid-row: 2; } #cell-23 { grid-column: 8; grid-row: 3; } #cell-24 { grid-column: 8; grid-row: 4; } #cell-25 { grid-column: 8; grid-row: 5; } #cell-26 { grid-column: 8; grid-row: 6; } #cell-27 { grid-column: 8; grid-row: 7; }
+</style>
 </head>
+
 <body>
-    <audio loop autoplay>
-        <source src="https://dl.dropbox.com/scl/fi/5oxzgnxoe30zqd4m6hdfh/kawaii-playlist-for-snack-time-BGM-POP.mp3?rlkey=1lw76u3u1w1ck3dj2ej5x7ml7&st=y6j07iwx&dl=1" type="audio/mpeg">
-    </audio>
+    <div id="dedicatoria-modal" style="display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 240, 243, 0.8); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: white; padding: 30px; border-radius: 20px; border: 2px solid #ff80bf; text-align: center; width: 300px; color: #c71585;">
+            <span onclick="this.parentElement.parentElement.style.display='none'" style="cursor: pointer; float: right;">&times;</span>
+            <p>"A Naeun, mi musa; porque todas mis mejores ideas nacen pensando en ella."</p>
+            <p><b>- Seojun</b></p>
+        </div>
+    </div>
+
+    <div id="modal" class="modal-overlay">
+    <div class="modal-content">
+        <span class="close" onclick="document.getElementById('modal').style.display='none'">&times;</span>
+        <h2 id="modal-title"></h2>
+        <div id="modal-text"></div>
+        <div id="modal-extra"></div>
+    </div>
+</div>
+
+<div id="modal-misiones" class="modal-overlay">
+    <div class="modal-content"> 
+        <span class="close" onclick="document.getElementById('modal-misiones').style.display='none'">&times;</span>
+        <h3>Misiones</h3>
+        <ul id="lista-misiones"></ul>
+        <button class="btn" onclick="document.getElementById('modal-misiones').style.display='none'">Cerrar</button>
+    </div>
+</div>
 
     <div class="container">
-        <div class="game-column">
+    <div class="game-column">
+        <div class="board-wrapper">
             <div class="board" id="board">
                 <img src="https://i.imgur.com/FGnMi8Y.png" id="p0" class="token" style="display:none" alt="Dog">
                 <img src="https://i.imgur.com/fRZJfP8.png" id="p1" class="token" style="display:none" alt="Horse">
                 <img src="https://i.imgur.com/u2AtssG.png" id="p2" class="token" style="display:none" alt="Hat">
                 <img src="https://i.imgur.com/ekQp8WL.png" id="p3" class="token" style="display:none" alt="Car">
 
-            <div id="modal" class="modal">
-                <div class="modal-body">
-                    <span class="close" onclick="document.getElementById('modal').style.display='none'">&times;</span>
-                    <h2 id="modal-title"></h2>
-                    <div id="modal-text" class="modal-content-scroll"></div>
-                    <div id="modal-extra"></div>
-                </div>
-            </div>
+                <script>
+                    for (let i = 0; i < 28; i++) {
+                        document.write(`<div id="cell-${i}"></div>`);
+                    }
+                </script>
 
-            <div class="center-zone">
-                <div class="reputacion-wrapper">
-                   <div class="reputacion-label" style="cursor: pointer;" onclick="mostrarAvisoReputacion()">
-    Reputación (Click para ver)
-</div>
-                    <div class="reputacion-container">
-                        <div id="rep-bar" class="reputacion-bar"></div>
+                <div class="center-zone">
+                    <div class="reputacion-label" style="cursor: pointer;" onclick="mostrarAvisoReputacion()">
+                        Reputación (Click para ver)
                     </div>
+                    <div class="reputacion-container">
+                        <div id="reputacion-bar" class="reputacion-bar" style="width: 50%;"></div>
+                    </div>
+                    <hr style="width: 100%; border: 0; border-top: 1px solid #ffccd5; margin: 10px 0;">
+                    <div id="clima-display" style="font-size: 13px; color: #ff59aa; font-weight: bold;">Clima: -</div>
+                    <div id="turno-text" style="font-weight:bold; font-size: 12px;">ESPERANDO...</div>
+                    <div id="dado-valor" style="font-weight: bold; font-size: 18px;">0</div>
+                    <img src="https://i.imgur.com/Nsafzb4.png" style="width:40px; cursor:pointer" onclick="tirarDado()" alt="Lanzar dado">
+                    <div style="font-size: 13px;">💖 $<span id="dinero-mio">1000</span></div>
+                    <div style="font-size: 11px; margin-top: 2px;">Impuestos: $<span id="monto-impuestos">0</span></div>
+                    <button class="btn" style="padding: 5px; font-size: 10px;" onclick="window.abrirModalMisiones()">Ver Misiones</button>
                 </div>
-                <div id="clima-display" style="font-size: 13px; color: #ff59aa; font-weight: bold;">Clima: -</div>
-                <div id="turno-text" style="font-weight:bold;">ESPERANDO...</div>
-                <div id="dado-valor">0</div>
-                <img src="https://i.imgur.com/Nsafzb4.png" style="width:60px; cursor:pointer" onclick="tirarDado()" alt="Lanzar dado">
-                <div>💖 $<span id="dinero-mio">1000</span></div>
-                <div style="font-size: 13px; margin-top: 5px;">Monto de impuestos actuales: $<span id="monto-impuestos">0</span></div>
-                <button class="btn" onclick="abrirModalMisiones()">Ver Misiones</button>
             </div>
-        </div> <div id="banco-container">
-            <button class="btn" style="width: 140px" onclick="abrirBanco()">🏦 Banco</button>
-            <button class="btn" style="width: 140px" onclick="pagarPrestamo()">💳 Pagar Préstamo</button>
-            <button class="btn" style="width: 140px" onclick="verSaldos()">💰 Ver Saldos</button>
-            <button class="btn" style="width: 140px; background: #ff59aa;" onclick="abrirIntercambio()">🤝 Intercambiar</button>
-        </div>
-    </div> <div class="sidebar">
-        <div class="panel">
-            <strong>Unirse a Sala</strong>
-            <input type="text" id="sala-id" class="input-field" placeholder="Nombre de la sala">
-            <button class="btn" id="btn-unirse" onclick="unirse()">Entrar a la sala</button>
-        </div>
-        <div class="panel">
-            <strong>Historial</strong>
-            <div id="log"></div>
-            <strong>Chat</strong>
-            <div id="chat-log" style="height: 90px; overflow-y: auto;"></div>
-            <input type="text" id="chat-msg" class="input-field" placeholder="Mensaje...">
-            <button class="btn" onclick="enviarChat()">Enviar</button>
-        <button class="btn" onclick="abrirAvisoDesarrollo()">
-    Activar Modo 2v2
-</button>
-
-<div id="modal-extra">
+            <div class="actions-divider"></div>
+    <div class="actions-bar" id="banco-container">
+        <button class="btn" onclick="abrirBanco()">🏦 Banco</button>
+        <button class="btn" onclick="pagarPrestamo()">💳 Pagar</button>
+        <button class="btn" onclick="verSaldos()">💰 Saldos</button>
+        <button class="btn" onclick="abrirIntercambio()">🤝 Intercambiar</button>
+    </div>
 </div>
+    </div>
 
-<div id="modal-misiones" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;">
-    <div style="background: #ffe4e9; padding: 20px; border-radius: 10px; text-align: center;">
-        <h3>Misiones Disponibles</h3>
-        <ul id="lista-misiones"></ul>
-        <button class="btn" onclick="document.getElementById('modal-misiones').style.display='none'">Cerrar</button>
+      <div class="sidebar">
+    <div class="panel">
+        <strong>Unirse a Sala</strong>
+        <input type="text" id="sala-id" class="input-field" placeholder="Nombre de la sala">
+        <button class="btn" onclick="window.unirse()">Entrar</button>
+        <hr style="width:100%; border:0; border-top:1px solid #ffccd5; margin:15px 0;">
+        <strong>Historial</strong>
+        <div id="log"></div>
+        <strong>Chat</strong>
+        <div id="chat-log" style="height: 90px; overflow-y: auto;"></div>
+        <input type="text" id="chat-msg" class="input-field" placeholder="Mensaje...">
+        <button class="btn" onclick="enviarChat()">Enviar</button>
+    </div>
+
+    <div class="mode-panel" id="modo-2v2-container">
+        <button class="btn" onclick="abrirAvisoDesarrollo()">Activar Modo 2v2</button>
     </div>
 </div>
 
-<div id="modal-mision-completada" class="modal" style="display: none;">
-    <h3 style="color: #ff59aa;">¡Misión Completada!</h3>
-    <p id="msg-mision" style="font-weight: bold;"></p>
-    <button class="btn" onclick="document.getElementById('modal-mision-completada').style.display = 'none'">¡Genial!</button>
-</div>
-
     <script>
-    const firebaseConfig = { databaseURL: "https://monopolovely-default-rtdb.firebaseio.com" };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
-    let miIdx = -1, sala = "", yaEntro = false;
-    const nombres = ["Dog", "Horse", "Hat", "Car"];
-    const colores = ["#ffb7b2", "#ffd8a8", "#b2f2bb", "#a5d8ff"];
+   
+    window.unirse = function() {
+        console.log("¡La función unirse se cargó correctamente!");
+        alert("¡Hola! La función ya existe.");
+    };
 
-        // Configuración de colores por grupo
+    // --- CONFIGURACIÓN E INICIALIZACIÓN DE FIREBASE ---
+const firebaseConfig = {
+  apiKey: "AIzaSyBV8Kcd8mF2CGlIRWDxDR6B3f1_50V3FH0",
+  authDomain: "monopolovely.firebaseapp.com",
+  databaseURL: "https://monopolovely-default-rtdb.firebaseio.com",
+  projectId: "monopolovely",
+  storageBucket: "monopolovely.firebasestorage.app",
+  messagingSenderId: "325639499908",
+  appId: "1:325639499908:web:94ad73a6d82da77ce552d1",
+  measurementId: "G-GDKYQYLFQJ"
+};
+
+// Inicializar Firebase (SDK v9 compat)
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+
+// Definir db de forma global
+window.db = firebase.database();
+      
+    window.miIdx = -1;
+    window.sala = "";
+    window.yaEntro = false;
+    window.nombres = Object.freeze(["Dog", "Horse", "Hat", "Car"]);
+    window.colores = Object.freeze(["#ffb7b2", "#ffd8a8", "#b2f2bb", "#a5d8ff"]);
+
     const grupos = [
-    {color: "#ff80bf", indices: [1, 3, 4, 5]},
-    {color: "#a5d8ff", indices: [7, 10, 11, 13]},
-    {color: "#b2f2bb", indices: [14, 15, 16, 17]},
-    {color: "#ffd8a8", indices: [19, 20, 21, 23]}, 
-    // Grupo Ferrocarriles (Metro, Moto, Avión, Tren): índices 8, 24, 26, 27
-    {color: "#f5f5dc", indices: [8, 24, 26, 27]} 
-];
+        {color: "#ff80bf", indices: [1, 3, 4, 5]},
+        {color: "#a5d8ff", indices: [7, 10, 11, 13]},
+        {color: "#b2f2bb", indices: [14, 15, 16, 17]},
+        {color: "#ffd8a8", indices: [19, 20, 21, 23]}, 
+        {color: "#f5f5dc", indices: [8, 24, 26, 27]} 
+    ];
 
-        
     const mapa = [
-    {n:"SALIDA",p:0},{n:"ITAEWON",p:100},{n:"ARCA COMUNAL",p:0},{n:"BUSAN",p:200},
-    {n:"SEOCHO",p:250},{n:"GANGNAM",p:300},{n:"?",p:0},{n:"CYBER CAFÉ",p:400},
-    {n:"AUTOMÓVIL",p:450},{n:"CÁRCEL",p:0},{n:"CAFETERÍA",p:500},{n:"RESTAURANTE",p:520},
-    {n:"?",p:0},{n:"SPA",p:300},{n:"CINE",p:450},{n:"HOSPITAL",p:200},
-    {n:"TEATRO",p:500},{n:"ESTADIO",p:950},{n:"ARCA COMUNAL",p:0},{n:"SMENT",p:1400},
-    {n:"YG ENT",p:950},{n:"YJP",p:750},{n:"IMPUESTOS",p:0},{n:"HYBE CORP.",p:2000},
-    {n:"MOTO",p:600},{n:"PARADA",p:0},{n:"AVIÓN",p:600},{n:"TREN",p:600}
-];
+        {n:"SALIDA",p:0},{n:"ITAEWON",p:100},{n:"ARCA COMUNAL",p:0},{n:"BUSAN",p:200},
+        {n:"SEOCHO",p:250},{n:"GANGNAM",p:300},{n:"?",p:0},{n:"CYBER CAFÉ",p:400},
+        {n:"AUTOMÓVIL",p:450},{n:"CÁRCEL",p:0},{n:"CAFETERÍA",p:500},{n:"RESTAURANTE",p:520},
+        {n:"?",p:0},{n:"SPA",p:300},{n:"CINE",p:450},{n:"HOSPITAL",p:200},
+        {n:"TEATRO",p:500},{n:"ESTADIO",p:950},{n:"ARCA COMUNAL",p:0},{n:"SMENT",p:1400},
+        {n:"YG ENT",p:950},{n:"YJP",p:750},{n:"IMPUESTOS",p:0},{n:"HYBE CORP.",p:2000},
+        {n:"MOTO",p:600},{n:"PARADA",p:0},{n:"AVIÓN",p:600},{n:"TREN",p:600}
+    ];
 
+    // --- 2. LÓGICA DEL TABLERO ---
+    window.generarTablero = function() {
+        const board = document.getElementById('board');
+        if (!board) return;
+        const tokens = board.querySelectorAll('.token');
+        board.innerHTML = "";
+        tokens.forEach(t => board.appendChild(t));
+
+        mapa.forEach((casilla, i) => {
+            const cell = document.createElement('div');
+            cell.id = `cell-${i}`;
+            cell.className = "celda-juego";
+            cell.style.gridColumn = getGridColumn(i);
+            cell.style.gridRow = getGridRow(i);
+            const grupo = grupos.find(g => g.indices.includes(i));
+            cell.style.backgroundColor = grupo ? grupo.color : "#ffccd5";
+            cell.innerHTML = `<div style="font-size: 8px;">${casilla.n}</div>`;
+            board.appendChild(cell);
+        });
+    };
+
+    function getGridColumn(i) {
+        if (i >= 0 && i <= 7) return 8 - i;
+        if (i >= 8 && i <= 14) return 1;
+        if (i >= 15 && i <= 21) return (i - 13);
+        return 8;
+    }
+
+    function getGridRow(i) {
+        if (i >= 0 && i <= 7) return 8;
+        if (i >= 8 && i <= 14) return 8 - (i - 7);
+        if (i >= 15 && i <= 21) return 1;
+        return (i - 20);
+    }
+
+    // --- 3. FUNCIONES AUXILIARES ---
+    window.obtenerGrupo = function(pos) {
+        return grupos.find(g => g.indices && g.indices.includes(pos)) || null;
+    };
+
+    window.verificarMonopolioEquipo = function(pos, equipo, data) {
+        const grupo = window.obtenerGrupo(pos);
+        if (!grupo) return false;
+        let propiedadesEquipo = Object.values(data.propiedades || {}).filter(p => p.color === grupo.color && p.equipo === equipo).length;
+        return propiedadesEquipo === grupo.indices.length;
+    };
+
+    // --- FUNCIÓN UNIFICADA PARA ABRIR CUALQUIER MODAL ---
+window.abrirModal = function(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+};
+
+// --- FUNCIÓN UNIFICADA PARA CERRAR CUALQUIER MODAL ---
+window.cerrarModal = function(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        modal.style.display = 'none';
+    }
+};
+
+    window.log = function(txt) {
+        if (window.sala && window.db) window.db.ref('salas/' + window.sala + '/log').push(txt);
+    };
+
+    // --- 4. ARRANQUE ---
+    window.addEventListener('load', () => {
+        if (typeof window.generarTablero === 'function') window.generarTablero();
+    });
         function obtenerGrupo(pos) {
     // 1. Verificamos que 'grupos' exista y sea un array
     if (typeof grupos === 'undefined' || !Array.isArray(grupos)) {
@@ -279,12 +387,14 @@
         
         // Función que verifica si el equipo tiene el monopolio de un color
 function verificarMonopolioEquipo(pos, equipo, data) {
-    let grupoColor = obtenerGrupo(pos).color;
+    const grupo = obtenerGrupo(pos);
+    if (!grupo) return false; // Si no hay grupo, no hay monopolio
+
+    let grupoColor = grupo.color;
     let propiedades = data.propiedades || {};
-    let totalNecesario = obtenerGrupo(pos).indices.length;
+    let totalNecesario = grupo.indices.length;
     let propiedadesEquipo = 0;
 
-    // Iteramos sobre todas las propiedades buscando coincidencias de equipo y color
     for (let pId in propiedades) {
         if (propiedades[pId].color === grupoColor && propiedades[pId].equipo === equipo) {
             propiedadesEquipo++;
@@ -293,460 +403,538 @@ function verificarMonopolioEquipo(pos, equipo, data) {
     return propiedadesEquipo === totalNecesario;
 }
 
-    // Variables de clima ampliadas
-   const climas = [
-        {n: "Primavera Soleada", mult: 1.0}, {n: "Primavera Lluviosa, ¡los valores del mercado se mantienen igual!", mult: 1.0},
-        {n: "Verano Caluroso", mult: 1.0}, {n: "Verano Nublado, ¡los valores del mercado se mantienen igual!", mult: 1.0},
-        {n: "Otoño Fresco", mult: 1.0}, {n: "Otoño Ventoso, ¡los valores del mercado se mantienen igual!", mult: 1.0},
-        // Climas adversos que reducen alquiler (porcentaje azar entre 50% y 80%)
-        {n: "Lluvia Fuerte. ¡Oh, no!", mult: 0.7}, 
-        {n: "Tormenta Eléctrica. ¡Oh, no!", mult: 0.5},
-        {n: "Ventisca. ¡Oh, no!", mult: 0.6}, 
-        {n: "Nevada Intensa. ¡Oh, no!", mult: 0.6},
-        {n: "Tornado. ¡Oh, no!", mult: 0.5}
-    ];
+   // Definimos los climas como una constante inmutable para proteger los datos
+window.climas = Object.freeze([
+    { n: "Primavera Soleada", mult: 1.0 },
+    { n: "Primavera Lluviosa", mult: 1.0 },
+    { n: "Verano Caluroso", mult: 1.0 },
+    { n: "Verano Nublado", mult: 1.0 },
+    { n: "Otoño Fresco", mult: 1.0 },
+    { n: "Otoño Ventoso", mult: 1.0 },
+    { n: "Lluvia Fuerte", mult: 0.7 },
+    { n: "Tormenta Eléctrica", mult: 0.5 },
+    { n: "Ventisca", mult: 0.6 },
+    { n: "Nevada Intensa", mult: 0.6 },
+    { n: "Tornado", mult: 0.5 }
+]);
 
-    function iniciarRelojClima() {
-        setInterval(() => {
-            let nuevoClima = Math.floor(Math.random() * climas.length);
-            db.ref('salas/' + sala + '/clima').set(nuevoClima);
-            log("¡El clima ha cambiado a " + climas[nuevoClima].n + "!");
-        }, 600000);
+    window.iniciarRelojClima = function() {
+    // 1. Solo el "Host" (o el primer jugador) debe controlar el clima
+    // Esto evita que todos los jugadores intenten cambiarlo al mismo tiempo
+    if (window.miIdx !== 0) return;
+
+    // 2. Intervalo seguro (usamos una variable para poder limpiarlo si fuera necesario)
+    window.intervaloClima = setInterval(() => {
+        if (typeof window.sala === 'undefined' || !window.climas) return;
+
+        const nuevoClimaIdx = Math.floor(Math.random() * window.climas.length);
+        const nuevoClima = window.climas[nuevoClimaIdx];
+
+        // 3. Escritura única en Firebase
+        window.db.ref('salas/' + window.sala + '/clima').set(nuevoClimaIdx)
+            .then(() => {
+                window.log("¡El clima ha cambiado a " + nuevoClima.n + "!");
+            })
+            .catch(err => console.error("Error al actualizar clima:", err));
+            
+    }, 600000); // 10 minutos
+};
+
+// Variables de estado del juego (Globales protegidas)
+window.alquilerPendiente = null;
+window.turnosSeis = 0;
+
+// Opcional: Si quieres ser aún más estricto, puedes agruparlas en un objeto:
+window.JuegoEstado = {
+    alquilerPendiente: null,
+    turnosSeis: 0
+};
+
+window.cartasEvento = Object.freeze([
+    { txt: "¡Inversión exitosa! Cobras $200", v: 200 },
+    { txt: "¡Olvidaste pagar la factura de luz! Pagas $250 por mora", v: -250 },
+    { txt: "¡Premio de certamen de belleza! Cobras $100", v: 100 },
+    { txt: "¡Reparaciones en casa! Pagas $150", v: -150 },
+    { txt: "¡Multa por exceso de velocidad! Pagas $350", v: -350 },
+    { txt: "¡Encontraste $60 en la calle! Cobras $60", v: 60 },
+    { txt: "¡Dividendos bancarios! Cobras $50", v: 50 },
+    { txt: "¡Multa por exceso de velocidad! Pagas $100", v: -100 },
+    { txt: "¡Venta de activos! Cobras $250", v: 250 },
+    { txt: "¡Gastos médicos de la abuela! Pagas $200", v: -200 },
+    { txt: "¡Bono de Naeun Town! Cobras $150", v: 150 },
+    { txt: "¡Impuesto de lujo! Pagas $100", v: -100 },
+    { txt: "¡Heredaste una cuantiosa suma de la tía de una tía! Recibes $150", v: 150 }
+]);
+
+// 1. Obtención de carta aleatoria (Protegida)
+window.obtenerCarta = function() {
+    // 1. Verificación de existencia
+    if (!window.cartasEvento || window.cartasEvento.length === 0) {
+        console.warn("Advertencia: El mazo de cartas está vacío.");
+        return { txt: "Carta vacía", v: 0 }; // Retorno de seguridad
     }
 
-    let alquilerPendiente = null;
-    let turnosSeis = 0;
-    const cartasEvento = [
-        {txt: "¡Inversión exitosa! Cobras $200", v: 200},
-        {txt: "¡Olvidaste pagar la factura de luz! Pagas $250 por mora", v: -250},
-        {txt: "¡Premio de certamen de belleza! Cobras $100", v: 100},
-        {txt: "¡Reparaciones en casa! Pagas $150", v: -150},
-        {txt: "¡Multa por exceso de velocidad! Pagas $350", v: -350},
-        {txt: "¡Encontraste $60 en la calle! Cobras $60", v: 60},
-        {txt: "¡Dividendos bancarios! Cobras $50", v: 50},
-        {txt: "¡Multa por exceso de velocidad! Pagas $100", v: -100},
-        {txt: "¡Venta de activos! Cobras $250", v: 250},
-        {txt: "¡Gastos médicos de la abuela! Pagas $200", v: -200},
-        {txt: "¡Bono de Naeun Town! Cobras $150", v: 150},
-        {txt: "¡Impuesto de lujo! Pagas $100", v: -100},
-        {txt: "¡Heredaste una cuantiosa suma de la tía de una tía! Recibes $150", v: 150}
-    ];
+    // 2. Selección aleatoria segura
+    const randomIndex = Math.floor(Math.random() * window.cartasEvento.length);
+    return window.cartasEvento[randomIndex];
+};
 
-    function obtenerCarta() { return cartasEvento[Math.floor(Math.random() * cartasEvento.length)]; }
-    function cerrarModal() { document.getElementById('modal').style.display = 'none'; document.getElementById('modal-extra').innerHTML = ""; }
-    function log(txt) { db.ref('salas/' + sala + '/log').push(txt); }
+// 2. Cierre de modal seguro (Limpia también el título para evitar residuos de textos anteriores)
+window.cerrarModal = function() {
+    const modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+    
+    const extra = document.getElementById('modal-extra');
+    if (extra) extra.innerHTML = "";
+    
+    const title = document.getElementById('modal-title');
+    if (title) title.innerText = "";
+};
+
+// 3. Log de Firebase (Blindado con comprobación de ruta y callback de error)
+window.log = function(txt) {
+    if (typeof sala === 'undefined') return;
+    
+    db.ref('salas/' + sala + '/log').push(txt)
+        .catch(err => console.error("Error al registrar log en Firebase:", err));
+};
 
         window.abrirInfoReputacion = function() {
-    // 1. Verificación de seguridad para evitar que el juego se bloquee
-    if (typeof jugadores === 'undefined' || !jugadores || !jugadores[miIdx]) {
-        console.warn("Información de jugadores no disponible todavía.");
-        alert("Cargando datos de jugador... espera un momento.");
+    // 1. Verificación robusta
+    if (typeof window.jugadores === 'undefined' || !window.jugadores || !window.jugadores[window.miIdx]) {
+        console.warn("Información de jugadores no disponible.");
+        alert("Cargando datos, espera un momento...");
         return;
     }
 
-    // 2. Obtener reputación con valor por defecto de 50
-    let rep = jugadores[miIdx].reputacion || 50; 
-    let estrellas = "";
-    let descripcion = "";
-
-    // 3. Lógica de estrellas
-    if (rep >= 90) { 
-        estrellas = "★★★★★"; 
-        descripcion = "Hotel de Lujo. Tus propiedades son un éxito absoluto. ¡Alquileres +10%!"; 
-    } else if (rep >= 70) { 
-        estrellas = "★★★★☆"; 
-        descripcion = "Muy valorado. Los visitantes están encantados con tu gestión."; 
-    } else if (rep >= 50) { 
-        estrellas = "★★★☆☆"; 
-        descripcion = "Estándar. Todo funciona correctamente, pero puedes mejorar."; 
-    } else if (rep >= 30) { 
-        estrellas = "★★☆☆☆"; 
-        descripcion = "Necesitas mantenimiento. Los clientes han dejado quejas recientes."; 
-    } else { 
-        estrellas = "★☆☆☆☆"; 
-        descripcion = "Reputación crítica. Se esparcen rumores negativos. ¡Tus alquileres están bajando!"; 
-    }
-
-    // 4. Mostrar en el modal
-    document.getElementById('modal-title').innerText = "Reseña de Visitantes";
-    document.getElementById('modal-text').innerHTML = `
-        <div style="font-size: 40px; color: #ffd700; margin: 10px 0; text-shadow: 1px 1px 2px #555;">${estrellas}</div>
-        <p style="font-size: 16px; color: #c71585; font-weight: bold;">${descripcion}</p>
-        <hr style="border: 0; border-top: 1px solid #ffccd5; margin: 15px 0;">
-        <p style="font-size: 13px; color: #ff59aa;">Tu puntaje actual: <b>${rep}/100</b></p>
-    `;
+    // 2. Obtener reputación asegurando tipo numérico
+    const rep = parseInt(window.jugadores[window.miIdx].reputacion) || 50;
     
-    // 5. Asegurar visibilidad
-    document.getElementById('modal').style.display = 'block';
+    // 3. Estructuración lógica mediante un array (Más escalable que múltiples if-else)
+    const niveles = [
+        { min: 90, estrellas: "★★★★★", desc: "Hotel de Lujo. Tus propiedades son un éxito absoluto. ¡Alquileres +10%!" },
+        { min: 70, estrellas: "★★★★☆", desc: "Muy valorado. Los visitantes están encantados con tu gestión." },
+        { min: 50, estrellas: "★★★☆☆", desc: "Estándar. Todo funciona correctamente, pero puedes mejorar." },
+        { min: 30, estrellas: "★★☆☆☆", desc: "Necesitas mantenimiento. Los clientes han dejado quejas recientes." },
+        { min: 0,  estrellas: "★☆☆☆☆", desc: "Reputación crítica. Se esparcen rumores negativos. ¡Tus alquileres están bajando!" }
+    ];
+
+    const info = niveles.find(n => rep >= n.min) || niveles[niveles.length - 1];
+
+    // 4. Mostrar en el modal con protección de DOM
+    const modal = document.getElementById('modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalText = document.getElementById('modal-text');
+
+    if (modal && modalTitle && modalText) {
+        modalTitle.innerText = "Reseña de Visitantes";
+        modalText.innerHTML = `
+            <div style="font-size: 40px; color: #ffd700; margin: 10px 0; text-shadow: 1px 1px 2px #555;">${info.estrellas}</div>
+            <p style="font-size: 16px; color: #c71585; font-weight: bold;">${info.desc}</p>
+            <hr style="border: 0; border-top: 1px solid #ffccd5; margin: 15px 0;">
+            <p style="font-size: 13px; color: #ff59aa;">Tu puntaje actual: <b>${rep}/100</b></p>
+        `;
+        modal.style.display = 'block';
+    }
 };
 
-        function actualizarVisualReputacion(valor) {
-    // Aseguramos que el valor esté entre 0 y 100
-    if (valor < 0) valor = 0;
-    if (valor > 100) valor = 100;
+        window.actualizarVisualReputacion = function(valor) {
+    // 1. Normalización de seguridad
+    const v = Math.min(Math.max(valor, 0), 100);
     
-    let barra = document.getElementById('rep-bar');
-    if (barra) {
-        barra.style.width = valor + "%";
-   }
-}
+    const barra = document.getElementById('reputacion-bar');
+    if (!barra) return;
+
+    // 2. Actualización de tamaño
+    barra.style.width = v + "%";
+
+    // 3. Feedback visual (Opcional: Mejora mucho la experiencia del jugador)
+    if (v >= 90) {
+        barra.style.backgroundColor = "#2ecc71"; // Verde: Alta reputación
+    } else if (v <= 30) {
+        barra.style.backgroundColor = "#e74c3c"; // Rojo: Peligro/Fraude
+    } else {
+        barra.style.backgroundColor = "#3498db"; // Azul: Neutral
+    }
+};
 
         window.verificarLogros = function(idx) {
-    // 1. Seguridad: Verificar que el jugador y sus datos existan antes de procesar
+    // 1. Seguridad: Verificar datos
     if (!window.jugadores || !window.jugadores[idx]) {
-        console.warn("Verificación de logros ignorada: datos del jugador aún no cargados.");
         return;
     }
 
     let jugador = window.jugadores[idx];
     let rep = jugador.reputacion || 0;
-    let cambios = {}; 
+    let cambios = {};
 
-    // 2. Lógica para Magnate de la Reputación (100)
-    // Se asegura de no añadir el escudo si ya lo tiene (además de la validación !jugador.escudo)
+    // 2. Magnate de la Reputación (Escudo)
+    // Se añade un check adicional para no procesar si ya se otorgó el escudo
     if (rep >= 100 && !jugador.escudo) {
         cambios.escudo = true;
-        alert("¡FELICIDADES! Has alcanzado 100 de reputación. ¡Has ganado un ESCUDO DE LUJO!");
+        // Solo alertamos si el jugador es el dueño de esta sesión
+        if (idx === window.miIdx) {
+            alert("¡FELICIDADES! Has alcanzado 100 de reputación. ¡Has ganado un ESCUDO DE LUJO!");
+        }
     }
 
-    // 3. Lógica para Hotel en Ruinas (0)
-    // Se asegura de no reiniciar una quiebra técnica existente
+    // 3. Hotel en Ruinas (Quiebra Técnica)
     if (rep <= 0 && (!jugador.quiebraTecnica || jugador.quiebraTecnica === 0)) {
-        cambios.quiebraTecnica = 2; 
-        alert("¡ADVERTENCIA! Reputación en 0. Entras en QUIEBRA TÉCNICA por 2 turnos.");
+        cambios.quiebraTecnica = 2;
+        if (idx === window.miIdx) {
+            alert("¡ADVERTENCIA! Reputación en 0. Entras en QUIEBRA TÉCNICA por 2 turnos.");
+        }
     }
 
-    // 4. Si hubo cambios, enviamos a Firebase con una ruta dinámica segura
+    // 4. Escritura atómica
     if (Object.keys(cambios).length > 0 && typeof sala !== 'undefined') {
         db.ref('salas/' + sala + '/jugadores/' + idx).update(cambios)
             .catch(error => console.error("Error al actualizar logros:", error));
     }
 };
 
-        function pagarAlquiler(duenoIdx, inquilinoIdx, precioBase) {
-    
-    // 1. VERIFICACIÓN DE QUIEBRA TÉCNICA (El dueño no puede cobrar)
-    if (window.jugadores[duenoIdx] && window.jugadores[duenoIdx].quiebraTecnica > 0) {
-        alert("El dueño está en Quiebra Técnica y no puede cobrar alquileres en este momento.");
-        return; // El pago se cancela
+       window.pagarAlquiler = function(duenoIdx, inquilinoIdx, precioBase) {
+    if (typeof window.jugadores === 'undefined' || !window.jugadores[duenoIdx]) {
+        console.error("Datos de jugadores no cargados.");
+        return;
     }
 
-    // 2. VERIFICACIÓN DEL ESCUDO DE LUJO (El dueño está protegido)
-    if (window.jugadores[duenoIdx] && window.jugadores[duenoIdx].escudo) {
+    if (window.jugadores[duenoIdx].quiebraTecnica > 0) {
+        alert("El dueño está en Quiebra Técnica y no puede cobrar alquileres.");
+        return;
+    }
+
+    if (window.jugadores[duenoIdx].escudo) {
         alert("¡El alquiler fue bloqueado por el Escudo de Lujo!");
-        db.ref('salas/' + sala + '/jugadores/' + duenoIdx).update({ escudo: false });
-        return; // ¡Se bloquea el pago!
+        window.db.ref('salas/' + window.sala + '/jugadores/' + duenoIdx).update({ escudo: false });
+        return;
     }
 
-    // 3. CÁLCULO CON REPUTACIÓN
-    let monto = calcularAlquiler(precioBase, duenoIdx);
+    // 1. Calcular monto
+    let monto = window.calcularAlquiler(precioBase, duenoIdx);
     
-    // 4. EJECUCIÓN DEL COBRO REAL
-    let dineroInquilino = window.jugadores[inquilinoIdx].dinero - monto;
-    let dineroDueno = window.jugadores[duenoIdx].dinero + monto;
-
-    db.ref('salas/' + sala + '/jugadores/' + inquilinoIdx).update({ dinero: dineroInquilino });
-    db.ref('salas/' + sala + '/jugadores/' + duenoIdx).update({ dinero: dineroDueno });
+    // 2. Transacción segura: Evita el problema de que el dinero cambie mientras calculas
+    // Restamos al inquilino
+    window.db.ref('salas/' + window.sala + '/jugadores/' + inquilinoIdx + '/dinero').transaction(d => (d || 0) - monto);
+    
+    // Sumamos al dueño
+    window.db.ref('salas/' + window.sala + '/jugadores/' + duenoIdx + '/dinero').transaction(d => (d || 0) + monto);
 
     alert("Has pagado $" + monto + " de alquiler.");
-}
-        function gestionarFraude() {
-    let extra = document.getElementById('modal-extra');
-    document.getElementById('modal-title').innerText = "Corte Penal";
+};
+        
+        window.gestionarFraude = function() {
+    // 1. Referencias seguras
+    const modal = document.getElementById('modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalText = document.getElementById('modal-text');
+    const modalExtra = document.getElementById('modal-extra');
+
+    if (!modal || !modalTitle || !modalText || !modalExtra) return;
+
+    // 2. Reseteo controlado: Solo limpiamos lo necesario
+    modalTitle.innerText = "Corte Penal";
+    modalExtra.innerHTML = ""; // Limpiamos el área de botones
     
-    let htmlContent = `
+    // 3. Inyectamos el contenido
+    modalText.innerHTML = `
         <div class="card-property">
             <p>Has sido acusado de <b>FRAUDE</b> por acumular tres 6 seguidos.</p>
             <p>¡Tienes derecho a un abogado! ¿Quieres pagar la penalidad?</p>
-            <button class="btn" onclick="pagarPenalidad()">Pagar $250</button>
-            <button class="btn" style="background:#555" onclick="cerrarModal()">Un turno sin jugar</button>
         </div>
     `;
-    document.getElementById('modal-text').innerHTML = htmlContent;
-    extra.innerHTML = ""; // Limpiamos botones extra
-    document.getElementById('modal').style.display = 'block';
-}
 
-function pagarPenalidad() {
-    db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ enCarcel: 0 });
-    db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => d - 250);
-    log(nombres[miIdx] + " pagó la multa de fraude y fue liberado.");
-    cerrarModal();
-}
+    // 4. Añadimos botones a modalExtra, no dentro de modalText
+    // Esto mantiene la estructura limpia y separa lógica de UI
+    modalExtra.innerHTML = `
+        <button class="btn btn-accion" onclick="window.pagarPenalidad()">Pagar $250</button>
+        <button class="btn" style="background:#555" onclick="window.cerrarModal()">Un turno sin jugar</button>
+    `;
+
+    modal.style.display = 'block';
+};
+
+window.pagarPenalidad = function() {
+    // 1. Validaciones básicas de seguridad
+    if (typeof sala === 'undefined' || typeof miIdx === 'undefined') return;
+
+    // 2. Bloqueo de UI (asumiendo que usas tu sistema de btn-accion)
+    // Si este botón tiene la clase 'btn-accion', no necesitas llamar a toggle manualmente,
+    // pero si lo llamas desde una función, es buena práctica desactivar elementos.
     
-   // 1. Función unirse (Detecta si existe o si debe crearla)
-window.unirse = function() {
-    let inputSala = document.getElementById('sala-id');
-    if (!inputSala || !inputSala.value) {
-        alert("Por favor, ingresa un ID de sala.");
+    // 3. Ejecución segura con Firebase
+    const refJugador = db.ref('salas/' + sala + '/jugadores/' + miIdx);
+    
+    // Usamos .update para los estados y .transaction para el dinero (es más seguro)
+    refJugador.update({ enCarcel: 0 })
+        .then(() => {
+            return refJugador.child('dinero').transaction(d => (d || 0) - 250);
+        })
+        .then(() => {
+            window.log((window.nombres ? window.nombres[miIdx] : "Jugador") + " pagó la multa de fraude y fue liberado.");
+            if (typeof window.cerrarModal === 'function') {
+                window.cerrarModal();
+            }
+        })
+        .catch(error => {
+            console.error("Error al pagar la penalidad:", error);
+            alert("Hubo un problema al procesar el pago. Inténtalo de nuevo.");
+        });
+};
+    
+   window.unirse = function() {
+    const inputSala = document.getElementById('sala-id');
+    if (!inputSala || !inputSala.value.trim()) {
+        alert("Por favor, ingresa un ID de sala válido.");
         return;
     }
     
-    let nombreSala = inputSala.value.trim();
+    const nombreSala = inputSala.value.trim();
 
+    // 1. Validar existencia de la sala
     db.ref('salas/' + nombreSala).once('value', snap => {
         if (!snap.exists()) {
-            // La sala no existe: Abrimos modal para ofrecer crearla
             document.getElementById('modal-title').innerText = "Sala no encontrada";
-            document.getElementById('modal-text').innerHTML = `
-                <div class="card-property">
-                    <p style="text-align: center; padding: 20px;">
-                        La sala <b>${nombreSala}</b> no existe. ¿Quieres crear una nueva con este nombre?
-                    </p>
-                </div>
-            `;
+            document.getElementById('modal-text').innerHTML = `<p>La sala <b>${nombreSala}</b> no existe. ¿Quieres crearla?</p>`;
             document.getElementById('modal-extra').innerHTML = `
-                <button class="btn" onclick="crearNuevaSala('${nombreSala}')">Crear Sala</button>
-                <button class="btn" onclick="document.getElementById('modal').style.display='none'">Cancelar</button>
+                <button class="btn" onclick="window.crearNuevaSala('${nombreSala}')">Crear Sala</button>
+                <button class="btn" onclick="window.cerrarModal()">Cancelar</button>
             `;
             document.getElementById('modal').style.display = 'block';
         } else {
-            // La sala existe: Entramos directamente
-            procederConUnion(nombreSala);
+            // 2. Antes de unir, limpiamos cualquier escucha previa de jugadores para evitar duplicados
+            db.ref('salas/' + nombreSala + '/jugadores').off('value');
             
-            // --- NUEVA LÍNEA: Escucha constante para tener 'jugadores' siempre actualizado ---
+            // 3. Procedemos con la unión
+            window.procederConUnion(nombreSala);
+            
+            // 4. Establecemos la escucha constante tras asegurar la unión
             db.ref('salas/' + nombreSala + '/jugadores').on('value', (snap) => {
-                window.jugadores = snap.val();
+                window.jugadores = snap.val() || [];
+                if (typeof window.sincronizar === 'function') window.sincronizar();
             });
-            // -----------------------------------------------------------------------------
             
-            // ACTIVACIÓN DE OFERTAS: Al entrar, empezamos a escuchar si alguien nos vende algo
-            if (typeof escucharOfertas === 'function') {
-                escucharOfertas();
-            }
+            if (typeof window.escucharOfertas === 'function') window.escucharOfertas();
         }
     });
 };
-// 2. Función auxiliar para crear y entrar
-window.crearNuevaSala = function(nombreSala) {
-    db.ref('salas/' + nombreSala).set({
-        estado: 'esperando',
-        jugadores: []
-    }).then(() => {
-        document.getElementById('modal').style.display = 'none';
-        procederConUnion(nombreSala);
-    });
-};
 
-// 3. Función principal de unión (con reconexión)
-function procederConUnion(nombreSala) {
-    sala = nombreSala;
-    if (yaEntro) return;
+window.procederConUnion = function(nombreSala) {
+    // Red de seguridad: si ya entramos, no duplicar procesos
+    if (window.yaEntro) return;
+    
+    window.sala = nombreSala; // Asignación explícita
     
     let btn = document.getElementById('btn-unirse');
-    if (btn) btn.disabled = true;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Conectando...";
+    }
 
-    db.ref('salas/' + sala + '/jugadores').once('value', snap => {
+    db.ref('salas/' + window.sala + '/jugadores').once('value', snap => {
         let jugadores = snap.val() || [];
-        let miNombreGuardado = localStorage.getItem('monopoly_nombre');
-        let encontrado = false;
-        let indexEncontrado = -1;
-
-        // 1. BUSCAR POR NOMBRE: Si el nombre ya existe en la sala, reconectamos
-        jugadores.forEach((j, index) => {
-            if (j && j.nombre === miNombreGuardado) {
-                indexEncontrado = index;
-                encontrado = true;
-            }
-        });
-
-        // 2. Asignar miIdx correctamente
-        if (encontrado) {
-            miIdx = indexEncontrado;
-            console.log("Reconectado como: " + miNombreGuardado + " en índice: " + miIdx);
-        } else {
-            // Nuevo jugador: usamos el primer índice disponible o el final
-            miIdx = jugadores.length;
-            let nuevoNombre = (typeof nombres !== 'undefined' && nombres[miIdx]) ? nombres[miIdx] : ("Jugador " + (miIdx + 1));
-            localStorage.setItem('monopoly_nombre', nuevoNombre);
-            console.log("Nuevo jugador registrado como: " + nuevoNombre);
-        }
-
-        yaEntro = true;
-        let miNombre = localStorage.getItem('monopoly_nombre');
-        let jugadorRef = db.ref('salas/' + sala + '/jugadores/' + miIdx);
+        let listaJugadores = Array.isArray(jugadores) ? jugadores : Object.values(jugadores);
         
-        // Usamos update para mantener datos previos si existían
-        jugadorRef.update({
-            pos: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].pos : 0,
-            dinero: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].dinero : 1000,
-            enCarcel: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].enCarcel : 0,
+        let miNombre = localStorage.getItem('monopoly_nombre') || "Jugador " + (listaJugadores.length + 1);
+        let indexEncontrado = listaJugadores.findIndex(j => j && j.nombre === miNombre);
+        
+        window.miIdx = (indexEncontrado !== -1) ? indexEncontrado : listaJugadores.length;
+        localStorage.setItem('monopoly_nombre', miNombre);
+        
+        let jugadorData = {
             nombre: miNombre,
-            tienePrestamo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].tienePrestamo : false,
-            montoPrestamo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].montoPrestamo : 0,
-            escudo: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].escudo : false,
-            quiebraTecnica: (encontrado && jugadores[miIdx]) ? jugadores[miIdx].quiebraTecnica : 0
-        }).then(() => {
-            localStorage.setItem('monopoly_sala', sala);
-            
-            // Mensaje en chat
-            db.ref('salas/' + sala + '/chat').push({ 
-                n: "Sistema", 
-                m: miNombre + (encontrado ? " ha vuelto a la partida." : " ha entrado a la sala.") 
-            });
-
-            // Solo el primero inicia el clima
-            if (miIdx === 0 && !encontrado) {
-                db.ref('salas/' + sala + '/turno').set(0);
-                if (typeof iniciarRelojClima === 'function') iniciarRelojClima();
+            pos: (indexEncontrado !== -1 && listaJugadores[window.miIdx]) ? listaJugadores[window.miIdx].pos : 0,
+            conectado: true,
+            lastSeen: firebase.database.ServerValue.TIMESTAMP
+        };
+        
+        // Unión atómica usando la variable global window.sala definida arriba
+        db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx).update(jugadorData)
+        .then(() => {
+            window.yaEntro = true;
+            if (typeof window.sincronizar === 'function') window.sincronizar();
+            console.log("Unido correctamente a sala:", window.sala);
+        })
+        .catch(error => {
+            console.error("Error crítico al unirse:", error);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = "Unirse";
             }
-
-            sincronizar();
-        }).catch(error => {
-            console.error(error);
-            yaEntro = false;
-            if (btn) btn.disabled = false;
         });
     });
-}
+};
 
         // Función para disparar la alerta con el mismo estilo
 window.toggleModo2v2 = function() {
+    if (typeof sala === 'undefined') return;
+    
     db.ref('salas/' + sala + '/jugadores').once('value', snap => {
         let count = snap.numChildren();
         
         if (count !== 4) {
             let modal = document.getElementById('modal-2v2');
-            if (modal) {
-                modal.style.display = 'block';
-            }
+            if (modal) modal.style.display = 'block';
             return;
         }
         
         console.log("Modo 2v2 activado");
     });
 };
-
-        function calcularAlquiler(precioBase, duenoIdx) {
-    // 1. Obtener reputación del dueño para el cálculo del precio
-    let rep = (window.jugadores && window.jugadores[duenoIdx]) ? (window.jugadores[duenoIdx].reputacion || 50) : 50;
-    let multiplicador = 1.0; 
-
-    if (rep >= 90) multiplicador = 1.10;      // Bonus del dueño: +10%
-    else if (rep <= 30) multiplicador = 0.85; // Rumores del dueño: -15%
-
-    // 2. Calcular precio base ajustado por reputación
-    let precioAjustado = precioBase * multiplicador;
-
-    // 3. Aplicar descuento de aliado si aplica (usando tu nueva función de bonos)
-    // Asumimos que miIdx es la variable global del jugador actual
-    let bonoAliado = obtenerBonosReputacion(miIdx); 
-    
-    // 4. Retornar el total final
-    return Math.floor(precioAjustado * bonoAliado);
-}
         
 
-        function obtenerAlquilerFerrocarril(dueñoIdx, todasLasPropiedades) {
+window.calcularAlquiler = function(precioBase, duenoIdx) {
+    // 1. Obtención segura del objeto dueño
+    const jugadorDueño = (window.jugadores && window.jugadores[duenoIdx]) ? window.jugadores[duenoIdx] : null;
+    
+    // 2. Cálculo de reputación con valores por defecto seguros
+    const rep = (jugadorDueño && typeof jugadorDueño.reputacion === 'number') ? jugadorDueño.reputacion : 50;
+    
+    let multiplicador = 1.0; 
+    if (rep >= 90) multiplicador = 1.10;      // Bonus: +10%
+    else if (rep <= 30) multiplicador = 0.85; // Rumores: -15%
+
+    const precioAjustado = precioBase * multiplicador;
+
+    // 3. Verificación de bonos de aliado
+    const bonoAliado = (typeof obtenerBonosReputacion === 'function') ? obtenerBonosReputacion(window.miIdx) : 1.0;
+    
+    // 4. Retorno final redondeado
+    return Math.floor(precioAjustado * bonoAliado);
+};
+        
+        window.obtenerAlquilerFerrocarril = function(dueñoIdx, todasLasPropiedades) {
+    // 1. Validaciones de seguridad iniciales
+    if (!todasLasPropiedades || typeof dueñoIdx === 'undefined') return 0;
+    
     const indicesTransporte = [8, 24, 26, 27];
     let cantidad = 0;
     
-    // Contamos cuántos transportes tiene el dueño
+    // 2. Conteo de ferrocarriles poseídos
     indicesTransporte.forEach(idx => {
-        if (todasLasPropiedades[idx] && todasLasPropiedades[idx].owner === dueñoIdx) {
+        const prop = todasLasPropiedades[idx];
+        // Validamos que la propiedad exista y tenga el owner correcto
+        if (prop && prop.owner === dueñoIdx) {
             cantidad++;
         }
     });
 
-    // Lógica de precios según cantidad
+    // 3. Tabla de alquileres (Escalabilidad protegida)
     const tabla = { 1: 100, 2: 150, 3: 250, 4: 300 };
+    
+    // Retornamos el valor basado en la cantidad, si es 0, devuelve 0
     return tabla[cantidad] || 0;
-}
+};
         
         
-        window.abrirModalMisiones = function() {
-    // Referencia al modal principal unificado
-    let modal = document.getElementById('modal');
-    let modalTitle = document.getElementById('modal-title');
-    let modalText = document.getElementById('modal-text');
-    let modalExtra = document.getElementById('modal-extra');
+       window.abrirModalMisiones = function() {
+    const misiones = [
+        { id: 'inversorInicial', titulo: 'Inversor Inicial. Poseer al menos 3 propiedades.', rec: 200 },
+        { id: 'coleccionista', titulo: 'El coleccionista. Completar cualquier set de color.', rec: 300 },
+        { id: 'negociador', titulo: 'El negociador. Por realizar tu primer intercambio exitoso.', rec: 400 },
+        { id: 'cajafuerte', titulo: 'Caja fuerte. Acumular $2,000 en efectivo.', rec: 650 },
+        { id: 'renovador', titulo: 'Renovador. Construir un total de 5 casas.', rec: 500 },
+        { id: 'monopolioTotal', titulo: 'Monopolio total. Ser dueño de los 3 sets más caros.', rec: 1500 },
+        { id: 'intocable', titulo: 'El intocable. Otros jugadores caen 5 veces en tus propiedades.', rec: 400 }
+    ];
 
-    db.ref('salas/' + sala + '/jugadores/' + miIdx + '/misionesCumplidas').once('value', snap => {
-        let completadas = snap.val() || {};
+    db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx + '/misionesCumplidas')
+      .once('value', snap => {
+        const misCompletadas = snap.val() || {};
+        const lista = document.getElementById('lista-misiones');
         
-        const misiones = [
-            { id: 'inversorInicial', titulo: 'Inversor Inicial. Poseer al menos 3 propiedades.', rec: 200 },
-            { id: 'coleccionista', titulo: 'El coleccionista. Completar cualquier set de color.', rec: 300 },
-            { id: 'negociador', titulo: 'El negociador. Por realizar tu primer intercambio exitoso.', rec: 400 },
-            { id: 'cajafuerte', titulo: 'Caja fuerte. Acumular $2,000 en efectivo.', rec: 650 },
-            { id: 'renovador', titulo: 'Renovador. Construir un total de 5 casas.', rec: 500 },
-            { id: 'monopolioTotal', titulo: 'Monopolio total. Ser dueño de los 3 sets más caros.', rec: 1500 },
-            { id: 'intocable', titulo: 'El intocable. Otros jugadores caen 5 veces en tus propiedades.', rec: 400 }
-        ];
-
-        // Construimos el HTML de la lista directamente
-        let htmlLista = `<ul id="lista-misiones">`;
+        // 1. DEFINIMOS LA VARIABLE AQUÍ
+        let htmlLista = ""; 
+        
+        // 2. RECORREMOS LAS MISIONES
         misiones.forEach(m => {
-            htmlLista += `<li>${m.titulo} - <b>$${m.rec}</b> ${completadas[m.id] ? '✅' : ''}</li>`;
+            htmlLista += `
+                <li style="margin-bottom: 8px; border-bottom: 1px solid #eee; padding: 5px;">
+                    ${m.titulo} - <b>$${m.rec}</b> 
+                    ${misCompletadas[m.id] ? '<i class="fa-solid fa-check-circle" style="color: green;"></i>' : '<i class="fa-solid fa-clock" style="color: orange;"></i>'}
+                </li>`;
         });
-        htmlLista += `</ul>`;
 
-        // Asignamos al modal unificado
-        modalTitle.innerText = "Misiones Disponibles";
-        modalText.innerHTML = htmlLista;
-        modalExtra.innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Cerrar</button>`;
+        if (lista) lista.innerHTML = htmlLista;
+        
+        const modal = document.getElementById('modal-misiones');
+        if (modal) modal.style.display = 'flex';
+    });
+};
+      
 
-        // Mostramos el modal
-        modal.style.display = 'block';
+// --- 2. FUNCIÓN DE NOTIFICACIÓN (Fuera de la anterior) ---
+window.mostrarNotificacionMision = function(titulo) {
+    const msgMision = document.getElementById('msg-mision');
+    const modalMision = document.getElementById('modal-mision-completada');
+
+    if (msgMision && modalMision) {
+        msgMision.innerText = titulo;
+        modalMision.style.display = 'block';
+    }
+};
+
+        window.verificarMisionNegociador = function(jugadorIdx) {
+    if (typeof sala === 'undefined' || typeof nombres === 'undefined') return;
+
+    let refMision = db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/negociador');
+    
+    refMision.once('value', snap => {
+        if (!snap.val()) { // Si aún no se ha cumplido
+            
+            // 1. Marcar como completada en BD
+            refMision.set(true);
+            
+            // 2. Entregar recompensa (usando transacción para atomicidad)
+            db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => (d || 0) + 400);
+            
+            // 3. Registrar el logro
+            db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/ultimaMision').set("negociador");
+            
+            // 4. Log seguro
+            let nombre = nombres[jugadorIdx] || "Jugador " + (jugadorIdx + 1);
+            window.log(nombre + " completó la misión: El negociador.");
+        }
     });
 };
 
-function mostrarNotificacionMision(titulo) {
-    document.getElementById('msg-mision').innerText = titulo;
-    document.getElementById('modal-mision-completada').style.display = 'block';
-}
+        window.verificarMisionInversor = function(jugadorIdx) {
+    if (typeof sala === 'undefined' || !sala) return;
 
-        function verificarMisionNegociador(jugadorIdx) {
-    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/negociador').once('value', snap => {
-        if (!snap.val()) {
-            // 1. Marcar como completada en BD
-            db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/negociador').set(true);
-            
-            // 2. Entregar recompensa
-            db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => d + 400);
-            
-            // 3. Registrar el logro para que el cliente lo detecte
-            db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/ultimaMision').set("negociador");
-            
-            log(nombres[jugadorIdx] + " completó la misión: El negociador.");
-        }
-    }); // <--- Aquí se cierra correctamente el .once
-}
-
-        function verificarMisionInversor(jugadorIdx) {
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val();
-        if (!data.propiedades) return;
+        // Si no hay propiedades, terminamos aquí
+        if (!data || !data.propiedades) return;
 
-        // Contamos cuántas propiedades tienen como owner al jugador actual
+        // Contamos propiedades de forma segura
         let totalPropiedades = Object.values(data.propiedades).filter(p => p.owner === jugadorIdx).length;
 
         if (totalPropiedades >= 3) {
             db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/inversorInicial').once('value', snap => {
-                if (!snap.val()) { // Solo si no la ha cumplido antes
-
-                    // 1. Marcar como cumplida en BD
+                if (!snap.val()) {
+                    // Entregar recompensa y marcar misión
                     db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/inversorInicial').set(true);
-                    
-                    // 2. Entregar recompensa
-                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => d + 200);
-                    
-                    // 3. Registrar el logro para que sincronizar() lo detecte
+                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => (d || 0) + 200);
                     db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/ultimaMision').set("inversor");
                     
-                    log(nombres[jugadorIdx] + " completó la misión: Inversor Inicial.");
+                    // Asegúrate de que la función 'log' exista globalmente
+                    if (typeof log === 'function') {
+                        log((window.nombres ? window.nombres[jugadorIdx] : "Jugador") + " completó la misión: Inversor Inicial.");
+                    }
                 }
-            }); // <--- Cierra el .once de misionesCumplidas
-        } // <--- Cierra el if (totalPropiedades >= 3)
-    }); // <--- Cierra el .once de salas/sala
-}
+            });
+        }
+    });
+};
 
-        function verificarMisionColeccionista(jugadorIdx) {
+        window.verificarMisionColeccionista = function(jugadorIdx) {
+    if (typeof sala === 'undefined' || typeof grupos === 'undefined') return;
+
     db.ref('salas/' + sala).once('value', snap => {
         let data = snap.val();
-        if (!data.propiedades) return;
+        if (!data || !data.propiedades) return;
 
-        // Revisamos cada grupo de color definido en tu array 'grupos'
+        // Revisamos si el jugador posee algún set completo
         let tieneSetCompleto = grupos.some(g => {
             return g.indices.every(idx => 
                 data.propiedades[idx] && data.propiedades[idx].owner === jugadorIdx
@@ -754,648 +942,666 @@ function mostrarNotificacionMision(titulo) {
         });
 
         if (tieneSetCompleto) {
-            db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/coleccionista').once('value', snap => {
-                if (!snap.val()) { // Si no la ha cumplido aún
-                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/coleccionista').set(true);
-                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => d + 300);
+            let refMision = db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/coleccionista');
+            
+            refMision.once('value', snap => {
+                if (!snap.val()) { // Si no ha sido marcada como cumplida
+                    refMision.set(true);
+                    
+                    // Actualizamos dinero de forma atómica
+                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => (d || 0) + 300);
+                    
+                    // Notificamos
                     db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/ultimaMision').set("coleccionista");
-                    log(nombres[jugadorIdx] + " completó la misión: El coleccionista.");
+                    
+                    // Log seguro
+                    let nombre = (typeof nombres !== 'undefined' && nombres[jugadorIdx]) ? nombres[jugadorIdx] : "Jugador " + (jugadorIdx + 1);
+                    window.log(nombre + " completó la misión: El coleccionista.");
                 }
             });
         }
     });
-}
+};
+        window.verificarMisionMonopolioTotal = function(jugadorIdx) {
+    // 1. Validación de seguridad
+    if (typeof sala === 'undefined' || !sala) return;
 
-        function verificarMisionMonopolioTotal(jugadorIdx) {
     db.ref('salas/' + sala + '/propiedades').once('value', snap => {
         let propiedades = snap.val();
-        if (!propiedades) return;
+        
+        // 2. Validación: asegurarse de que grupos esté definido
+        if (!propiedades || typeof grupos === 'undefined') return;
 
-        // Debes definir aquí los IDs de los grupos más caros (ejemplo: grupos 6, 7 y 8)
-        // Ajusta los números según tu array de 'grupos'
-        const setsMasCaros = [6, 7, 8]; 
+        // 3. Lógica del monopolio
+        const setsMasCaros = [2, 3, 4]; 
 
         let tieneTodosLosSets = setsMasCaros.every(grupoIdx => {
+            if (!grupos[grupoIdx]) return false; 
             return grupos[grupoIdx].indices.every(pIdx => 
                 propiedades[pIdx] && propiedades[pIdx].owner === jugadorIdx
             );
         });
 
+        // 4. ¿Qué hacer si se cumple? 
         if (tieneTodosLosSets) {
-            db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/monopolioTotal').once('value', snap => {
-                if (!snap.val()) { // Solo si no se ha reclamado
-                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/monopolioTotal').set(true);
-                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => d + 1500);
+            let refMision = db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/monopolioTotal');
+            
+            refMision.once('value', snap => {
+                if (!snap.val()) {
+                    refMision.set(true);
+                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => (d || 0) + 1500);
                     db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/ultimaMision').set("monopolioTotal");
                     
-                    log(nombres[jugadorIdx] + " completó la misión: ¡Monopolio Total!");
+                    if (typeof log === 'function') {
+                        let nombreJugador = (typeof nombres !== 'undefined' && nombres[jugadorIdx]) ? nombres[jugadorIdx] : "Jugador " + (jugadorIdx + 1);
+                        log(nombreJugador + " completó la misión: ¡Monopolio Total!");
+                    }
                 }
             });
         }
-    });
-}
-
+    }); // Cierra el db.ref
+}; // Cierra la función verificarMisionMonopolioTotal
         
 
-        function verificarMisionRenovador(jugadorIdx) {
+        // 1. Misión: Renovador
+window.verificarMisionRenovador = function(jugadorIdx) {
+    if (typeof sala === 'undefined') return;
+
     db.ref('salas/' + sala + '/propiedades').once('value', snap => {
         let propiedades = snap.val();
         if (!propiedades) return;
 
-        // Sumamos el nivel de todas las propiedades del jugador
         let totalCasas = Object.values(propiedades)
             .filter(p => p.owner === jugadorIdx)
             .reduce((sum, p) => sum + (p.nivel || 0), 0);
 
         if (totalCasas >= 5) {
-            db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/renovador').once('value', snap => {
-                if (!snap.val()) { // Solo si no la ha cumplido
-                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/renovador').set(true);
-                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => d + 500);
+            let refMision = db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/renovador');
+            refMision.once('value', snap => {
+                if (!snap.val()) {
+                    refMision.set(true);
+                    db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => (d || 0) + 500);
                     db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/ultimaMision').set("renovador");
-                    
-                    log(nombres[jugadorIdx] + " completó la misión: Renovador.");
+                    if (typeof log === 'function') log((window.nombres ? nombres[jugadorIdx] : "Jugador") + " completó la misión: Renovador.");
                 }
             });
         }
     });
-}
+};
 
-        function verificarMisionCajaFuerte(jugadorIdx, saldoActual) {
+// 2. Misión: Caja Fuerte
+window.verificarMisionCajaFuerte = function(jugadorIdx, saldoActual) {
     if (saldoActual >= 2000) {
-        db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/cajafuerte').once('value', snap => {
-            if (!snap.val()) { // Si aún no ha reclamado el premio
-                // 1. Marcar misión como completada
-                db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/cajafuerte').set(true);
-                
-                // 2. Entregar el premio
-                db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => d + 650);
-                
-                // 3. Registrar el logro
+        let refMision = db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/misionesCumplidas/cajafuerte');
+        refMision.once('value', snap => {
+            if (!snap.val()) {
+                refMision.set(true);
+                db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/dinero').transaction(d => (d || 0) + 650);
                 db.ref('salas/' + sala + '/jugadores/' + jugadorIdx + '/ultimaMision').set("cajafuerte");
-                
-                log(nombres[jugadorIdx] + " completó la misión: Caja fuerte.");
+                if (typeof log === 'function') log((window.nombres ? nombres[jugadorIdx] : "Jugador") + " completó la misión: Caja fuerte.");
             }
         });
     }
-}
+};
+
+// 3. Verificación de Bancarrota
+// --- 1. LÓGICA DE BANCARROTA Y BANCO ---
+// --- 1. LÓGICA DE BANCARROTA Y BANCO ---
+window.verificarBancarrota = function(jugadorIdx, saldo) {
+    if (saldo < 0) {
+        let nombre = (window.nombres && window.nombres[jugadorIdx]) ? window.nombres[jugadorIdx] : "Jugador";
+        if (typeof window.log === 'function') window.log("¡" + nombre + " ha caído en números rojos!");
         
-    function verificarBancarrota(jugadorIdx, saldo) {
-        if (saldo < 0) {
-            log("¡" + nombres[jugadorIdx] + " ha caído en números rojos!");
+        let modal = document.getElementById('modal');
+        if (modal) {
             document.getElementById('modal-title').innerText = "¡Bancarrota!";
             document.getElementById('modal-text').innerText = "Tu saldo es $" + saldo + ". ¡Te recomiendo un préstamo!";
-            document.getElementById('modal-extra').innerHTML = `<button class="btn" onclick="abrirBanco()">Ir al Banco</button>`;
-            document.getElementById('modal').style.display = 'block';
+            document.getElementById('modal-extra').innerHTML = `<button class="btn" onclick="window.abrirBanco()">Ir al Banco</button>`;
+            modal.style.display = 'block';
         }
     }
-
-        function abrirBanco() {
-    db.ref('salas/' + sala + '/jugadores/' + miIdx).once('value', snap => {
-        let j = snap.val();
-        let modalTitle = document.getElementById('modal-title');
-        let modalText = document.getElementById('modal-text');
-        let modalExtra = document.getElementById('modal-extra');
-
-        modalTitle.innerText = "🏦 Banco Central";
-        
-        if (j.tienePrestamo) {
-            modalText.innerHTML = `<p>Tienes un préstamo activo de: <b>$${j.montoPrestamo}</b></p>`;
-            modalExtra.innerHTML = `<button class="btn" onclick="pagarPrestamo()">Liquidar Deuda</button>
-                                    <button class="btn" onclick="cerrarModal()">Cerrar</button>`;
-        } else {
-            let html = `<p>Tu saldo: <b>$${j.dinero}</b></p><p>Selecciona un monto para tu préstamo:</p>`;
-            modalText.innerHTML = html;
-            
-            // Botones de montos
-            let montos = [300, 500, 700, 900];
-            modalExtra.innerHTML = "";
-            montos.forEach(m => {
-                modalExtra.innerHTML += `<button class="btn" onclick="pedirPrestamo(${m})">$${m}</button> `;
-            });
-            
-        }
-        document.getElementById('modal').style.display = 'block';
-    });
-}
-
-        window.verificarLogros = function(idx) {
-
-    let jugador = window.jugadores[idx];
-
-    let rep = jugador.reputacion;
-
-    let cambios = {}; // Objeto para enviar a Firebase
-
-
-
-    // Lógica para Magnate de la Reputación (100)
-
-    if (rep >= 100 && !jugador.escudo) {
-
-        cambios.escudo = true;
-
-        alert("¡FELICIDADES! Has alcanzado 100 de reputación. ¡Has ganado un ESCUDO DE LUJO!");
-
-    }
-
-
-
-    // Lógica para Hotel en Ruinas (0)
-
-    if (rep <= 0 && jugador.quiebraTecnica === 0) {
-
-        cambios.quiebraTecnica = 2; // El jugador no cobra por 2 turnos
-
-        alert("¡ADVERTENCIA! Reputación en 0. Entras en QUIEBRA TÉCNICA por 2 turnos.");
-
-    }
-
-
-
-    // Si hubo cambios, los enviamos a Firebase
-
-    if (Object.keys(cambios).length > 0) {
-
-        db.ref('salas/' + sala + '/jugadores/' + idx).update(cambios);
-
-    }
-
 };
 
-        function pedirPrestamo(monto) {
-    db.ref('salas/' + sala + '/jugadores/' + miIdx).once('value', snap => {
+window.abrirBanco = function() {
+    if (typeof window.db === 'undefined' || !window.sala || window.miIdx === -1) {
+        alert("Error: Datos de conexión no cargados.");
+        return;
+    }
+
+    window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx).once('value', snap => {
         let j = snap.val();
+        if (!j) return;
+
+        let modal = document.getElementById('modal');
+        if (!modal) return;
+
+        document.getElementById('modal-title').innerText = "🏦 Banco Central";
         
-        // Validación: Si ya tiene préstamo, muestra el aviso
         if (j.tienePrestamo) {
-            document.getElementById('modal-title').innerText = "⚠️ Error";
-            document.getElementById('modal-text').innerHTML = 
-                `<p>No puedes solicitar un nuevo préstamo mientras tengas una deuda activa de <b>$${j.montoPrestamo}</b>.</p>
-                 <p>Debes liquidar tu deuda actual primero.</p>`;
-            document.getElementById('modal-extra').innerHTML = 
-                `<button class="btn" onclick="abrirBanco()">Volver al Banco</button>`;
-            return; // Detiene la ejecución
+            document.getElementById('modal-text').innerHTML = `<p>Tienes un préstamo activo de: <b>$${j.montoPrestamo || 0}</b></p>`;
+            document.getElementById('modal-extra').innerHTML = `<button class="btn" onclick="window.pagarPrestamo()">Liquidar Deuda</button>
+                                                                <button class="btn" onclick="window.cerrarModal()">Cerrar</button>`;
+        } else {
+            let saldo = j.dinero || 0;
+            document.getElementById('modal-text').innerHTML = `<p>Tu saldo: <b>$${saldo}</b></p><p>Selecciona un monto para tu préstamo:</p>`;
+            
+            let montos = [300, 500, 700, 900];
+            document.getElementById('modal-extra').innerHTML = "";
+            montos.forEach(m => {
+                document.getElementById('modal-extra').innerHTML += `<button class="btn" onclick="window.pedirPrestamo(${m})">$${m}</button> `;
+            });
         }
-
-        // Si no tiene, procede con la transacción
-        db.ref('salas/' + sala + '/jugadores/' + miIdx).transaction(player => {
-            if (player && !player.tienePrestamo) {
-                player.tienePrestamo = true;
-                player.montoPrestamo = monto;
-                player.dinero = Number(player.dinero) + monto;
-                return player;
-            }
-        }, (error, committed) => {
-            if (committed) {
-                log(nombres[miIdx] + " obtuvo un préstamo de $" + monto + ".");
-                cerrarModal();
-            }
-        });
+        modal.style.display = 'block';
     });
-}
-        
-   window.mostrarAvisoIntercambio = function() {
-    let modal = document.getElementById('modal');
-    let modalTitle = document.getElementById('modal-title');
-    let modalText = document.getElementById('modal-text');
-    let modalExtra = document.getElementById('modal-extra');
+};
 
-    modalTitle.innerText = "¡Error!";
-    modalText.innerHTML = `
+// --- 2. LÓGICA DE VENTA E INTERCAMBIO ---
+window.mostrarAvisoIntercambio = function() {
+    let modal = document.getElementById('modal');
+    if (!modal) return;
+
+    document.getElementById('modal-title').innerText = "¡Error!";
+    document.getElementById('modal-text').innerHTML = `
         <div class="card-property">
-            <div class="card-header" style="background: #ad0c0c; color: white; padding: 5px;">Alerta</div>
-            <div style="padding: 20px; text-align: center;">
-                <p>Para realizar un intercambio, debes insertar un valor <b>entre 100 y 999</b>.</p>
-            </div>
+            <p>Para realizar un intercambio, debes insertar un valor <b>entre 100 y 999</b>.</p>
         </div>
     `;
-    
-    // IMPORTANTE: Esta línea es la que hace que la ventana aparezca físicamente
+    document.getElementById('modal-extra').innerHTML = `<button class="btn" onclick="window.cerrarModal()">Entendido</button>`;
     modal.style.display = 'block';
 };
-        
-  window.proponerVenta = function(pIdx) {
+
+window.proponerVenta = function(pIdx) {
     let sel = document.getElementById('sel-' + pIdx);
     let input = document.getElementById('precio-' + pIdx);
     
     if (!sel || !input) return;
 
-    // Convertimos a entero de forma segura
     let comprador = parseInt(sel.value);
     let precio = parseInt(input.value);
 
-    // Validación de comprador (aseguramos que no sea NaN)
-    if (isNaN(comprador)) {
-        alert("Error: Debes seleccionar un comprador válido.");
-        return;
+    if (isNaN(comprador)) { alert("Debes seleccionar un comprador."); return; }
+    if (isNaN(precio) || precio < 100 || precio > 999) { window.mostrarAvisoIntercambio(); return; }
+
+    if (confirm(`¿Proponer venta de propiedad ${pIdx} por $${precio}?`)) {
+        let oferta = {
+            propiedad: parseInt(pIdx),
+            vendedor: parseInt(window.miIdx),
+            comprador: comprador,
+            precio: precio,
+            estado: 'pendiente',
+            timestamp: Date.now()
+        };
+
+        window.db.ref('salas/' + window.sala + '/ofertas').push(oferta).then(() => {
+            let nombreProp = (typeof window.mapa !== 'undefined' && window.mapa[pIdx]) ? window.mapa[pIdx].n : "propiedad";
+            let nombreComp = (window.nombres && window.nombres[comprador]) ? window.nombres[comprador] : "Jugador " + (comprador + 1);
+            
+            if (typeof window.log === 'function') {
+                window.log(window.nombres[window.miIdx] + " propuso vender " + nombreProp + " a " + nombreComp + " por $" + precio);
+            }
+            if (typeof window.cerrarModal === 'function') window.cerrarModal();
+        }).catch(err => console.error("Error al proponer venta:", window.log ? err : ""));
     }
-
-    // Validación de precio
-    if (isNaN(precio) || precio < 100 || precio > 999) {
-        document.getElementById('modal-title').innerText = "¡Atención!";
-        document.getElementById('modal-text').innerHTML = '<div class="card-property"><p style="text-align: center; padding: 10px;">Por favor, ingresa un precio válido entre 100 y 999.</p></div>';
-        document.getElementById('modal-extra').innerHTML = '<button class="btn" onclick="abrirIntercambio()">Volver</button>';
-        document.getElementById('modal').style.display = 'block';
-        return;
-    }
-
-    // Push a Firebase con valores numéricos limpios
-    db.ref('salas/' + sala + '/ofertas').push({
-        prop: parseInt(pIdx), 
-        de: parseInt(miIdx), 
-        para: comprador, 
-        precio: precio
-    });
-
-    log(nombres[miIdx] + " propuso vender " + (mapa[pIdx] ? mapa[pIdx].n : "propiedad") + " a " + nombres[comprador] + " por $" + precio);
-    document.getElementById('modal').style.display = 'none';
 };
-
+      
+// --- 1. LÓGICA DE COMPRA (Transacción Atómica) ---
 window.confirmarCompra = function(ofertaKey) {
-    if (typeof sala === 'undefined' || !sala) return;
+    if (typeof window.sala === 'undefined' || !window.sala) return;
 
-    db.ref('salas/' + sala + '/ofertas/' + ofertaKey).once('value', snap => {
+    window.db.ref('salas/' + window.sala + '/ofertas/' + ofertaKey).once('value', snap => {
         let o = snap.val();
-        if (!o) return;
+        if (!o) {
+            alert("Esta oferta ya no existe.");
+            return;
+        }
 
-        // Validamos que los datos de la oferta sean números
         let pIdx = parseInt(o.prop);
         let compradorIdx = parseInt(o.para);
         let vendedorIdx = parseInt(o.de);
         let precio = parseInt(o.precio);
 
-        db.ref('salas/' + sala).transaction(data => {
+        window.db.ref('salas/' + window.sala).transaction(data => {
             if (!data || !data.jugadores || !data.jugadores[compradorIdx] || !data.jugadores[vendedorIdx]) return;
 
-            let dineroComprador = Number(data.jugadores[compradorIdx].dinero);
+            let dineroComprador = Number(data.jugadores[compradorIdx].dinero) || 0;
 
-            if (dineroComprador < precio) return;
+            if (dineroComprador < precio) {
+                console.warn("Fondos insuficientes");
+                return;
+            }
 
-            // Transferencia
             data.jugadores[compradorIdx].dinero = dineroComprador - precio;
-            data.jugadores[vendedorIdx].dinero = Number(data.jugadores[vendedorIdx].dinero) + precio;
+            data.jugadores[vendedorIdx].dinero = (Number(data.jugadores[vendedorIdx].dinero) || 0) + precio;
 
-            // Actualizar propiedad
             if (!data.propiedades) data.propiedades = {};
             data.propiedades[pIdx] = { owner: compradorIdx };
 
             return data;
         }, (error, committed) => {
-            if (committed) {
-                db.ref('salas/' + sala + '/ofertas/' + ofertaKey).remove();
-                document.getElementById('modal').style.display = 'none';
-                log("¡Venta completada!");
+            if (error) {
+                console.error("Error en la transacción:", error);
+                alert("Hubo un error al procesar la compra.");
+            } else if (committed) {
+                window.db.ref('salas/' + window.sala + '/ofertas/' + ofertaKey).remove();
+                let modal = document.getElementById('modal');
+                if (modal) modal.style.display = 'none';
+                if (typeof window.log === 'function') window.log("¡Venta completada!");
+            } else {
+                alert("¡No tienes suficiente dinero para esta compra!");
             }
         });
     });
 };
 
-// Función corregida para mostrar la oferta
+// --- 2. ESCUCHA DE OFERTAS ---
 window.escucharOfertas = function() {
-    if (!sala) return;
+    if (typeof window.sala === 'undefined' || !window.sala) return;
     
-    // IMPORTANTE: .off() evita duplicar escuchadores si se llama varias veces
-    db.ref('salas/' + sala + '/ofertas').off('child_added'); 
+    window.db.ref('salas/' + window.sala + '/ofertas').off('child_added'); 
     
-    db.ref('salas/' + sala + '/ofertas').on('child_added', snap => {
+    window.db.ref('salas/' + window.sala + '/ofertas').on('child_added', snap => {
         let o = snap.val();
-        if (o && o.para === miIdx) {
-            document.getElementById('modal-title').innerText = "¡Oferta de Venta!";
-            document.getElementById('modal-text').innerHTML = 
-                `<p>${nombres[o.de] || 'Alguien'} te vende una propiedad por $${o.precio}</p>`;
+        
+        if (o && o.para === window.miIdx) {
+            let nombreVendedor = (window.nombres && window.nombres[o.de]) ? window.nombres[o.de] : "Alguien";
             
-            document.getElementById('modal-extra').innerHTML = 
-                `<button class="btn" onclick="confirmarCompra('${snap.key}')">Aceptar</button>
-                 <button class="btn" onclick="document.getElementById('modal').style.display='none'">Cancelar</button>`;
-            
-            document.getElementById('modal').style.display = 'block';
+            let modalTitle = document.getElementById('modal-title');
+            let modalText = document.getElementById('modal-text');
+            let modalExtra = document.getElementById('modal-extra');
+            let modal = document.getElementById('modal');
+
+            if (modalTitle && modalText && modalExtra && modal) {
+                modalTitle.innerText = "¡Oferta de Venta!";
+                modalText.innerHTML = `<p>${nombreVendedor} te vende una propiedad por <b>$${o.precio}</b></p>`;
+                
+                modalExtra.innerHTML = `
+                    <button class="btn" onclick="window.confirmarCompra('${snap.key}')">Aceptar</button>
+                    <button class="btn" onclick="window.cerrarModal()">Cancelar</button>
+                `;
+                modal.style.display = 'block';
+            }
         }
     });
 };
-        
+
+// --- 3. FORMULARIO DE INTERCAMBIO ---
 window.abrirIntercambio = function() {
-    // 1. Limpieza inicial del modal
-    document.getElementById('modal-extra').innerHTML = "";
+    let modal = document.getElementById('modal');
+    let modalExtra = document.getElementById('modal-extra');
+    let modalText = document.getElementById('modal-text');
+    let modalTitle = document.getElementById('modal-title');
+
+    if (!modal || !modalExtra || !modalText || !modalTitle) return;
+
+    modalExtra.innerHTML = "";
     
-    db.ref('salas/' + sala).once('value', snap => {
-        if (!snap.exists()) return;
+    window.db.ref('salas/' + window.sala).once('value', snap => {
         let data = snap.val();
+        if (!data) return;
+
         let misProps = [];
-        
-        // 2. Extraer propiedades del dueño actual
-        if(data.propiedades) {
+        if (data.propiedades) {
             Object.keys(data.propiedades).forEach(pIdx => {
-                if(data.propiedades[pIdx].owner === miIdx) misProps.push(pIdx);
+                if (data.propiedades[pIdx] && data.propiedades[pIdx].owner === window.miIdx) {
+                    misProps.push(pIdx);
+                }
             });
         }
         
-        // 3. Caso: No tiene propiedades
         if (misProps.length === 0) {
-            document.getElementById('modal-title').innerText = "¡Atención!";
-            document.getElementById('modal-text').innerHTML = '<div class="card-property"><p style="text-align: center; padding: 10px;">No tienes propiedades disponibles para vender.</p></div>';
-            document.getElementById('modal-extra').innerHTML = '<button class="btn" onclick="document.getElementById(\'modal\').style.display=\'none\'">Cerrar</button>';
-            document.getElementById('modal').style.display = 'block';
+            modalTitle.innerText = "¡Atención!";
+            modalText.innerHTML = '<div class="card-property"><p style="text-align: center; padding: 10px;">No tienes propiedades para vender.</p></div>';
+            modalExtra.innerHTML = '<button class="btn" onclick="window.cerrarModal()">Cerrar</button>';
+            modal.style.display = 'block';
             return;
         }
         
-        // 4. Caso: Construir formulario de venta
-        document.getElementById('modal-title').innerText = "Revender Propiedad";
+        modalTitle.innerText = "Revender Propiedad";
         let html = '<div class="card-property">Selecciona propiedad, precio (100-999) y comprador:<br><br>';
         
         misProps.forEach(pIdx => {
-            let p = mapa[pIdx];
-            html += `<b>${p.n}</b>:<br><input type="number" id="precio-${pIdx}" min="100" max="999" value="250" style="width: 80px;"> <select id="sel-${pIdx}">`;
+            let p = (typeof window.mapa !== 'undefined') ? window.mapa[pIdx] : { n: "Propiedad " + pIdx };
+            html += `<b>${p.n}</b>:<br>
+                     <input type="number" id="precio-${pIdx}" min="100" max="999" value="250" style="width: 80px;"> 
+                     <select id="sel-${pIdx}">`;
             
-            // Validación extra: Verificar que existan jugadores antes de iterar
-            if (data.jugadores) {
+            if (data.jugadores && Array.isArray(data.jugadores)) {
                 data.jugadores.forEach((j, i) => { 
-                    if(i !== miIdx) html += `<option value="${i}">${nombres[i]}</option>`; 
+                    if (i !== window.miIdx) {
+                        let nombreJugador = (window.nombres && window.nombres[i]) ? window.nombres[i] : "Jugador " + (i + 1);
+                        html += `<option value="${i}">${nombreJugador}</option>`; 
+                    }
                 });
             }
-            
-            html += `</select> <button class="btn" onclick="proponerVenta(${pIdx})">Vender</button><br><br>`;
+            html += `</select> <button class="btn" onclick="window.proponerVenta(${pIdx})">Vender</button><br><br>`;
         });
         
         html += '</div>';
-        document.getElementById('modal-text').innerHTML = html;
-        // Botón de cierre en el extra
-        document.getElementById('modal-extra').innerHTML = '<button class="btn" onclick="document.getElementById(\'modal\').style.display=\'none\'">Cerrar</button>';
-        document.getElementById('modal').style.display = 'block';
+        modalText.innerHTML = html;
+        modalExtra.innerHTML = '<button class="btn" onclick="window.cerrarModal()">Cerrar</button>';
+        modal.style.display = 'block';
     });
 };
-        
 
-    function hipotecar(pos) { 
-    // Actualizamos solo el estado hipotecado, manteniendo el resto (owner, nivel, equipo) intactos
-    db.ref('salas/' + sala + '/propiedades/' + pos).update({
-        hipotecada: true
-    }); 
+    // --- FUNCIONES DE GESTIÓN DE PROPIEDADES (GLOBALES) ---
+// --- 1. HIPOTECAS Y LIBERACIÓN ---
+window.hipotecar = function(pos) {
+    if (typeof window.sala === 'undefined' || !window.mapa[pos]) return;
     
-    // Sumamos la mitad del valor original de la propiedad al dinero del jugador
-    db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => d + Math.floor(mapa[pos].p / 2)); 
+    window.db.ref('salas/' + window.sala + '/propiedades/' + pos).update({ hipotecada: true });
+    window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero')
+        .transaction(d => (d || 0) + Math.floor(window.mapa[pos].p / 2));
     
-    log(nombres[miIdx] + " hipotecó " + mapa[pos].n); 
+    if (typeof window.log === 'function') window.log(window.nombres[window.miIdx] + " hipotecó " + window.mapa[pos].n);
+    let modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.liberar = function(pos) {
+    if (typeof window.sala === 'undefined' || !window.mapa[pos]) return;
     
-    // Cerramos el modal
-    document.getElementById('modal').style.display = 'none'; 
-}
-    function liberar(pos) { db.ref('salas/'+sala+'/propiedades/'+pos).update({hipotecada: false}); db.ref('salas/'+sala+'/jugadores/'+miIdx+'/dinero').transaction(d => d - Math.floor(mapa[pos].p*0.6)); log(nombres[miIdx] + " liberó " + mapa[pos].n); document.getElementById('modal').style.display = 'none'; }
-    function intentarEvasion(d, a, m) { let exito = Math.random() < 0.30; if(exito) { let montoFinal = Math.floor(m / 2); procesarPago(d, a, montoFinal, true); log(nombres[d] + " evadió el alquiler exitosamente. Pagará $" + montoFinal); } else { let montoFinal = m + 50; procesarPago(d, a, montoFinal, false); log(nombres[d] + " falló su evasión de pago. Paga $" + montoFinal); } }
+    window.db.ref('salas/' + window.sala + '/propiedades/' + pos).update({ hipotecada: false });
+    window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero')
+        .transaction(d => (d || 0) - Math.floor(window.mapa[pos].p * 0.6));
+    
+    if (typeof window.log === 'function') window.log(window.nombres[window.miIdx] + " liberó " + window.mapa[pos].n);
+    let modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+};
 
-   window.manejarCasilla = function(pos) {
-    // 1. PROTECCIÓN DE DATOS GLOBAL
-    if (typeof mapa === 'undefined' || !mapa[pos]) {
-        console.error("Mapa no cargado correctamente.");
-        return;
-    }
+// --- 2. MANEJO DE CASILLA ---
+window.manejarCasilla = function(pos) {
+    if (typeof window.mapa === 'undefined' || !window.mapa[pos]) return;
 
-    let p = mapa[pos];
-
-    // 2. CASO CÁRCEL (Posición 9)
-    if (pos === 9) {
-        log(nombres[miIdx] + " ha caído en la CÁRCEL.");
-        db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ enCarcel: 2 });
-
-        document.getElementById('modal-title').innerText = "Cárcel";
-        document.getElementById('modal-text').innerText = "¡Estás en la cárcel! Tienes derecho a un abogado.";
-        document.getElementById('modal-extra').innerHTML = `
-            <button class="btn" onclick="pagarFianza()">Pagar Fianza ($200)</button>
-            <button class="btn" onclick="intentarHackeo()">Hackear Sistema (50/50)</button>
-            <button class="btn" onclick="document.getElementById('modal').style.display = 'none'; pasarTurno();">Quedarse</button>
-        `;
-        document.getElementById('modal').style.display = 'block';
-        if (typeof turnosSeis !== 'undefined') turnosSeis = 0;
-        return;
-    }
-
-    // 3. CASO EVENTOS (Protegido contra ReferenceError)
-    if (p.n === "?" || p.n === "ARCA COMUNAL") { 
-        if (typeof ejecutarEvento === 'function') {
-            ejecutarEvento(p.n);
-        } else {
-            console.error("ejecutarEvento no está definida.");
-        }
-        return; 
-    }
-
-    // 4. CASO PARADA
-    if (p.n === "PARADA") {
-        db.ref('salas/' + sala + '/impuestosAcumulados').once('value', snap => {
-            let acumulado = snap.val() || 0;
-            if (acumulado > 0) {
-                db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => (d || 0) + acumulado);
-                log(nombres[miIdx] + " llegó a la PARADA y cobró $" + acumulado + " de impuestos.");
-                db.ref('salas/' + sala + '/impuestosAcumulados').set(0);
-            } else {
-                log(nombres[miIdx] + " llegó a la PARADA, pero no había impuestos.");
-            }
-        });
-        return; 
-    }
-
-    // 5. CASO IMPUESTOS
-    if (p.n === "IMPUESTOS") {
-        db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => {
-            let nuevo = Number(d) - 100;
-            if (typeof verificarBancarrota === 'function') {
-                setTimeout(() => verificarBancarrota(miIdx, nuevo), 500);
-            }
-            return nuevo;
-        });
-        db.ref('salas/' + sala + '/impuestosAcumulados').transaction(a => (a || 0) + 100);
-        log(nombres[miIdx] + " pagó impuestos de $100.");
-        return;
-    }
-
-    // 6. CASO FERROCARRILES (Color crema)
-    let g = (typeof obtenerGrupo === 'function') ? obtenerGrupo(pos) : null;
+    // CASO FERROCARRILES (Color #f5f5dc)
+    let g = (typeof window.obtenerGrupo === 'function') ? window.obtenerGrupo(pos) : null;
     if (g && g.color === "#f5f5dc") {
-        db.ref('salas/' + sala).once('value', snap => {
+        window.db.ref('salas/' + window.sala).once('value', snap => {
             let data = snap.val() || {};
             let prop = data.propiedades ? data.propiedades[pos] : null;
             
             if (!prop) {
-                verPropiedad(pos, true);
-            } else if (prop.owner !== miIdx) {
-                // Validación de aliado
-                if (prop.equipo && jugadores[miIdx] && prop.equipo === jugadores[miIdx].equipo) {
-                    log("¡Es propiedad de tu aliado " + nombres[prop.owner] + ", estás a salvo!");
+                window.verPropiedad(pos, true);
+            } else if (prop.owner !== window.miIdx) {
+                let esAliado = (data.jugadores && data.jugadores[window.miIdx] && prop.equipo === data.jugadores[window.miIdx].equipo);
+                
+                if (esAliado) {
+                    window.log("¡Es propiedad de tu aliado, estás a salvo!");
                 } else {
                     let trans = [8, 24, 26, 27];
                     let count = trans.filter(i => data.propiedades && data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
-                    let tabla = { 1: 100, 2: 150, 3: 250, 4: 300 };
-                    let alquiler = tabla[count] || 100;
-                    procesarPago(miIdx, prop.owner, alquiler);
-                    log(nombres[miIdx] + " pagó $" + alquiler + " de transporte a " + nombres[prop.owner]);
+                    let alquiler = { 1: 100, 2: 150, 3: 250, 4: 300 }[count] || 100;
+                    
+                    window.procesarPago(window.miIdx, prop.owner, alquiler);
+                    window.log(window.nombres[window.miIdx] + " pagó $" + alquiler + " de transporte.");
                 }
             } else {
-                verPropiedad(pos, false);
+                window.verPropiedad(pos, false);
             }
         });
         return;
     }
 
-    // 7. CASO PROPIEDAD NORMAL
-    db.ref('salas/' + sala + '/propiedades/' + pos).once('value', snap => {
+    // CASO PROPIEDAD NORMAL
+    window.db.ref('salas/' + window.sala + '/propiedades/' + pos).once('value', snap => {
         let prop = snap.val();
-        if (prop && prop.owner !== miIdx && prop.owner !== undefined) {
-            if (prop.equipo && jugadores[miIdx] && prop.equipo === jugadores[miIdx].equipo) {
-                log("¡Es propiedad de tu aliado " + nombres[prop.owner] + ", estás a salvo!");
+        if (prop && prop.owner !== undefined && prop.owner !== window.miIdx) {
+            let esAliado = (window.jugadores && window.jugadores[window.miIdx] && prop.equipo === window.jugadores[window.miIdx].equipo);
+            if (esAliado) {
+                window.log("¡Propiedad de tu aliado, a salvo!");
                 return;
             }
         }
-        verPropiedad(pos, true);
+        window.verPropiedad(pos, (prop && prop.owner === undefined)); 
     });
 };
 
-        function toggleModo2v2() {
-    db.ref('salas/' + sala + '/jugadores').once('value', snap => {
-        let count = snap.numChildren();
-        
-        if (count !== 4) {
-            alert("El modo 2v2 requiere 4 jugadores.");
+// --- 3. MODO 2V2 ---
+window.toggleModo2v2 = function() {
+    if (typeof window.sala === 'undefined' || !window.sala) return;
+
+    window.db.ref('salas/' + window.sala + '/jugadores').once('value', snap => {
+        let jugadores = snap.val();
+        if (!jugadores) return;
+
+        let keys = Object.keys(jugadores);
+        if (keys.length !== 4) {
+            alert("El modo 2v2 requiere 4 jugadores. Actualmente hay: " + keys.length);
             return;
         }
 
-        // 1. Inicializamos equipos y reputación de forma segura (sin borrar nombres)
-        let jugadores = snap.val();
-        for (let idx in jugadores) {
-            // Asigna Equipo A a 0 y 1; Equipo B a 2 y 3
-            let equipoAsignado = (idx === "0" || idx === "1") ? "A" : "B";
-            db.ref('salas/' + sala + '/jugadores/' + idx).update({ 
-                equipo: equipoAsignado, 
-                reputacion: 50 
-            });
-        }
+        let actualizaciones = {};
+        keys.forEach((idx, i) => {
+            let equipoAsignado = (i < 2) ? "A" : "B";
+            actualizaciones['jugadores/' + idx] = { 
+                ...jugadores[idx],
+                equipo: equipoAsignado,
+                reputacion: 50
+            };
+        });
 
-        // 2. Guardamos la configuración global de la sala para validar aliados fácilmente
-        db.ref('salas/' + sala + '/config').update({ 
+        actualizaciones['config'] = { 
             modo: '2v2',
-            equipoA: [0, 1],
-            equipoB: [2, 3]
-        });
-        
-        // 3. También lo marcamos en la raíz por compatibilidad
-        db.ref('salas/' + sala + '/modo2v2').set(true);
+            equipoA: [parseInt(keys[0]), parseInt(keys[1])],
+            equipoB: [parseInt(keys[2]), parseInt(keys[3])]
+        };
+        actualizaciones['modo2v2'] = true;
 
-        log("¡Modo 2v2 ACTIVADO! Equipos A [0,1] y B [2,3] formados.");
-    });
-}
-
-function inicializarEquipos() {
-    // Leemos los jugadores que ya están en la sala para no borrar sus nombres
-    db.ref('salas/' + sala + '/jugadores').once('value', snap => {
-        let jugadores = snap.val();
-        
-        if (!jugadores) return;
-
-        // Iteramos sobre los índices (0, 1, 2, 3) que ya existen en la base de datos
-        for (let idx in jugadores) {
-            // Asignamos el equipo: 0 y 1 son Equipo A, 2 y 3 son Equipo B
-            let equipoAsignado = (idx === "0" || idx === "1") ? "A" : "B";
-            
-            // Actualizamos SOLO el equipo y la reputación, manteniendo el nombre intacto
-            db.ref('salas/' + sala + '/jugadores/' + idx).update({ 
-                equipo: equipoAsignado, 
-                reputacion: 50 // O el valor que prefieras por defecto
-            });
-        }
-        log("Equipos asignados: 0 y 1 son Equipo A, 2 y 3 son Equipo B.");
-    });
-}
-
-        function intentarHackeo() {
-    let exito = Math.random() < 0.5;
-    if (exito) {
-        log(nombres[miIdx] + " ¡HACKEO EXITOSO! Has escapado sin perder tu turno.");
-        db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ enCarcel: 0 });
-        document.getElementById('modal').style.display = 'none';
-    } else {
-        log(nombres[miIdx] + " ¡FALLASTE! El sistema ha detectado el hackeo, +1 turno de condena.");
-        db.ref('salas/' + sala + '/jugadores/' + miIdx).once('value', snap => {
-            let j = snap.val();
-            let nuevaCondena = (j.enCarcel || 0) + 1;
-            db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ enCarcel: nuevaCondena });
-        });
-        document.getElementById('modal').style.display = 'none';
-        pasarTurno();
-    }
-}
-
-        function pagarFianza() {
-        db.ref('salas/'+sala+'/jugadores/'+miIdx).update({enCarcel: 0, dinero: firebase.database.ServerValue.increment(-200)});
-        log(nombres[miIdx] + " pagó la fianza.");
-        document.getElementById('modal').style.display = 'none';
-    }
-
-    function quedarseEnCarcel() {
-    log(nombres[miIdx] + " cumplirá su condena en la cárcel.");
-    document.getElementById('modal').style.display = 'none';
-    pasarTurno(); // ¡MUY IMPORTANTE!: Si se queda, debe ceder el turno
-}
-
-    window.pasarTurno = function() {
-    turnosSeis = 0;
-    db.ref('salas/' + sala + '/jugadores').once('value', snap => {
-        let total = snap.numChildren();
-        db.ref('salas/' + sala + '/turno').once('value', tSnap => {
-            let t = Number(tSnap.val());
-            let siguiente = (t + 1) % total;
-
-            db.ref('salas/' + sala + '/jugadores/' + siguiente).once('value', jSnap => {
-                let jugador = jSnap.val();
-
-                if (jugador.enCarcel > 0) {
-                    log(nombres[siguiente] + " está en la cárcel y pierde su turno.");
-                    // REDUCIMOS el tiempo de cárcel
-                    db.ref('salas/' + sala + '/jugadores/' + siguiente).update({ enCarcel: jugador.enCarcel - 1 });
-                    
-                    // PASAMOS DIRECTO AL SIGUIENTE para que no se quede bloqueado el juego
-                    db.ref('salas/' + sala + '/turno').set(siguiente); 
-                    // Nota: Aquí no saltamos dos veces, simplemente dejamos que 
-                    // el turno avance normalmente al siguiente índice.
-                } else {
-                    db.ref('salas/' + sala + '/turno').set(siguiente);
-                }
-            });
-        });
+        window.db.ref('salas/' + window.sala).update(actualizaciones)
+            .then(() => {
+                if (typeof window.log === 'function') window.log("¡Modo 2v2 ACTIVADO!");
+            })
+            .catch(error => console.error("Error al activar 2v2:", error));
     });
 };
-       window.verPropiedad = function(pos, esCaida = false) {
+        
+// --- 1. EQUIPOS Y CÁRCEL ---
+window.inicializarEquipos = function() {
+    if (typeof window.sala === 'undefined' || !window.sala) return;
+
+    window.db.ref('salas/' + window.sala + '/jugadores').once('value', snap => {
+        let jugadores = snap.val();
+        if (!jugadores) return;
+
+        let keys = Object.keys(jugadores);
+        let actualizaciones = {};
+
+        keys.forEach((idx, i) => {
+            let equipoAsignado = (i < 2) ? "A" : "B";
+            actualizaciones[idx + '/equipo'] = equipoAsignado;
+            actualizaciones[idx + '/reputacion'] = 50;
+        });
+
+        window.db.ref('salas/' + window.sala + '/jugadores').update(actualizaciones)
+            .then(() => {
+                if (typeof window.log === 'function') window.log("Equipos inicializados correctamente.");
+            })
+            .catch(error => console.error("Error al inicializar equipos:", error));
+    });
+};
+
+window.intentarHackeo = function() {
+    if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') return;
+
+    let exito = Math.random() < 0.5;
+    let jugadorRef = window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx);
+
+    if (exito) {
+        if (typeof window.log === 'function') window.log((window.nombres[window.miIdx] || "Jugador") + " ¡HACKEO EXITOSO!");
+        jugadorRef.update({ enCarcel: 0 });
+        let modal = document.getElementById('modal');
+        if (modal) modal.style.display = 'none';
+    } else {
+        if (typeof window.log === 'function') window.log((window.nombres[window.miIdx] || "Jugador") + " ¡FALLASTE!");
+        
+        jugadorRef.once('value', snap => {
+            let j = snap.val();
+            if (j) {
+                let nuevaCondena = (j.enCarcel || 0) + 1;
+                jugadorRef.update({ enCarcel: nuevaCondena });
+            }
+        });
+
+        let modal = document.getElementById('modal');
+        if (modal) modal.style.display = 'none';
+        if (typeof window.pasarTurno === 'function') window.pasarTurno();
+    }
+};
+
+window.pagarFianza = function() {
+    if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') return;
+
+    window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx).update({
+        enCarcel: 0,
+        dinero: firebase.database.ServerValue.increment(-200)
+    });
+
+    if (typeof window.log === 'function') window.log(window.nombres[window.miIdx] + " pagó la fianza.");
+    let modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.quedarseEnCarcel = function() {
+    if (typeof window.log === 'function') window.log(window.nombres[window.miIdx] + " cumplirá su condena.");
+    let modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+    if (typeof window.pasarTurno === 'function') window.pasarTurno();
+};
+
+// --- 2. GESTIÓN DE TURNOS ---
+window.pasarTurno = function() {
+    if (typeof window.turnosSeis !== 'undefined') window.turnosSeis = 0;
+
+    window.db.ref('salas/' + window.sala).once('value', snap => {
+        let data = snap.val();
+        let total = Object.keys(data.jugadores).length;
+        let t = Number(data.turno);
+        
+        let nuevoTurno = (t + 1) % total;
+        let intentos = 0;
+
+        while (data.jugadores[nuevoTurno].enCarcel > 0 && intentos < total) {
+            window.log(window.nombres[nuevoTurno] + " está en la cárcel. Saltando...");
+            
+            window.db.ref('salas/' + window.sala + '/jugadores/' + nuevoTurno)
+              .update({ enCarcel: data.jugadores[nuevoTurno].enCarcel - 1 });
+            
+            nuevoTurno = (nuevoTurno + 1) % total;
+            intentos++;
+        }
+
+        window.db.ref('salas/' + window.sala + '/turno').set(nuevoTurno);
+        window.log("Es el turno de " + window.nombres[nuevoTurno]);
+    });
+};
+
+        /**
+ * Verifica si el jugador aún existe en la sala.
+ * Si no existe, lo expulsa. Si existe, ejecuta la acción (callback).
+ */
+// --- 1. VALIDACIÓN DE SESIÓN Y SEGURIDAD ---
+window.validarSesion = async function(callback) {
+    if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') {
+        alert("Sesión perdida. Redirigiendo...");
+        window.location.href = "/login.html";
+        return;
+    }
+
+    // Bloqueo total para evitar Race Conditions
+    window.bloquearBotones(true);
+
+    try {
+        const snap = await window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx).once('value');
+        
+        if (!snap.exists()) {
+            console.error("Jugador no encontrado. Expulsando...");
+            alert("Has sido desconectado o expulsado.");
+            window.location.href = "/login.html";
+        } else {
+            await callback();
+        }
+    } catch (error) {
+        console.error("Error al validar sesión:", error);
+        alert("Error de conexión. Inténtalo de nuevo.");
+    } finally {
+        window.bloquearBotones(false);
+    }
+};
+
+// --- 2. GESTIÓN DE UI Y ESTADOS ---
+window.bloquearBotones = function(bloquear = true) {
+    const botones = document.querySelectorAll('.btn');
+    botones.forEach(btn => {
+        btn.disabled = bloquear;
+        btn.style.opacity = bloquear ? "0.5" : "1";
+        btn.style.cursor = bloquear ? "not-allowed" : "pointer";
+    });
+};
+
+window.toggleBotonesAccion = function(bloqueado = true) {
+    const botones = document.querySelectorAll('.btn-accion');
+    botones.forEach(btn => {
+        btn.disabled = bloqueado;
+        btn.style.opacity = bloqueado ? "0.5" : "1";
+        btn.style.cursor = bloqueado ? "not-allowed" : "pointer";
+    });
+};
+
+window.actualizarControles = function(s) {
+    if (typeof window.miIdx === 'undefined') return;
+
+    const esMiTurno = (s.turno === window.miIdx);
+    // Acceso seguro al estado de cárcel
+    const enCarcel = (s.jugadores && s.jugadores[window.miIdx]) ? (s.jugadores[window.miIdx].enCarcel > 0) : false;
+
+    const btnTirar = document.getElementById('btn-tirar-dado');
+    const btnPasar = document.getElementById('btn-pasar-turno');
+
+    if (!esMiTurno) {
+        if (btnTirar) btnTirar.disabled = true;
+        if (btnPasar) btnPasar.disabled = true;
+    } else {
+        // En tu turno: no puedes tirar si estás en la cárcel
+        if (btnTirar) btnTirar.disabled = enCarcel;
+        if (btnPasar) btnPasar.disabled = false;
+    }
+};
+        
+       // --- 1. VISUALIZACIÓN DE PROPIEDAD Y ACCIONES ---
+window.verPropiedad = function(pos, esCaida = false) {
     let modal = document.getElementById('modal');
     let modalText = document.getElementById('modal-text');
     let modalExtra = document.getElementById('modal-extra');
     let modalTitle = document.getElementById('modal-title');
 
-    if (!modal || !modalText || !mapa[pos]) return;
+    if (!modal || !modalText || !window.mapa[pos]) return;
 
-    let p = mapa[pos];
+    let p = window.mapa[pos];
     modalExtra.innerHTML = "";
     modalText.innerHTML = "";
 
     if (p.p === 0) {
         modalTitle.innerText = p.n;
         modalText.innerHTML = "Casilla especial: " + p.n;
-        modalExtra.innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Cerrar</button>`;
+        modalExtra.innerHTML = `<button class="btn" onclick="window.cerrarModal()">Cerrar</button>`;
         modal.style.display = 'block';
         return;
     }
     
-    let g = (typeof obtenerGrupo === 'function') ? obtenerGrupo(pos) : null;
+    let g = (typeof window.obtenerGrupo === 'function') ? window.obtenerGrupo(pos) : null;
     let esFerrocarril = (g && g.color === "#f5f5dc");
     
-    db.ref('salas/' + sala).once('value', snap => {
+    window.db.ref('salas/' + window.sala).once('value', snap => {
         let data = snap.val() || {};
         let prop = data.propiedades ? data.propiedades[pos] : null;
         
-        let multClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].mult : 1.0;
-        let nombreClima = (data.clima !== undefined && typeof climas !== 'undefined') ? climas[data.clima].n : 'Normal';
+        let multClima = (data.clima !== undefined && typeof window.climas !== 'undefined') ? window.climas[data.clima].mult : 1.0;
+        let nombreClima = (data.clima !== undefined && typeof window.climas !== 'undefined') ? window.climas[data.clima].n : 'Normal';
         
         let porcentajes = [0.10, 0.15, 0.20, 0.30, 0.40, 0.50];
         let nivelesNombres = ["Base", "1 Casa", "2 Casas", "3 Casas", "4 Casas", "Hotel"];
-        
         let listaAlquileres = "";
+        
         porcentajes.forEach((porc, i) => {
             let precioNormal = Math.floor(p.p * porc);
             let precioClima = Math.floor(precioNormal * multClima);
@@ -1404,365 +1610,312 @@ function inicializarEquipos() {
         });
 
         modalTitle.innerText = "Tarjeta de Propiedad";
-        let htmlCard = `<div class="card-property"><div class="card-header">${p.n}</div>`;
-        htmlCard += `<p>Valor compra: <b>$${esFerrocarril ? 600 : p.p}</b></p>`;
-        htmlCard += prop ? `<p>Dueño: <b>${nombres[prop.owner]}</b></p>` : `<p>Estado: <b>Disponible</b></p>`;
+        let dueño = (prop && window.nombres && window.nombres[prop.owner]) ? window.nombres[prop.owner] : "Disponible";
         
-        htmlCard += `<hr><p><b>Alquileres (Clima: ${nombreClima}):</b></p>
-                     <ul style="font-size: 0.9em; padding-left: 20px;">
-                     ${esFerrocarril ? "<li>Si se poseen: $200, $250, $350, $450</li>" : listaAlquileres}
-                     </ul></div>`;
+        modalText.innerHTML = `
+            <div class="card-property">
+                <div class="card-header">${p.n}</div>
+                <p>Valor compra: <b>$${esFerrocarril ? 600 : p.p}</b></p>
+                <p>Dueño: <b>${dueño}</b></p>
+                <hr><p><b>Alquileres (Clima: ${nombreClima}):</b></p>
+                <ul style="font-size: 0.9em; padding-left: 20px;">
+                    ${esFerrocarril ? "<li>Si se poseen: $200, $250, $350, $450</li>" : listaAlquileres}
+                </ul>
+            </div>`;
 
-        modalText.innerHTML = htmlCard;
-
+        // Botones dinámicos
         if (!prop && esCaida) {
-            modalExtra.innerHTML = `<button class="btn" onclick="comprar(${pos})">Comprar ($${esFerrocarril ? 600 : p.p})</button>`;
-        } else if (prop && prop.owner === miIdx) {
-            if (!esFerrocarril && (prop.nivel || 0) < 5) modalExtra.innerHTML += `<button class="btn" onclick="mejorar(${pos})">Mejorar ($50)</button>`;
-            modalExtra.innerHTML += `<button class="btn" style="background: #ad0c0c;" onclick="hipotecar(${pos})">${prop.hipotecada ? "Liberar" : "Hipotecar"}</button>`;
-        } else if (prop && prop.owner !== miIdx && esCaida && !prop.hipotecada) {
+            modalExtra.innerHTML = `<button class="btn btn-accion" onclick="window.validarSesion(() => window.comprar(${pos}))">Comprar ($${esFerrocarril ? 600 : p.p})</button>`;
+        } else if (prop && prop.owner === window.miIdx) {
+            if (!esFerrocarril && (prop.nivel || 0) < 5) 
+                modalExtra.innerHTML += `<button class="btn btn-accion" onclick="window.validarSesion(() => window.mejorar(${pos}))">Mejorar ($50)</button>`;
+            
+            let funcHipotecar = prop.hipotecada ? `window.validarSesion(() => window.liberar(${pos}))` : `window.validarSesion(() => window.hipotecar(${pos}))`;
+            modalExtra.innerHTML += `<button class="btn btn-accion" style="background: #ad0c0c;" onclick="${funcHipotecar}">${prop.hipotecada ? "Liberar" : "Hipotecar"}</button>`;
+        } else if (prop && prop.owner !== window.miIdx && esCaida && !prop.hipotecada) {
             let alqFinal = esFerrocarril ? 200 : Math.floor(Math.floor(p.p * porcentajes[prop.nivel || 0]) * multClima);
-            modalExtra.innerHTML = `<button class="btn" onclick="procesarPago(${miIdx}, ${prop.owner}, ${alqFinal})">Pagar Alquiler ($${alqFinal})</button>`;
+            modalExtra.innerHTML = `<button class="btn btn-accion" onclick="window.validarSesion(() => window.procesarPago(${window.miIdx}, ${prop.owner}, ${alqFinal}))">Pagar Alquiler ($${alqFinal})</button>`;
         }
 
-        modalExtra.innerHTML += `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Cerrar</button>`;
+        modalExtra.innerHTML += `<button class="btn" onclick="window.cerrarModal()">Cerrar</button>`;
         modal.style.display = 'block';
     });
 };
-        window.abrirAvisoDesarrollo = function() {
-    let modal = document.getElementById('modal');
-    let modalTitle = document.getElementById('modal-title');
-    let modalText = document.getElementById('modal-text');
-    let modalExtra = document.getElementById('modal-extra');
 
-    if (!modal) return;
+// --- 2. SISTEMA DE MEJORAS (Monopolio) ---
+window.mejorar = async function(pos) {
+    if (typeof window.sala === 'undefined') return;
 
-    modalTitle.innerText = "Modo 2v2";
-    modalText.innerHTML = `<p>El modo 2v2 está en desarrollo. La actualización se hará tan pronto como sea posible.</p>`;
-    
-    // El botón de cierre unificado
-    modalExtra.innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Entendido</button>`;
-    
-    modal.style.display = 'block';
+    window.db.ref('salas/' + window.sala).once('value', async snap => {
+        let data = snap.val();
+        if (!data || !data.propiedades || !data.propiedades[pos]) return;
+
+        let prop = data.propiedades[pos];
+        let miEquipo = (window.jugadores && window.jugadores[window.miIdx]) ? window.jugadores[window.miIdx].equipo : null;
+        let nivelActual = prop.nivel || 0;
+
+        await window.ejecutarMejora(pos, nivelActual, miEquipo, prop, data);
+    });
 };
 
+window.ejecutarMejora = function(pos, nivelActual, miEquipo, prop, data) {
+    return new Promise((resolve) => {
+        let tieneMonopolio = typeof window.verificarMonopolioEquipo === 'function' ? window.verificarMonopolioEquipo(pos, miEquipo, data) : false;
 
-function mejorar(pos) {
-    db.ref('salas/' + sala).once('value', snap => {
-        let data = snap.val();
-        let prop = data.propiedades ? data.propiedades[pos] : null;
-        let miEquipo = jugadores[miIdx].equipo;
+        if (!tieneMonopolio) { alert("Necesitas el control total del grupo."); resolve(); return; }
+        if (nivelActual >= 5) { alert("Ya está al nivel máximo."); resolve(); return; }
 
-        // Ahora usamos la función que acabamos de incluir para validar
-        let tieneMonopolio = verificarMonopolioEquipo(pos, miEquipo, data);
-
-        if (!tieneMonopolio) {
-            alert("Necesitas tener el control total del grupo (tú o tu aliado) para mejorar.");
+        window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero').transaction(dinero => {
+            if (dinero >= 50) {
+                window.db.ref('salas/' + window.sala + '/propiedades/' + pos).update({ nivel: nivelActual + 1 });
+                if (typeof window.log === 'function') window.log(`${window.nombres[window.miIdx]} mejoró ${window.mapa[pos].n} al nivel ${nivelActual + 1}`);
+                if (typeof window.cerrarModal === 'function') window.cerrarModal();
+                return dinero - 50;
+            }
+            alert("No tienes suficiente dinero.");
             return;
-        }
+        }, (error) => { resolve(); });
+    });
+};
+             
+    
+    // --- 1. LÓGICA DE DADOS Y TURNO ---
+window.tirarDado = async function() {
+    if (typeof window.miIdx === 'undefined' || window.miIdx === -1) return;
 
-        if (prop.nivel < 5) {
-            db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero').transaction(d => {
-                if (d >= 50) {
-                    db.ref('salas/' + sala + '/propiedades/' + pos + '/nivel').set(prop.nivel + 1);
-                    
-                    // Log profesional con distinción de quién invierte
-                    if (prop.owner === miIdx) {
-                        log(nombres[miIdx] + " mejoró " + mapa[pos].n + " al nivel " + (prop.nivel + 1));
-                    } else {
-                        log(nombres[miIdx] + " invirtió en una propiedad del Equipo " + miEquipo + ": " + mapa[pos].n + " ahora es nivel " + (prop.nivel + 1));
-                    }
-                    
-                    cerrarModal();
-                    return d - 50;
-                } else {
-                    alert("No tienes suficiente dinero.");
-                    return d;
+    const btnDado = document.querySelector('img[alt="Lanzar dado"]');
+    if (btnDado) btnDado.style.pointerEvents = 'none';
+
+    return new Promise((resolve) => {
+        window.db.ref('salas/' + window.sala).once('value', snap => {
+            const s = snap.val();
+            if (!s || s.turno !== window.miIdx) {
+                if (btnDado) btnDado.style.pointerEvents = 'auto';
+                resolve();
+                return;
+            }
+
+            if (s.jugadores[window.miIdx].enCarcel > 0) {
+                window.log(window.nombres[window.miIdx] + " está en la cárcel.");
+                window.pasarTurno();
+                if (btnDado) btnDado.style.pointerEvents = 'auto';
+                resolve();
+                return;
+            }
+
+            if (typeof window.climas !== 'undefined') {
+                const nuevoClima = Math.floor(Math.random() * window.climas.length);
+                window.db.ref('salas/' + window.sala + '/clima').set(nuevoClima);
+            }
+
+            const dado = Math.floor(Math.random() * 6) + 1;
+            document.getElementById('dado-valor').innerText = dado;
+
+            const contadorActual = s.jugadores[window.miIdx].seisSeguidos || 0;
+            const nuevoContador = (dado === 6) ? contadorActual + 1 : 0;
+            const posActual = Number(s.jugadores[window.miIdx].pos);
+            const nuevaPos = (posActual + dado) % window.mapa.length;
+
+            if (nuevaPos < posActual) {
+                window.db.ref('salas/'+window.sala+'/jugadores/'+window.miIdx+'/dinero').transaction(d => (d || 0) + 100);
+                window.log(window.nombres[window.miIdx] + " pasó por SALIDA y cobró $100.");
+            }
+
+            if (nuevoContador === 3) {
+                window.log("¡ACUSACIÓN DE FRAUDE! " + window.nombres[window.miIdx] + " sacó tres 6.");
+                window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx).update({ pos: 9, enCarcel: 2, seisSeguidos: 0 });
+                window.pasarTurno();
+            } else {
+                window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx).update({ pos: nuevaPos, seisSeguidos: nuevoContador });
+                if (dado !== 6) window.pasarTurno();
+                else window.log("¡Sacaste un 6! Tienes turno extra.");
+            }
+
+            setTimeout(() => {
+                if (typeof window.manejarCasilla === 'function') window.manejarCasilla(nuevaPos);
+                if (btnDado) btnDado.style.pointerEvents = 'auto';
+                resolve();
+            }, 800);
+        });
+    });
+};
+
+// --- 2. GESTIÓN DE PRÉSTAMOS Y SALDOS ---
+window.pagarPrestamo = async function() {
+    if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') return;
+
+    window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx).once('value', snap => {
+        let j = snap.val();
+        if (!j) return;
+
+        if (j.tienePrestamo && j.dinero >= j.montoPrestamo) {
+            window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx).update({
+                dinero: firebase.database.ServerValue.increment(-j.montoPrestamo),
+                tienePrestamo: false,
+                montoPrestamo: 0
+            }, (error) => {
+                if (!error) {
+                    window.log(window.nombres[window.miIdx] + " liquidó su préstamo.");
+                    if (typeof window.cerrarModal === 'function') window.cerrarModal();
                 }
             });
+        } else {
+            window.abrirModal("Banco", j.tienePrestamo ? "Fondos insuficientes." : "No tienes préstamos.");
         }
     });
-}
+};
 
-                    
-    
-    window.tirarDado = function() {
-    if(miIdx === -1) return;
-    
-    db.ref('salas/' + sala).once('value', snap => {
-        let s = snap.val(); 
-        if(!s || s.turno !== miIdx) return; // Solo el jugador del turno tira
-        
-        // --- GESTIÓN DE CÁRCEL ---
-        if (s.jugadores[miIdx].enCarcel > 0) {
-            log(nombres[miIdx] + " está en la cárcel y no puede moverse.");
-            // Si quieres que el jugador pueda salir sacando un 6, puedes añadirlo aquí.
-            // Por ahora, solo pasa turno tras el log.
-            pasarTurno(); 
-            return;
-        }
-        
-        // 1. Lógica de clima
-        if (s.clima === undefined) {
-            let climaInicial = Math.floor(Math.random() * climas.length);
-            db.ref('salas/' + sala + '/clima').set(climaInicial);
-        }
+window.verSaldos = function() {
+    window.db.ref('salas/' + window.sala + '/jugadores').once('value', snap => {
+        let txt = "<ul style='list-style:none; padding:0;'>";
+        snap.forEach(c => {
+            let j = c.val();
+            let idx = parseInt(c.key);
+            txt += `<li><b>${window.nombres[idx] || 'Jugador'}</b>: $${j.dinero || 0}</li>`;
+        });
+        txt += "</ul>";
+        window.abrirModal("Saldos de los jugadores", txt);
+    });
+};
 
-        // 2. Cálculo del dado
-        let dado = Math.floor(Math.random() * 6) + 1;
-        document.getElementById('dado-valor').innerText = dado;
-        let contadorActual = s.jugadores[miIdx].seisSeguidos || 0;
-        let nuevoContador = (dado === 6) ? contadorActual + 1 : 0;
+// --- 3. SINCRONIZACIÓN Y MOTOR ---
+window.sincronizar = async function() {
+    if (typeof window.yaEntro === 'undefined' || !window.yaEntro || !window.sala) return;
 
-        // 3. Movimiento
-        let posActual = Number(s.jugadores[miIdx].pos);
-        let nuevaPos = (posActual + dado) % mapa.length;
-        
-        // CORRECCIÓN: Aquí es donde detectamos si cruzó la salida
-        if (nuevaPos < posActual) { 
-            db.ref('salas/'+sala+'/jugadores/'+miIdx+'/dinero').transaction(d => (d || 0) + 100); 
-            log(nombres[miIdx] + " pasó por SALIDA y cobró $100."); 
-        }
-
-        // 4. Lógica de Penalización o Movimiento
-        if (nuevoContador === 3) {
-            log("¡ACUSACIÓN DE FRAUDE! " + nombres[miIdx] + " sacó tres 6 seguidos.");
-            db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ 
-                pos: 9, // Enviamos a la casilla 9 (Cárcel)
-                enCarcel: 2, 
-                seisSeguidos: 0 
-            });
-            pasarTurno(); 
-        } else {
-            db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ 
-                pos: nuevaPos, 
-                seisSeguidos: nuevoContador 
-            });
-
-            // Si saca 6, repite turno. Si no, pasa al siguiente.
-            if (dado === 6) {
-                log("¡Sacaste un 6! Tienes turno extra.");
-            } else {
-                pasarTurno();
-            }
-            
-            // Disparamos la lógica de la casilla (aquí es donde se activa el modal de la cárcel)
-            setTimeout(() => manejarCasilla(nuevaPos), 600);
-        }
-    }); 
-}
-                                                                                                       
-    function pagarPrestamo() { db.ref('salas/' + sala + '/jugadores/' + miIdx).once('value', snap => { let j = snap.val(); if (j.tienePrestamo) { if (j.dinero >= j.montoPrestamo) { db.ref('salas/' + sala + '/jugadores/' + miIdx).update({ dinero: firebase.database.ServerValue.increment(-j.montoPrestamo), tienePrestamo: false, montoPrestamo: 0 }); log(nombres[miIdx] + " liquidó su préstamo."); } else { document.getElementById('modal-title').innerText = "Fondos insuficientes"; document.getElementById('modal-text').innerHTML = `<div class="empty-debt">No tienes suficiente dinero para pagar el préstamo.</div>`; document.getElementById('modal-extra').innerHTML = ""; document.getElementById('modal').style.display = 'block'; } } else { document.getElementById('modal-title').innerText = "Banco"; document.getElementById('modal-text').innerHTML = `<div class="empty-debt">No tienes préstamos pendientes.</div>`; document.getElementById('modal-extra').innerHTML = ""; document.getElementById('modal').style.display = 'block'; } }); }
-    function verSaldos() { db.ref('salas/' + sala + '/jugadores').once('value', snap => { let txt = ""; snap.forEach(c => { txt += nombres[parseInt(c.key)] + ": $" + c.val().dinero + "<br>"; }); document.getElementById('modal-title').innerText = "Saldos"; document.getElementById('modal-text').innerHTML = txt; document.getElementById('modal').style.display = 'block'; }); }
-    function enviarChat() { 
-    let input = document.getElementById('chat-msg');
-    let msg = input.value; 
-    if (msg.trim() === "") return; // No enviar si está vacío
-
-    // Obtenemos la hora actual (HH:MM)
-    let ahora = new Date();
-    let hora = ahora.getHours().toString().padStart(2, '0');
-    let minutos = ahora.getMinutes().toString().padStart(2, '0');
-    let marcaTiempo = hora + ":" + minutos;
-    
-    // Enviamos el mensaje con la hora (t)
-    db.ref('salas/' + sala + '/chat').push({ 
-        n: nombres[miIdx], 
-        m: msg,
-        t: marcaTiempo 
-    }); 
-    
-    input.value = ""; // Limpiar input
-}
-    window.sincronizar = function() {
-    // PROTECCIÓN TOTAL: Si no hemos entrado, no intentamos sincronizar nada.
-    if (!yaEntro || !sala) {
-        console.log("Sincronización en espera: Usuario no ha entrado a la sala.");
-        return;
-    }
-
-    // 1. Sincronización del Chat (Optimizado)
-    db.ref('salas/' + sala + '/chat').on('value', snap => {
-        if (!yaEntro) return; 
+    window.db.ref('salas/' + window.sala + '/chat').on('value', (snap) => {
         let chatLog = document.getElementById('chat-log');
         if (!chatLog) return;
-        chatLog.innerHTML = ""; 
+        let html = "";
         snap.forEach(msgSnap => {
             let m = msgSnap.val();
-            let hora = m.t ? `<small style="color:gray;">[${m.t}]</small> ` : "";
-            chatLog.innerHTML += `<div>${hora}<b>${m.n}:</b> ${m.m}</div>`;
+            html += `<div>${m.t ? `<small style="color:gray;">[${m.t}]</small> ` : ""}<b>${m.n || "Anónimo"}:</b> ${m.m}</div>`;
         });
+        chatLog.innerHTML = html;
         chatLog.scrollTop = chatLog.scrollHeight;
     });
 
-    // 2. Sincronización del Juego
-    db.ref('salas/' + sala).on('value', snap => { 
-        if (!yaEntro) return; 
+    window.db.ref('salas/' + window.sala).on('value', (snap) => { 
         let s = snap.val(); 
         if(!s) return; 
 
-        // Actualizar dinero y REPUTACIÓN
-        if (s.jugadores && s.jugadores[miIdx]) {
-            let player = s.jugadores[miIdx];
-            // Actualizar dinero
-            document.getElementById('dinero-mio').innerText = player.dinero;
+        if (s.jugadores && s.jugadores[window.miIdx]) {
+            let p = s.jugadores[window.miIdx];
+            if (document.getElementById('dinero-mio')) document.getElementById('dinero-mio').innerText = p.dinero || 0;
+        }
+
+        if (document.getElementById('turno-text')) 
+            document.getElementById('turno-text').innerText = "Turno: " + (s.turno !== undefined && typeof window.nombres !== 'undefined' ? (window.nombres[s.turno] || "Jugador " + (s.turno + 1)) : "Esperando...");
             
-            // --- NUEVO: Actualizar Barra de Reputación ---
-            let rep = player.reputacion || 100; // Valor por defecto 100
-            let barra = document.getElementById('barra-reputacion');
-            if (barra) {
-                barra.style.width = rep + "%";
-                // Opcional: cambio de color dinámico
-                barra.style.backgroundColor = rep < 30 ? "#ff4d4d" : (rep < 60 ? "#ffa500" : "#4caf50");
-            }
-        }
+        if(s.clima !== undefined && typeof window.climas !== 'undefined') 
+            document.getElementById('clima-display').innerText = "Estación: " + window.climas[s.clima].n; 
 
-        // Actualizar Turnos
-        let turnoText = document.getElementById('turno-text');
-        if (turnoText && s.turno !== undefined && typeof nombres !== 'undefined') {
-            turnoText.innerText = "Turno: " + (nombres[s.turno] || "Jugador " + (s.turno + 1));
-        }
-
-        // Actualizar Clima
-        if(s.clima !== undefined && typeof climas !== 'undefined') { 
-            let c = climas[s.clima]; 
-            document.getElementById('clima-display').innerText = "Estación: " + c.n; 
-        }
-
-        // Actualizar Fichas
         if (s.jugadores) {
             s.jugadores.forEach((j, i) => { 
                 let el = document.getElementById('p' + i); 
-                if (el && j) {
-                    el.style.display = 'block'; 
-                    let cell = document.getElementById('cell-' + j.pos); 
-                    if (cell) {
-                        el.style.left = (cell.offsetLeft + 30) + 'px'; 
-                        el.style.top = (cell.offsetTop + 30) + 'px';
-                    }
+                let cell = j ? document.getElementById('cell-' + j.pos) : null;
+                if (el && cell) {
+                    el.style.left = (cell.offsetLeft + 30) + 'px'; 
+                    el.style.top = (cell.offsetTop + 30) + 'px';
                 }
             });
         }
+    });
+};
 
-        // Actualizar Propiedades
-        if(s.propiedades) { 
-            Object.keys(s.propiedades).forEach(pos => { 
-                let cell = document.getElementById('cell-' + pos);
-                if(cell) {
-                    if (typeof colores !== 'undefined') {
-                        cell.style.backgroundColor = s.propiedades[pos].hipotecada ? "#ccc" : colores[s.propiedades[pos].owner];
-                    }
-                    let hc = cell.querySelector('.house-container'); 
-                    if (hc) {
-                        hc.innerHTML = "";
-                        let nivel = s.propiedades[pos].nivel || 0;
-                        if(nivel > 0 && nivel < 5) { for(let i=0; i<nivel; i++) { let h = document.createElement('div'); h.className = 'house'; hc.appendChild(h); } }
-                        else if(nivel === 5) { let h = document.createElement('div'); h.className = 'hotel'; hc.appendChild(h); }
-                    }
-                }
-            }); 
+        // 3. ACTUALIZACIÓN DE CONTROLES (Seguridad)
+        // Decidimos qué botones habilitar basándonos exclusivamente en el snapshot actual
+        // --- 1. MOTOR DE ACTUALIZACIÓN DEL TABLERO (Propiedades y Casas) ---
+window.renderizarTablero = function(s) {
+    if (!s.propiedades) return;
+
+    Object.keys(s.propiedades).forEach(pos => {
+        let cell = document.getElementById('cell-' + pos);
+        if (!cell) return;
+        
+        // Color de dueño (haciendo uso seguro de window.colores)
+        if (typeof window.colores !== 'undefined') {
+            cell.style.backgroundColor = s.propiedades[pos].hipotecada ? "#ccc" : (window.colores[s.propiedades[pos].owner] || "#fff");
         }
-
-        // Actualizar Log
-        if(s.log) { 
-            let h = ""; Object.values(s.log).forEach(l => h += l + "<br>"); 
-            let logEl = document.getElementById('log');
-            if(logEl) logEl.innerHTML = h; 
-        }
-
-        // Misiones
-        if (s.jugadores && s.jugadores[miIdx]) {
-            if (typeof verificarMisionCajaFuerte === 'function') verificarMisionCajaFuerte(miIdx, s.jugadores[miIdx].dinero);
-            if (s.jugadores[miIdx].ultimaMision) {
-                let m = s.jugadores[miIdx].ultimaMision;
-                const mensajes = {
-                    "negociador": "¡Has ganado $400 por tu primer intercambio!",
-                    "inversor": "¡Felicidades! Has ganado $200 por ser un Inversor Inicial.",
-                    "coleccionista": "¡Felicidades! Has ganado $300 por completar un set de color.",
-                    "cajafuerte": "¡Felicidades! Has acumulado $2,000. ¡Un premio de $650 irá directo a tu caja fuerte!",
-                    "intocable": "¡El Intocable! Otros jugadores han caído 5 veces en tus propiedades. ¡Has ganado $400!",
-                    "renovador": "¡Excelente constructor! Has construido 5 casas en total. ¡Has ganado $500!",
-                    "monopolioTotal": "¡INCREÍBLE! Has conseguido el Monopolio Total. ¡Premio de $1,500!"
-                };
-                if (mensajes[m]) {
-                    if (typeof mostrarNotificacionMision === 'function') mostrarNotificacionMision(mensajes[m]);
-                    db.ref('salas/' + sala + '/jugadores/' + miIdx + '/ultimaMision').remove();
+        
+        // Renderizado de casas y hoteles
+        let hc = cell.querySelector('.house-container'); 
+        if (hc) {
+            hc.innerHTML = "";
+            let nivel = s.propiedades[pos].nivel || 0;
+            if (nivel > 0 && nivel < 5) {
+                for (let i = 0; i < nivel; i++) { 
+                    let h = document.createElement('div'); h.className = 'house'; hc.appendChild(h); 
                 }
+            } else if (nivel === 5) { 
+                let h = document.createElement('div'); h.className = 'hotel'; hc.appendChild(h); 
             }
         }
     });
 };
-        // 1. AVISO REPUTACIÓN
-    window.mostrarAvisoReputacion = function() {
-        if (typeof yaEntro !== 'undefined' && yaEntro) return;
-        let modal = document.getElementById('modal');
-        if (modal) {
-            document.getElementById('modal-title').innerText = "Estado de Reputación";
-            document.getElementById('modal-text').innerText = "Cargando datos de jugador...";
-            document.getElementById('modal-extra').innerHTML = `<button class="btn" onclick="document.getElementById('modal').style.display='none'">Entendido</button>`;
-            modal.style.display = 'block';
-        }
-    };
 
-    // 2. RECONEXIÓN
-    window.addEventListener('load', () => {
-        let salaGuardada = localStorage.getItem('monopoly_sala');
-        if (salaGuardada) {
-            console.log("Sesión ignorada para empezar en blanco.");
-        }
-    });
+// --- 2. GESTIÓN DE ACCIONES Y MODALES ---
+window.comprar = async function(pos) {
+    if (typeof window.sala === 'undefined' || !window.sala) return;
+    let precio = window.mapa[pos].p;
 
-    // 3. FUNCIÓN COMPRA (ÚNICA Y DEFINITIVA)
-    window.comprar = function(pos) {
-        if (typeof sala === 'undefined' || !sala) {
-            console.error("Error: La sala no está definida.");
-            return;
-        }
-        
-        let precio = mapa[pos].p;
-        let propRef = db.ref('salas/' + sala + '/propiedades/' + pos);
-        
-        propRef.transaction(currentProp => {
-            if (currentProp !== null) return; 
-            return { owner: miIdx, nivel: 0, hipotecada: false };
-        }, (error, committed) => {
+    // 1. Primero verifica el saldo
+    const snap = await window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero').once('value');
+    if ((snap.val() || 0) < precio) {
+        alert("No tienes suficiente dinero.");
+        return;
+    }
+
+    // 2. Luego realiza la transacción si tiene saldo
+    return new Promise((resolve) => {
+        window.db.ref('salas/' + window.sala + '/propiedades/' + pos).transaction(function(currentProp) {
+            return (currentProp === null) ? { owner: window.miIdx, nivel: 0, hipotecada: false } : undefined;
+        }, function(error, committed) {
             if (committed) {
-                db.ref('salas/' + sala + '/jugadores/' + miIdx + '/dinero')
-                  .transaction(d => (d || 0) - (precio || 0));
-                log(nombres[miIdx] + " compró " + mapa[pos].n);
-                document.getElementById('modal').style.display = 'none';
-                if (typeof recargarTablero === 'function') recargarTablero();
-            } else {
-                alert("La propiedad ya fue comprada.");
+                window.db.ref('salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero')
+                    .transaction(d => (d || 0) - precio);
+                window.cerrarModal();
+            } else if (!error) {
+                alert("Esta propiedad ya ha sido comprada.");
             }
-        });
-    };
-    console.log("Sistema de compra cargado correctamente.");
-
-    // 4. CREACIÓN DEL TABLERO
-    window.addEventListener('DOMContentLoaded', () => {
-        const board = document.getElementById('board');
-        if (!board) return;
-
-        mapa.forEach((m, i) => { 
-            const d = document.createElement('div'); 
-            d.className = 'cell'; 
-            d.id = 'cell-' + i; 
-            d.onclick = () => verPropiedad(i);
-            
-            let g = obtenerGrupo(i);
-            if (g && g.color === "#f5f5dc") {
-                d.style.border = "3px solid #f5f5dc"; 
-                d.style.backgroundColor = "#fffef0";
-            } else if (g) {
-                d.innerHTML = `<div class="strip" style="background: ${g.color}"></div>`;
-            }
-            
-            d.innerHTML += `<div class="contenido" style="font-size: 7px; color: #c71585;">
-                            ${m.n}<br>${m.p > 0 ? '$' + m.p : ''}</div>`;
-            board.appendChild(d);
+            resolve();
         });
     });
-</script>
+};
+
+window.cerrarModal = function() { 
+    let modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+    let extra = document.getElementById('modal-extra');
+    if (extra) extra.innerHTML = ""; 
+};
+
+window.abrirModal = function(titulo, contenido) {
+    document.getElementById('modal-title').innerText = titulo;
+    document.getElementById('modal-text').innerHTML = contenido;
+    document.getElementById('modal').style.display = 'block';
+};
+
+// --- 3. UTILIDADES Y EVENTOS ---
+window.log = function(txt) { 
+    if (typeof window.sala !== 'undefined') window.db.ref('salas/' + window.sala + '/log').push(txt); 
+};
+
+window.obtenerCarta = function() { 
+    return (typeof window.cartasEvento !== 'undefined') ? window.cartasEvento[Math.floor(Math.random() * window.cartasEvento.length)] : "Evento por defecto";
+};
+
+window.abrirInfoReputacion = function() {
+    if (!window.jugadores || !window.jugadores[window.miIdx]) return;
+    alert("Tu reputación actual es: " + (window.jugadores[window.miIdx].reputacion || 100));
+};
+
+// --- 4. INICIALIZACIÓN ---
+window.addEventListener('load', () => {
+    // Se asegura de que el tablero se genere tras cargar los recursos
+    if (typeof window.generarTablero === 'function') {
+        setTimeout(window.generarTablero, 500);
+    }
+});
+<script src="script.js"></script>
 </body>
 </html>
