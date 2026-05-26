@@ -1,6 +1,6 @@
 // main.js (Versión con Misiones y Banco integrados)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, child, get, set, runTransaction, update, onValue, push, onDisconnect } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, child, get, set, runTransaction, update, onValue, push, onDisconnect, off } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { firebaseConfig } from './firebase-config.js'; 
 
 // 1. Inicialización
@@ -8,11 +8,42 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 window.db = db;
 
-// Configuración de Jugadores (NUEVO)
+// Configuración Global
 window.nombres = ["Dog", "Horse", "Hat", "Car"];
 window.colores = ["#ffb7b2", "#baa695", "#c2f0c9", "#c2ddf2"];
+let chatListener; // Listener global para el chat
 
-console.log("Main.js cargado correctamente");
+// --- 1. PERSISTENCIA INICIAL ---
+window.miIdx = localStorage.getItem('miIdx') || undefined;
+window.esVisitante = localStorage.getItem('esVisitante') === 'true';
+window.sala = localStorage.getItem('sala') || undefined;
+
+// --- DEFINICIÓN DE SINCRONIZAR  ---
+window.sincronizar = function() {
+    if (!window.sala) return;
+
+    const chatRef = ref(db, 'salas/' + window.sala + '/chat');
+    
+    // Si ya existe un listener previo, lo eliminamos
+    if (chatListener) {
+        off(chatRef);
+    }
+
+    chatListener = onValue(chatRef, (snap) => {
+        const chatLog = document.getElementById('chat-log');
+        if (!chatLog) return;
+        
+        chatLog.innerHTML = "";
+        const data = snap.val();
+        if (data) {
+            Object.values(data).forEach(m => {
+                const estilo = m.n === "Sistema" ? "color: #ff80bf; font-style: italic; font-size: 0.8em;" : "color: #333;";
+                chatLog.innerHTML += `<div style="${estilo} margin-bottom: 5px;"><small>[${m.t}]</small> <b>${m.n}:</b> ${m.m}</div>`;
+            });
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+    });
+};
 
 // 2. Datos Globales
 const mapa = [
@@ -216,7 +247,8 @@ window.abrirModalMisiones = function() {
 window.verificarSala = function() {
     const salaId = document.getElementById('sala-id').value.trim();
     if (!salaId) return window.abrirModal("Error", "<p>Escribe un nombre de sala primero.</p>");
-    get(child(ref(db), 'salas/' + salaId)).then((snap) => {
+    
+    get(ref(db, 'salas/' + salaId)).then((snap) => {
         if (snap.exists()) {
             window.abrirModal("Sala Existente", `<p>La sala <b>${salaId}</b> existe.</p><button class="btn-sidebar" onclick="window.unirseSala('${salaId}')">Unirse</button>`);
         } else {
@@ -225,86 +257,109 @@ window.verificarSala = function() {
     });
 };
 
-window.yaEntro = false;
-
 window.crearSala = function(salaId) {
+    window.sala = salaId;
     set(ref(db, 'salas/' + salaId), {
         estado: "esperando",
-        jugadores: { 0: { nombre: "Dog", color: window.colores[0], activo: true, dinero: 1500, tienePrestamo: false } }
+        jugadores: { 
+            0: { nombre: "Dog", color: window.colores[0], activo: true, dinero: 1500, tienePrestamo: false } 
+        }
     }).then(() => {
-        window.sala = salaId;
         window.miIdx = 0;
+        window.esVisitante = false;
         window.yaEntro = true;
-        // Notificar creación al chat
-        push(ref(db, 'salas/' + salaId + '/chat'), { n: "Sistema", m: "Dog ha creado la sala.", t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+        
+        push(ref(db, 'salas/' + salaId + '/chat'), { 
+            n: "Sistema", 
+            m: "Dog ha creado la sala.", 
+            t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+        });
+        
         window.sincronizar();
         window.abrirModal("Sala Creada", `<p>Bienvenido, <b>Dog</b>.</p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
     });
 };
 
+// --- 1. PERSISTENCIA DE IDENTIDAD ---
+window.miIdx = localStorage.getItem('miIdx') || undefined;
+window.esVisitante = localStorage.getItem('esVisitante') === 'true';
+window.sala = localStorage.getItem('sala') || undefined;
+
+// Si ya teníamos datos, intentamos sincronizar automáticamente
+if (window.sala && window.miIdx !== undefined) {
+    window.sincronizar();
+}
+
+// --- 2. UNIRSE A SALA (Con Persistencia) ---
 window.unirseSala = function(salaId) {
-    if (window.yaEntro) return;
+    window.sala = salaId;
+    localStorage.setItem('sala', salaId);
+    
     const salaRef = ref(db, 'salas/' + salaId + '/jugadores');
     
     runTransaction(salaRef, (jugadores) => {
         if (!jugadores) jugadores = {};
-        const ocupados = Object.keys(jugadores).filter(k => !k.startsWith('v')).length;
-        const visitantes = Object.keys(jugadores).filter(k => k.startsWith('v')).length;
+        const ocupados = Object.keys(jugadores).filter(k => !String(k).startsWith('v')).length;
+        const visitantes = Object.keys(jugadores).filter(k => String(k).startsWith('v')).length;
         
         if (ocupados < 4) {
             window.miIdx = ocupados;
             window.esVisitante = false;
-            jugadores[window.miIdx] = { nombre: window.nombres[window.miIdx], color: window.colores[window.miIdx], activo: true, dinero: 1500, tienePrestamo: false };
+            jugadores[window.miIdx] = { 
+                nombre: window.nombres[window.miIdx], 
+                color: window.colores[window.miIdx], 
+                activo: true, dinero: 1500, tienePrestamo: false 
+            };
         } else if (visitantes < 3) {
             window.miIdx = 'v' + (visitantes + 1);
             window.esVisitante = true;
             jugadores[window.miIdx] = { nombre: "Citizen " + (visitantes + 1), activo: true };
         } else {
-            window.miIdx = -1;
+            return;
         }
         return jugadores;
     }).then((res) => {
-        if (res.committed && window.miIdx !== -1) {
-            window.sala = salaId;
-            window.yaEntro = true;
-            window.cerrarModal();
-            const nombre = window.esVisitante ? "Citizen " + window.miIdx.replace('v','') : window.nombres[window.miIdx];
-            const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-            onDisconnect(ref(db, 'salas/' + salaId + '/jugadores/' + window.miIdx)).remove();
-            onDisconnect(ref(db, 'salas/' + salaId + '/chat')).push({ n: "Sistema", m: nombre + " ha salido.", t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
-
-            push(ref(db, 'salas/' + salaId + '/chat'), { n: "Sistema", m: nombre + " se ha unido.", t: t });
+        if (res.committed && window.miIdx !== undefined) {
+            localStorage.setItem('miIdx', window.miIdx);
+            localStorage.setItem('esVisitante', window.esVisitante);
             window.sincronizar();
-            window.abrirModal("¡Bienvenido!", `<p>Te has unido como <b>${nombre}</b>.</p><button class="btn-sidebar" onclick="window.cerrarModal()">Aceptar</button>`);
-        } else if (window.miIdx === -1) {
-            window.abrirModal("Error", "La sala está llena.");
+            
+            // Lógica de aviso en el chat
+            const nombreMostrar = window.esVisitante ? "Citizen " + String(window.miIdx).replace('v','') : window.nombres[window.miIdx];
+            push(ref(db, 'salas/' + salaId + '/chat'), { 
+                n: "Sistema", 
+                m: nombreMostrar + " se ha unido a la partida.", 
+                t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+            });
+
+            // Configurar eliminación automática al salir
+            const miRef = ref(db, 'salas/' + salaId + '/jugadores/' + window.miIdx);
+            onDisconnect(miRef).remove();
+
+            // Modal de bienvenida con estilo CSS
+            window.abrirModal("Bienvenido", `
+                <p>Lograste entrar al juego.</p>
+                <button class="btn-sidebar" style="width:100%" onclick="window.cerrarModal()">Comenzar</button>
+            `);
         }
     });
 };
 
-window.sincronizar = function() {
-    if (!window.sala) return;
-    onValue(ref(db, 'salas/' + window.sala + '/chat'), (snap) => {
-        const chatLog = document.getElementById('chat-log');
-        if (!chatLog) return;
-        chatLog.innerHTML = "";
-        snap.forEach(s => {
-            const m = s.val();
-            const hora = m.t ? `[${m.t}]` : "";
-            const estilo = m.n === "Sistema" ? "color: #ff80bf; font-style: italic;" : "color: #333;";
-            chatLog.innerHTML += `<div style="${estilo}"><small>${hora}</small> <b>${m.n}:</b> ${m.m}</div>`;
-        });
-        chatLog.scrollTop = chatLog.scrollHeight;
-    });
+window.enviarMensaje = function() {
+    const input = document.getElementById('chat-msg');
+    const mensaje = input.value.trim();
+    
+    if (mensaje === "" || !window.sala || window.miIdx === undefined) return;
+
+    const nombre = window.esVisitante ? "Citizen " + String(window.miIdx).replace('v','') : window.nombres[window.miIdx];
+    
+    push(ref(db, 'salas/' + window.sala + '/chat'), {
+        n: nombre,
+        m: mensaje,
+        t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }).then(() => input.value = "");
 };
 
-const msgInput = document.getElementById('chat-msg');
-if (msgInput) {
-    msgInput.addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') window.enviarMensaje();
-    });
-}
 window.generarTablero = function() {
     const board = document.getElementById('board');
     const centerZone = document.getElementById('center-zone');
@@ -339,14 +394,19 @@ window.lanzarDado3D = function() {
 
 window.mostrarAvisoReputacion = () => window.abrirModal("Reputación", "<p>Tu nivel en Naeun Town es: <b>Estrella Naciente</b></p>");
 window.abrirIntercambio = () => window.abrirModal("🤝 Intercambio", "<p>Esperando conexión con otro jugador...</p>");
-window.enviarMensaje = function() {
-    const msg = document.getElementById('chat-msg').value;
-    if (!msg) return;
-    const chatLog = document.getElementById('chat-log');
-    const div = document.createElement('div');
-    div.textContent = "Yo: " + msg;
-    chatLog.appendChild(div);
-    document.getElementById('chat-msg').value = ''; 
-    chatLog.scrollTop = chatLog.scrollHeight;
-};
+
+// Listener para enviar mensaje con la tecla ENTER
+document.addEventListener('DOMContentLoaded', () => {
+    const chatInput = document.getElementById('chat-msg');
+    
+    if (chatInput) {
+        chatInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault(); // Evita saltos de línea
+                window.enviarMensaje(); // Llama a tu función de envío
+            }
+        });
+    }
+});
+
 window.generarTablero();
