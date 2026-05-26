@@ -232,8 +232,14 @@ window.crearSala = function(salaId) {
     }).then(() => {
         window.sala = salaId;
         window.miIdx = 0;
-        window.cerrarModal();
-        alert("Sala creada. Eres Dog.");
+        // Reemplazo de alert por Modal
+        window.abrirModal("Sala Creada", `
+            <div style="text-align: center;">
+                <p>La sala <b>${salaId}</b> ha sido creada.</p>
+                <p>Bienvenido al juego, eres el jugador <b>Dog</b>.</p>
+                <button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>
+            </div>
+        `);
     });
 };
 
@@ -242,21 +248,74 @@ window.unirseSala = function(salaId) {
     runTransaction(salaRef, (jugadores) => {
         if (!jugadores) jugadores = {};
         const ocupados = Object.keys(jugadores).length;
+        
         if (ocupados < 4) {
             window.miIdx = ocupados;
+            window.esVisitante = false;
             jugadores[window.miIdx] = { nombre: window.nombres[window.miIdx], color: window.colores[window.miIdx], activo: true, dinero: 1500, tienePrestamo: false };
         } else {
-            window.miIdx = -1; // Es visitante
+            // Lógica de 3 visitantes máximo
+            const visitantes = Object.keys(jugadores).filter(k => k.startsWith('v')).length;
+            if (visitantes < 3) {
+                window.miIdx = 'v' + (visitantes + 1);
+                window.esVisitante = true;
+                jugadores[window.miIdx] = { nombre: "Citizen " + (visitantes + 1), activo: true };
+            } else {
+                window.miIdx = -1;
+            }
         }
         return jugadores;
     }).then((res) => {
-        if (res.committed) {
+        if (res.committed && window.miIdx !== -1) {
             window.sala = salaId;
             window.cerrarModal();
-            alert(window.miIdx !== -1 ? "Unido como " + window.nombres[window.miIdx] : "Entraste como visitante.");
+            // Notificar al chat la entrada
+            const nombre = window.esVisitante ? "Citizen " + window.miIdx.replace('v','') : window.nombres[window.miIdx];
+            import("https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js").then(fb => {
+                fb.push(fb.ref(db, 'salas/' + salaId + '/chat'), { n: "Sistema", m: nombre + " se ha unido a la partida.", t: "..." });
+            });
+            window.abrirModal("¡Bienvenido!", `<p>Te has unido como <b>${nombre}</b>.</p><button class="btn-sidebar" onclick="window.cerrarModal()">Aceptar</button>`);
+        } else if (window.miIdx === -1) {
+            window.abrirModal("Error", "Sala llena (máx 4 jugadores y 3 visitantes).");
         }
     });
 };
+
+// --- Lógica del Chat ---
+window.enviarMensaje = function() {
+    const input = document.getElementById('chat-msg');
+    const msg = input.value.trim();
+    if (msg === "") return; // No enviar espacios vacíos
+
+    const hora = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const nombre = window.esVisitante ? "Citizen " + window.miIdx.replace('v','') : window.nombres[window.miIdx];
+
+    import("https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js").then(fb => {
+        fb.push(fb.ref(db, 'salas/' + window.sala + '/chat'), { n: nombre, m: msg, t: hora });
+    });
+    input.value = '';
+};
+
+// Escuchar tecla Enter
+document.getElementById('chat-msg').addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') window.enviarMensaje();
+});
+
+// Sincronización (debe ejecutarse al entrar a la sala)
+window.iniciarChat = function() {
+    import("https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js").then(fb => {
+        fb.onValue(fb.ref(db, 'salas/' + window.sala + '/chat'), (snap) => {
+            const chatLog = document.getElementById('chat-log');
+            chatLog.innerHTML = "";
+            snap.forEach(s => {
+                const m = s.val();
+                chatLog.innerHTML += `<div><small style="color:gray;">[${m.t}]</small> <b>${m.n}:</b> ${m.m}</div>`;
+            });
+            chatLog.scrollTop = chatLog.scrollHeight;
+        });
+    });
+};
+
 window.generarTablero = function() {
     const board = document.getElementById('board');
     const centerZone = document.getElementById('center-zone');
