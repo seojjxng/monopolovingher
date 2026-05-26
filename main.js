@@ -1,12 +1,16 @@
 // main.js (Versión con Misiones y Banco integrados)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, child, get, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, child, get, set, runTransaction, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { firebaseConfig } from './firebase-config.js'; 
 
 // 1. Inicialización
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 window.db = db;
+
+// Configuración de Jugadores (NUEVO)
+window.nombres = ["Dog", "Horse", "Hat", "Car"];
+window.colores = ["#ffb7b2", "#baa695", "#c2f0c9", "#c2ddf2"];
 
 console.log("Main.js cargado correctamente");
 
@@ -35,7 +39,7 @@ function getGridRow(i) { if (i >= 0 && i <= 7) return 8; if (i >= 8 && i <= 14) 
 
 // 4. Sistema de Ventanas Emergentes (Modal)
 window.abrirModal = function(titulo, contenido) {
-    document.getElementById('modal-title').innerHTML = titulo; 
+    document.getElementById('modal-title').innerHTML = titulo;
     document.getElementById('modal-body').innerHTML = contenido;
     document.getElementById('modal').style.display = 'flex';
 };
@@ -46,35 +50,140 @@ window.cerrarModal = function() {
 
 // --- Lógica del Banco ---
 window.abrirBanco = function() {
-    window.abrirModal("🏦 Banco Central", `
-        <p>Selecciona un monto de préstamo:</p>
-        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;">
-            <button class="btn-sidebar" onclick="window.solicitarPrestamo(200)">$200</button>
-            <button class="btn-sidebar" onclick="window.solicitarPrestamo(400)">$400</button>
-            <button class="btn-sidebar" onclick="window.solicitarPrestamo(650)">$650</button>
-            <button class="btn-sidebar" onclick="window.solicitarPrestamo(800)">$800</button>
-            <button class="btn-sidebar" onclick="window.solicitarPrestamo(1000)">$1000</button>
-        </div>
-    `);
+   if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') {
+        const iconoRosaCSS = `
+            <div style="display:inline-block; width: 28px; height: 24px; background: #ff80bf; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); position: relative; vertical-align: middle; margin-right: 10px;">
+                <div style="width: 3px; height: 9px; background: white; position: absolute; top: 6px; left: 12.5px; border-radius: 1px;"></div>
+                <div style="width: 3px; height: 3px; background: white; position: absolute; bottom: 4px; left: 12.5px; border-radius: 1px;"></div>
+            </div>`;
+            
+        window.abrirModal(iconoRosaCSS + "Banco Central", "<p>Debes estar unido a una sala para acceder a los servicios bancarios.</p>");
+        return;
+    }
+    
+    get(child(ref(db), 'salas/' + window.sala + '/jugadores/' + window.miIdx)).then((snap) => {
+        const j = snap.val();
+        if (j && j.tienePrestamo) {
+            window.abrirModal("🏦 Banco Central", `
+                <p>Préstamo activo: <b>$${j.montoPrestamo}</b></p>
+                <button class="btn-sidebar" style="width:100%; background:#27ae60; margin-top: 10px;" onclick="window.pagarPrestamo()">Liquidar Préstamo</button>
+            `);
+        } else {
+            window.abrirModal("🏦 Banco Central", `
+                <p>Selecciona un préstamo:</p>
+                <div style="display:flex; flex-direction:column; gap: 10px; width: 100%;">
+                    <button class="btn-sidebar" onclick="window.solicitarPrestamo(200)">Solicitar $200</button>
+                    <button class="btn-sidebar" onclick="window.solicitarPrestamo(400)">Solicitar $400</button>
+                    <button class="btn-sidebar" onclick="window.solicitarPrestamo(650)">Solicitar $650</button>
+                    <button class="btn-sidebar" onclick="window.solicitarPrestamo(800)">Solicitar $800</button>
+                    <button class="btn-sidebar" onclick="window.solicitarPrestamo(1000)">Solicitar $1000</button>
+                </div>
+            `);
+        }
+    }).catch((error) => {
+        console.error("Error al cargar datos del banco:", error);
+    });
 };
 
 window.solicitarPrestamo = function(monto) {
-    alert("Has solicitado un préstamo de: $" + monto);
-    window.cerrarModal();
+    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    get(jRef).then((snap) => {
+        const j = snap.val();
+        if (j.tienePrestamo) {
+            window.abrirModal("Error", "Ya tienes un préstamo activo.");
+        } else {
+            update(jRef, { 
+                tienePrestamo: true, 
+                montoPrestamo: monto, 
+                dinero: (j.dinero || 0) + monto 
+            }).then(() => {
+                window.abrirModal("✅ Transacción Exitosa", `
+                    <div style="text-align: center; padding: 20px;">
+                        <div style="font-size: 40px; margin-bottom: 10px;">💰</div>
+                        <p style="font-size: 1.1em; color: #333;">¡Transacción aceptada!</p>
+                        <div style="margin: 15px 0; padding: 10px; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 8px; color: #2e7d32; font-weight: bold;">
+                            El monto de $${monto} está en curso.
+                        </div>
+                        <button class="btn-sidebar" style="width:100%; margin-top:15px; background: #27ae60;" onclick="window.cerrarModal()">Aceptar</button>
+                    </div>
+                `);
+            });
+        }
+    });
+};
+
+window.abrirPagar = function() {
+    // 1. Verificación de Sala
+    if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') {
+        const iconoRosaCSS = `
+            <div style="display:inline-block; width: 28px; height: 24px; background: #ff80bf; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); position: relative; vertical-align: middle; margin-right: 10px;">
+                <div style="width: 3px; height: 9px; background: white; position: absolute; top: 6px; left: 12.5px; border-radius: 1px;"></div>
+                <div style="width: 3px; height: 3px; background: white; position: absolute; bottom: 4px; left: 12.5px; border-radius: 1px;"></div>
+            </div>`;
+        window.abrirModal(iconoRosaCSS + "Atención", "<p>Debes estar unido a una sala para acceder a los servicios bancarios.</p>");
+        return;
+    }
+
+    // 2. Consulta de Estado en Firebase
+    get(child(ref(db), 'salas/' + window.sala + '/jugadores/' + window.miIdx)).then((snap) => {
+        const j = snap.val();
+        
+        if (j && j.tienePrestamo) {
+            window.abrirModal("💳 Pagar", `
+                <p>Saldo pendiente: <b>$${j.montoPrestamo}</b></p>
+                <button class="btn-sidebar" style="width:100%; background:#27ae60; margin-top: 10px;" onclick="window.pagarPrestamo()">Liquidar Préstamo ahora</button>
+            `);
+        } else {
+            window.abrirModal("💳 Pagar", "<p>No tienes deudas pendientes.</p>");
+        }
+    }).catch((error) => {
+        console.error("Error al consultar deuda:", error);
+        window.abrirModal("Error", "No se pudo conectar al servidor.");
+    });
+};
+
+window.pagarPrestamo = function() {
+    // 1. Verificación de seguridad
+    if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') {
+        window.abrirModal("⚠️ Error", "<p>Debes estar en una sala para realizar pagos.</p>");
+        return;
+    }
+
+    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    
+    get(jRef).then((snap) => {
+        const j = snap.val();
+        
+        // 2. Verificación de existencia de datos
+        if (!j) {
+            window.abrirModal("Error", "No se encontraron datos del jugador.");
+            return;
+        }
+
+        if (!j.tienePrestamo) {
+            window.abrirModal("Info", "No tienes préstamos pendientes.");
+            return;
+        }
+        
+        // 3. Lógica de pago
+        if (j.dinero >= j.montoPrestamo) {
+            update(jRef, { 
+                dinero: j.dinero - j.montoPrestamo, 
+                tienePrestamo: false, 
+                montoPrestamo: 0 
+            }).then(() => {
+                window.abrirModal("✅ Banco", "Préstamo pagado exitosamente.");
+            });
+        } else {
+            window.abrirModal("❌ Error", "Fondos insuficientes para liquidar el préstamo.");
+        }
+    }).catch((error) => {
+        console.error("Error al pagar:", error);
+        window.abrirModal("Error", "No se pudo conectar con el servidor.");
+    });
 };
 
 // --- Lógica de Misiones ---
-window.abrirModal = function(titulo, contenido) {
-    document.getElementById('modal-title').innerHTML = titulo; 
-    document.getElementById('modal-body').innerHTML = contenido;
-    document.getElementById('modal').style.display = 'flex';
-};
-
-window.cerrarModal = function() {
-    document.getElementById('modal').style.display = 'none';
-};
-
-// --- Lógica de Misiones - CORREGIDO ---
 window.abrirModalMisiones = function() {
     const misiones = [
         { id: 'inversorInicial', titulo: 'Inversor Inicial', desc: 'Poseer al menos 3 propiedades.', rec: 200 },
@@ -100,10 +209,7 @@ window.abrirModalMisiones = function() {
     html += `</div>
              <button class="btn-sidebar" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>`;
 
-    // Icono rosa CSS
-    const iconoCSS = `<div style="display:inline-block; vertical-align:middle; width:16px; height:16px; background-color:#ff80bf; border-radius:3px; margin-right:8px;"></div>`;
-
-    window.abrirModal(iconoCSS + "Misiones Disponibles", html);
+    window.abrirModal("🏆 Misiones Disponibles", html);
 };
 
 // Lógica de Sala, Tablero y otras funciones...
@@ -119,9 +225,38 @@ window.verificarSala = function() {
     });
 };
 
-window.crearSala = function(salaId) { set(ref(db, 'salas/' + salaId), { estado: "esperando" }); window.cerrarModal(); };
-window.unirseSala = function(salaId) { set(ref(db, 'salas/' + salaId + '/estado'), "activa"); window.cerrarModal(); };
+window.crearSala = function(salaId) {
+    set(ref(db, 'salas/' + salaId), {
+        estado: "esperando",
+        jugadores: { 0: { nombre: "Dog", color: window.colores[0], activo: true, dinero: 1500, tienePrestamo: false } }
+    }).then(() => {
+        window.sala = salaId;
+        window.miIdx = 0;
+        window.cerrarModal();
+        alert("Sala creada. Eres Dog.");
+    });
+};
 
+window.unirseSala = function(salaId) {
+    const salaRef = ref(db, 'salas/' + salaId + '/jugadores');
+    runTransaction(salaRef, (jugadores) => {
+        if (!jugadores) jugadores = {};
+        const ocupados = Object.keys(jugadores).length;
+        if (ocupados < 4) {
+            window.miIdx = ocupados;
+            jugadores[window.miIdx] = { nombre: window.nombres[window.miIdx], color: window.colores[window.miIdx], activo: true, dinero: 1500, tienePrestamo: false };
+        } else {
+            window.miIdx = -1; // Es visitante
+        }
+        return jugadores;
+    }).then((res) => {
+        if (res.committed) {
+            window.sala = salaId;
+            window.cerrarModal();
+            alert(window.miIdx !== -1 ? "Unido como " + window.nombres[window.miIdx] : "Entraste como visitante.");
+        }
+    });
+};
 window.generarTablero = function() {
     const board = document.getElementById('board');
     const centerZone = document.getElementById('center-zone');
@@ -155,7 +290,6 @@ window.lanzarDado3D = function() {
 };
 
 window.mostrarAvisoReputacion = () => window.abrirModal("Reputación", "<p>Tu nivel en Naeun Town es: <b>Estrella Naciente</b></p>");
-window.abrirPagar = () => window.abrirModal("💳 Pagar", "<p>Saldo pendiente: <b>$50</b></p>");
 window.abrirIntercambio = () => window.abrirModal("🤝 Intercambio", "<p>Esperando conexión con otro jugador...</p>");
 window.enviarMensaje = function() {
     const msg = document.getElementById('chat-msg').value;
