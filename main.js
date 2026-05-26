@@ -371,6 +371,19 @@ window.verPropiedad = function(pos) {
     const p = mapa[pos];
     if (p.p === 0) return;
 
+    const indicesTransporte = [8, 24, 26, 27];
+    const esTransporte = indicesTransporte.includes(pos);
+    
+    const iconos = { 
+        8:  'https://www.svgrepo.com/show/490615/car-2.svg',
+        24: 'https://www.svgrepo.com/show/390391/motorcycle-cross-moto-bike.svg',
+        26: 'https://www.svgrepo.com/show/490281/plane.svg',
+        27: 'https://www.svgrepo.com/show/480860/train-station-mark.svg'
+    };
+
+    // Filtro CSS para convertir colores negros a #ff80bf
+    const filtroRosa = "invert(75%) sepia(21%) saturate(1828%) hue-rotate(293deg) brightness(105%) contrast(101%)";
+
     get(ref(db, 'salas/' + window.sala)).then((snap) => {
         const data = snap.val();
         const climaIdx = data.climaIdx || 0;
@@ -378,32 +391,36 @@ window.verPropiedad = function(pos) {
         const clima = window.climas[climaIdx];
         const mult = clima.mult;
 
-        const niveles = [0.1, 0.15, 0.2, 0.3, 0.4, 0.5];
-        const nivel = prop ? (prop.nivel || 0) : 0;
-        const alquiler = Math.floor((p.p * niveles[nivel]) * mult);
-        
+        let alquiler;
+        let listaAlquileres = "";
+
+        if (esTransporte) {
+            const dueño = prop ? prop.owner : null;
+            const cantidad = dueño !== null ? indicesTransporte.filter(idx => data.propiedades[idx]?.owner === dueño).length : 0;
+            const tabla = { 0: 0, 1: 250, 2: 350, 3: 350, 4: 450 };
+            alquiler = Math.floor(tabla[cantidad] * mult);
+            listaAlquileres = `<li>1 poseído: $250</li><li>2 poseídos: $350</li><li>3 poseídos: $350</li><li>4 poseídos: $450</li>`;
+        } else {
+            const niveles = [0.1, 0.15, 0.2, 0.3, 0.4, 0.5];
+            const nivel = prop ? (prop.nivel || 0) : 0;
+            alquiler = Math.floor((p.p * niveles[nivel]) * mult);
+            listaAlquileres = niveles.map((n, i) => `<li style="margin: 3px 0;">Nivel ${i + 1}: $${Math.floor(p.p * n * mult)}</li>`).join('');
+        }
+
         const esDuenio = prop && prop.owner === window.miIdx;
         const estaHipotecada = prop && prop.hipotecada;
-        
-        // Estilos para el clima
         const colorClima = mult < 1 ? '#e74c3c' : '#27ae60';
-        const infoClima = mult < 1 ? ' (Descuento aplicado)' : '';
 
-        // Generación de lista de niveles de alquiler
-        let listaAlquileres = niveles.map((n, i) => 
-            `<li style="margin: 3px 0;">Nivel ${i + 1}: $${Math.floor(p.p * n * mult)}</li>`
-        ).join('');
-
-        // Construcción de la tarjeta estilo Monopoly manteniendo toda la info
         let contenido = `
             <div class="card-property">
                 <div class="card-header">${p.n}</div>
                 <div class="card-body">
+                    ${esTransporte ? `<div style="text-align:center; margin:15px 0;"><img src="${iconos[pos]}" style="width:100px; height:auto; filter: ${filtroRosa};"></div>` : ''}
                     <p>Valor de compra: <b>$${p.p}</b></p>
                     <div class="alquiler-destacado" style="color: ${colorClima}; font-size: 1.2em; font-weight: bold;">
                         Alquiler actual: $${estaHipotecada ? 0 : alquiler}
                     </div>
-                    <p style="font-size: 0.85em;">Clima: ${clima.n}${infoClima}</p>
+                    <p style="font-size: 0.85em;">Clima: ${clima.n}${mult < 1 ? ' (Descuento aplicado)' : ''}</p>
                     <hr>
                     <p><b>Detalle de alquileres:</b></p>
                     <ul style="text-align: left; font-size: 0.9em; padding-left: 20px;">
@@ -411,7 +428,6 @@ window.verPropiedad = function(pos) {
                     </ul>
                     <hr>`;
 
-        // Lógica de botones y estado
         if (!prop) {
             contenido += `<button class="btn-accion" style="background:#ff80bf" onclick="window.comprar(${pos})">Comprar Propiedad</button>`;
         } else if (esDuenio) {
@@ -427,6 +443,28 @@ window.verPropiedad = function(pos) {
         contenido += `</div></div>`;
         window.abrirModal("Tarjeta de Propiedad", contenido);
     });
+};
+      window.obtenerAlquilerFerrocarril = function(dueñoIdx, todasLasPropiedades) {
+    // 1. Validaciones de seguridad iniciales
+    if (!todasLasPropiedades || typeof dueñoIdx === 'undefined') return 0;
+    
+    const indicesTransporte = [8, 24, 26, 27];
+    let cantidad = 0;
+    
+    // 2. Conteo de ferrocarriles poseídos
+    indicesTransporte.forEach(idx => {
+        const prop = todasLasPropiedades[idx];
+        // Validamos que la propiedad exista y tenga el owner correcto
+        if (prop && prop.owner === dueñoIdx) {
+            cantidad++;
+        }
+    });
+
+    // 3. Tabla de alquileres (Escalabilidad protegida)
+    const tabla = { 1: 100, 2: 150, 3: 250, 4: 300 };
+    
+    // Retornamos el valor basado en la cantidad, si es 0, devuelve 0
+    return tabla[cantidad] || 0;
 };
 
 // Función para procesar el pago al dueño
@@ -631,11 +669,16 @@ window.enviarMensaje = function() {
 
 window.generarTablero = function() {
     const board = document.getElementById('board');
-    const centerZone = document.getElementById('center-zone');
+    // Aseguramos que busque la zona central por clase o ID
+    const centerZone = document.querySelector('.center-zone') || document.getElementById('center-zone'); 
     if (!board) return;
     
     board.innerHTML = '';
-    board.appendChild(centerZone);
+    if (centerZone) board.appendChild(centerZone);
+    
+    // Re-añadimos los tokens (jugadores) para que no desaparezcan
+    const tokens = document.querySelectorAll('.token');
+    tokens.forEach(t => board.appendChild(t));
     
     mapa.forEach((casilla, i) => {
         const d = document.createElement('div');
@@ -644,9 +687,10 @@ window.generarTablero = function() {
         d.style.gridColumn = getGridColumn(i);
         d.style.gridRow = getGridRow(i);
         
-        // Hacer la celda clicable y visualmente interactiva
+        // --- HABILITAMOS EL CLICK PARA ABRIR LA TARJETA ---
         d.style.cursor = "pointer";
         d.onclick = () => window.verPropiedad(i);
+        // --------------------------------------------------
         
         let grupo = grupos.find(g => g.indices.includes(i));
         
