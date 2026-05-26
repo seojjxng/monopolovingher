@@ -1,14 +1,17 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-app.js";
-import { getDatabase, ref, child, get, set } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-database.js";
+// 1. Importaciones obligatorias
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getDatabase, ref, child, get, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+// ¡IMPORTANTE! Debes importar la configuración ANTES de usarla
 import { firebaseConfig } from './firebase-config.js';
 
-// 1. Inicialización
+// 2. Inicialización (ahora sí, firebaseConfig ya existe)
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 window.db = db;
 
+// 3. Confirmación
 console.log("Main.js cargado correctamente");
-alert("¡JS Funcionando!");
 
 // 2. Datos Globales
 const mapa = [
