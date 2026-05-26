@@ -18,13 +18,13 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
     position: relative; 
 }
 
-/* CENTRO FLOTANTE */
+/* CENTRO FLOTANTE - Asegurado con z-index y posición */
 .center-zone { 
     position: absolute;
-    top: 75px; 
-    left: 75px;
-    width: 450px; 
-    height: 450px;
+    top: 79px; /* Calculado para quedar centrado en el grid de 8x8 */
+    left: 79px;
+    width: 442px; 
+    height: 442px;
     z-index: 100;
     background: #fff5f7; 
     border: 3px dashed #ff80bf; 
@@ -50,6 +50,7 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
     overflow: hidden;
     position: relative;
     border-radius: 4px;
+    z-index: 1; /* Las celdas van debajo del centro */
 }
 .celda-content { padding: 2px; }
 .strip { height: 8px; width: 100%; }
