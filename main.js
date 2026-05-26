@@ -3,12 +3,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebas
 import { getDatabase, ref, child, get, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { firebaseConfig } from './firebase-config.js'; 
 
-// 1. Inicialización (Una sola vez)
+// 1. Inicialización
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 window.db = db;
 
-// 3. Confirmación
 console.log("Main.js cargado correctamente");
 
 // 2. Datos Globales
@@ -37,7 +36,12 @@ function getGridRow(i) { if (i >= 0 && i <= 7) return 8; if (i >= 8 && i <= 14) 
 // 4. Funciones Globales para el HTML
 window.generarTablero = function() {
     const board = document.getElementById('board');
+    const centerZone = document.getElementById('center-zone');
     if (!board) return;
+    
+    // Limpieza crítica para evitar duplicados
+    board.innerHTML = '';
+    board.appendChild(centerZone);
     
     mapa.forEach((casilla, i) => {
         const d = document.createElement('div');
@@ -83,8 +87,8 @@ window.enviarMensaje = function() {
     div.textContent = "Yo: " + msg;
     chatLog.appendChild(div);
     
-    document.getElementById('chat-msg').value = ''; // Limpiar input
-    chatLog.scrollTop = chatLog.scrollHeight; // Auto-scroll al final
+    document.getElementById('chat-msg').value = ''; 
+    chatLog.scrollTop = chatLog.scrollHeight;
 };
 
 window.mostrarAvisoReputacion = () => alert("Reputación: Tu nivel en Naeun Town");
