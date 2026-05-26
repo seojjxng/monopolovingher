@@ -13,11 +13,6 @@ window.nombres = ["Dog", "Horse", "Hat", "Car"];
 window.colores = ["#ffb7b2", "#baa695", "#c2f0c9", "#c2ddf2"];
 let chatListener; // Listener global para el chat
 
-// --- 1. PERSISTENCIA INICIAL ---
-window.miIdx = localStorage.getItem('miIdx') || undefined;
-window.esVisitante = localStorage.getItem('esVisitante') === 'true';
-window.sala = localStorage.getItem('sala') || undefined;
-
 // --- DEFINICIÓN DE SINCRONIZAR  ---
 window.sincronizar = function() {
     if (!window.sala) return;
@@ -283,7 +278,7 @@ window.crearSala = function(salaId) {
 // --- 1. PERSISTENCIA DE IDENTIDAD ---
 window.miIdx = localStorage.getItem('miIdx') || undefined;
 window.esVisitante = localStorage.getItem('esVisitante') === 'true';
-window.sala = localStorage.getItem('sala') || undefined;
+window.sala = undefined;
 
 // Si ya teníamos datos, intentamos sincronizar automáticamente
 if (window.sala && window.miIdx !== undefined) {
