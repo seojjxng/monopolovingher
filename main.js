@@ -33,13 +33,67 @@ const grupos = [
 function getGridColumn(i) { if (i >= 0 && i <= 7) return 8 - i; if (i >= 8 && i <= 14) return 1; if (i >= 15 && i <= 21) return (i - 14) + 1; return 8; }
 function getGridRow(i) { if (i >= 0 && i <= 7) return 8; if (i >= 8 && i <= 14) return 8 - (i - 7); if (i >= 15 && i <= 21) return 1; return (i - 21) + 1; }
 
-// 4. Funciones Globales para el HTML
+// 4. Sistema de Ventanas Emergentes (Modal)
+window.abrirModal = function(titulo, contenido) {
+    document.getElementById('modal-title').textContent = titulo;
+    document.getElementById('modal-body').innerHTML = contenido;
+    document.getElementById('modal').style.display = 'flex';
+};
+
+window.cerrarModal = function() {
+    document.getElementById('modal').style.display = 'none';
+};
+
+// Lógica de Sala (Verificación)
+window.verificarSala = function() {
+    const salaId = document.getElementById('sala-id').value.trim();
+    if (!salaId) {
+        window.abrirModal("Error", "<p>Escribe un nombre de sala primero.</p>");
+        return;
+    }
+
+    get(child(ref(db), 'salas/' + salaId)).then((snap) => {
+        if (snap.exists()) {
+            window.abrirModal("Sala Existente", `
+                <p>La sala <b>${salaId}</b> ya existe.</p>
+                <div style="display:flex; gap:10px; justify-content:center; margin-top:15px;">
+                    <button class="btn-sidebar" onclick="window.unirseSala('${salaId}')">Unirse</button>
+                    <button class="btn-cerrar" onclick="window.cerrarModal()">Cancelar</button>
+                </div>`);
+        } else {
+            window.abrirModal("Nueva Sala", `
+                <p>La sala <b>${salaId}</b> no existe. ¿Quieres crearla?</p>
+                <div style="display:flex; gap:10px; justify-content:center; margin-top:15px;">
+                    <button class="btn-sidebar" onclick="window.crearSala('${salaId}')">Crear nueva</button>
+                    <button class="btn-cerrar" onclick="window.cerrarModal()">Cancelar</button>
+                </div>`);
+        }
+    });
+};
+
+window.crearSala = function(salaId) {
+    set(ref(db, 'salas/' + salaId), { estado: "esperando" });
+    window.cerrarModal();
+    window.abrirModal("Éxito", `<p>Sala <b>${salaId}</b> creada.</p>`);
+};
+
+window.unirseSala = function(salaId) {
+    set(ref(db, 'salas/' + salaId + '/estado'), "activa");
+    window.cerrarModal();
+    window.abrirModal("Éxito", `<p>Te has unido a <b>${salaId}</b>.</p>`);
+};
+
+window.abrirEnviar = () => {
+    window.enviarMensaje();
+    window.abrirModal("Chat", "<p>Mensaje enviado correctamente.</p>");
+};
+
+// 5. Funciones Globales para el HTML
 window.generarTablero = function() {
     const board = document.getElementById('board');
     const centerZone = document.getElementById('center-zone');
     if (!board) return;
     
-    // Limpieza crítica para evitar duplicados
     board.innerHTML = '';
     board.appendChild(centerZone);
     
@@ -70,29 +124,23 @@ window.lanzarDado3D = function() {
     }, 600);
 };
 
-window.unirse = function() {
-    const salaId = document.getElementById('sala-id').value;
-    if (!salaId) return alert("Escribe un nombre de sala");
-    get(child(ref(db), 'salas/' + salaId)).then((snap) => {
-        if (!snap.exists()) set(ref(db, 'salas/' + salaId), { estado: "esperando" });
-    });
-};
+// Acciones de botones
+window.mostrarAvisoReputacion = () => window.abrirModal("Reputación", "<p>Tu nivel en Naeun Town es: <b>Estrella Naciente</b></p>");
+window.abrirModalMisiones = () => window.abrirModal("Misiones", "<ul><li>Comprar terreno</li><li>Subir saldo a $2000</li><li>Interactuar con jugadores</li></ul>");
+window.abrirBanco = () => window.abrirModal("🏦 Banco", "<p>¿Deseas gestionar tus ahorros?</p>");
+window.abrirPagar = () => window.abrirModal("💳 Pagar", "<p>Saldo pendiente: <b>$50</b></p>");
+window.abrirIntercambio = () => window.abrirModal("🤝 Intercambio", "<p>Esperando conexión con otro jugador...</p>");
 
 window.enviarMensaje = function() {
     const msg = document.getElementById('chat-msg').value;
     if (!msg) return;
-    
     const chatLog = document.getElementById('chat-log');
     const div = document.createElement('div');
     div.textContent = "Yo: " + msg;
     chatLog.appendChild(div);
-    
     document.getElementById('chat-msg').value = ''; 
     chatLog.scrollTop = chatLog.scrollHeight;
 };
-
-window.mostrarAvisoReputacion = () => alert("Reputación: Tu nivel en Naeun Town");
-window.abrirModalMisiones = () => alert("Misiones abiertas");
 
 // Ejecución inicial
 window.generarTablero();
