@@ -18,7 +18,7 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
     position: relative; 
 }
 
-/* El centro flota encima, liberando el grid para las celdas */
+/* CENTRO FLOTANTE */
 .center-zone { 
     position: absolute;
     top: 75px; 
@@ -33,8 +33,9 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
     align-items: center; 
     justify-content: center; 
     border-radius: 10px; 
-    gap: 5px; 
-    padding: 10px; 
+    gap: 10px; 
+    padding: 20px;
+    pointer-events: auto;
 }
 
 /* CELDAS GENERADAS POR JS */
@@ -54,18 +55,18 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 .strip { height: 8px; width: 100%; }
 .interrogacion { font-size: 20px; font-weight: bold; color: #ff80bf; display: flex; align-items: center; justify-content: center; height: 100%; }
 
-/* DADO Y OTROS */
-.dice-container { perspective: 400px; width: 40px; height: 40px; cursor: pointer; margin: 10px 0; }
+/* DADO CORREGIDO */
+.dice-container { perspective: 600px; width: 60px; height: 60px; cursor: pointer; margin: 15px 0; }
 .dice { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 1s ease-out; }
-.face { position: absolute; width: 40px; height: 40px; background: white; border: 1px solid #ff80bf; border-radius: 6px; display: grid; grid-template-columns: repeat(3, 1fr); padding: 5px; backface-visibility: hidden; }
-.dot { width: 8px; height: 8px; background: #ff59aa; border-radius: 50%; visibility: hidden; }
+.face { position: absolute; width: 60px; height: 60px; background: white; border: 2px solid #ff80bf; border-radius: 8px; display: grid; grid-template-columns: repeat(3, 1fr); padding: 5px; backface-visibility: hidden; }
+.dot { width: 10px; height: 10px; background: #ff59aa; border-radius: 50%; visibility: hidden; }
 .show { visibility: visible; }
 .rolling { animation: girarDado 0.6s ease-out forwards; }
 @keyframes girarDado { 0% { transform: rotateX(0deg) rotateY(0deg); } 100% { transform: rotateX(720deg) rotateY(720deg); } }
 
 /* SIDEBAR */
 .sidebar { width: 300px; min-height: 600px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
-.panel { background: #ffffff; padding: 15px; border-radius: 15px; border: 2px solid #ffccd5; display: flex; flex-direction: column; gap: 10px; flex-grow: 1; overflow: visible; min-height: 400px; }
+.panel { background: #ffffff; padding: 15px; border-radius: 15px; border: 2px solid #ffccd5; display: flex; flex-direction: column; gap: 10px; flex-grow: 1; min-height: 400px; }
 .scroll-box { flex: 1; background: #fff5f7; border: 1px solid #ffccd5; border-radius: 8px; padding: 8px; overflow-y: auto; font-size: 12px; min-height: 80px; }
 .input-field { padding: 8px; border: 1px solid #ffccd5; border-radius: 8px; width: 100%; }
 .btn-sidebar { padding: 10px; border: none; border-radius: 10px; background: #ffccd5; color: #c71585; font-weight: bold; cursor: pointer; }
