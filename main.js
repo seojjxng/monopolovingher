@@ -1,11 +1,9 @@
-// 1. Importaciones obligatorias
+// main.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, child, get, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { firebaseConfig } from './firebase-config.js'; 
 
-// ¡IMPORTANTE! Debes importar la configuración ANTES de usarla
-import { firebaseConfig } from './firebase-config.js';
-
-// 2. Inicialización (ahora sí, firebaseConfig ya existe)
+// 1. Inicialización (Una sola vez)
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 window.db = db;
