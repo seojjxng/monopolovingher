@@ -17,12 +17,9 @@ let chatListener; // Listener global para el chat
 window.sincronizar = function() {
     if (!window.sala) return;
 
+    // --- 1. Sincronización del Chat ---
     const chatRef = ref(db, 'salas/' + window.sala + '/chat');
-    
-    // Si ya existe un listener previo, lo eliminamos
-    if (chatListener) {
-        off(chatRef);
-    }
+    if (chatListener) off(chatRef);
 
     chatListener = onValue(chatRef, (snap) => {
         const chatLog = document.getElementById('chat-log');
@@ -38,6 +35,57 @@ window.sincronizar = function() {
             chatLog.scrollTop = chatLog.scrollHeight;
         }
     });
+
+    // --- 2. Sincronización del Clima ---
+    const climaRef = ref(db, 'salas/' + window.sala + '/climaIdx');
+    onValue(climaRef, (snap) => {
+        const idx = snap.val() !== null ? snap.val() : 0;
+        const clima = window.climas[idx];
+        
+        // Actualizar centro del tablero
+        const centroClima = document.getElementById('display-clima-centro');
+        if (centroClima) {
+            centroClima.innerHTML = `
+                <div style="font-size: 1.1em; font-weight:bold; color: #333;">${clima.n}</div>
+                <div style="font-size: 0.8em; color: ${clima.mult < 1 ? '#e74c3c' : '#27ae60'};">
+                    Mult: ${clima.mult}x
+                </div>
+            `;
+        }
+    });
+
+    // --- 3. Iniciar Ciclo Automático (Solo si es el primer jugador o dueño) ---
+    // Verificamos si somos el dueño de la sala (idx 0) para ejecutar el timer
+    if (window.miIdx === 0 || window.miIdx === "0") {
+        window.iniciarCicloClima();
+    }
+};
+
+// Función auxiliar para el ciclo automático
+window.iniciarCicloClima = function() {
+    // Evitar múltiples intervalos si se llama varias veces
+    if (window.climaInterval) clearInterval(window.climaInterval);
+    
+    window.climaInterval = setInterval(() => {
+        const controlRef = ref(db, 'salas/' + window.sala + '/controladorClima');
+        get(controlRef).then(snap => {
+            const ctrl = snap.val();
+            const ahora = Date.now();
+            
+            // Si el control está libre o pasaron más de 5 min (300,000ms), el sistema cambia
+            if (!ctrl || (ahora - ctrl.timestamp > 300000)) {
+                const nuevoIdx = Math.floor(Math.random() * window.climas.length);
+                const nuevoClima = window.climas[nuevoIdx];
+                
+                set(ref(db, 'salas/' + window.sala + '/climaIdx'), nuevoIdx);
+                push(ref(db, 'salas/' + window.sala + '/chat'), {
+                    n: "Sistema",
+                    m: `El clima ha cambiado automáticamente a ${nuevoClima.n}. Alquileres ajustados a ${nuevoClima.mult * 100}%.`,
+                    t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+            }
+        });
+    }, 600000); // 10 minutos
 };
 
 // 2. Datos Globales
@@ -72,6 +120,78 @@ window.abrirModal = function(titulo, contenido) {
 
 window.cerrarModal = function() {
     document.getElementById('modal').style.display = 'none';
+};
+
+// --- Lógica del clima ---
+window.climas = Object.freeze([
+    { n: "Primavera Soleada", mult: 1.0 },
+    { n: "Primavera Lluviosa", mult: 1.0 },
+    { n: "Verano Caluroso", mult: 1.0 },
+    { n: "Verano Nublado", mult: 1.0 },
+    { n: "Otoño Fresco", mult: 1.0 },
+    { n: "Otoño Ventoso", mult: 1.0 },
+    { n: "Lluvia Fuerte", mult: 0.7 },
+    { n: "Tormenta Eléctrica", mult: 0.5 },
+    { n: "Ventisca", mult: 0.6 },
+    { n: "Nevada Intensa", mult: 0.6 },
+    { n: "Tornado", mult: 0.5 }
+]);
+
+window.iniciarCicloClima = function() {
+    const climaRef = ref(db, 'salas/' + window.sala + '/climaIdx');
+    const controlRef = ref(db, 'salas/' + window.sala + '/controladorClima');
+
+    setInterval(() => {
+        // Verificar si hay alguien controlándolo
+        get(controlRef).then(snap => {
+            const ctrl = snap.val();
+            const ahora = Date.now();
+            
+            // Si el control está libre o expiró, el sistema toma el mando
+            if (!ctrl || (ahora - ctrl.timestamp > 300000)) {
+                const nuevoIdx = Math.floor(Math.random() * window.climas.length);
+                set(climaRef, nuevoIdx).then(() => {
+                    const nuevoClima = window.climas[nuevoIdx];
+                    window.log("Sistema: El clima cambió automáticamente a " + nuevoClima.n);
+                });
+            }
+        });
+    }, 600000); // 10 minutos
+};
+
+window.abrirControlClima = function() {
+    let html = `<div class="clima-container">
+        <p>Selecciona el nuevo clima para Naeun Town:</p>`;
+    
+    window.climas.forEach((c, idx) => {
+        html += `<button class="clima-btn" onclick="window.cambiarClima(${idx}); window.cerrarModal();">
+                    <b>${c.n}</b> <small>(Mult: ${c.mult}x)</small>
+                 </button>`;
+    });
+    
+    html += `</div>`;
+    window.abrirModal("☁️ Panel de Control Climático", html);
+};
+
+window.tomarControlClima = function() {
+    if (!window.esVisitante) return;
+    
+    const refControl = ref(db, 'salas/' + window.sala + '/controladorClima');
+    
+    runTransaction(refControl, (data) => {
+        const ahora = Date.now();
+        if (!data || (ahora - data.timestamp > 300000)) {
+            return { usuario: window.miIdx, timestamp: ahora };
+        }
+        return; 
+    }).then((res) => {
+        if (res.committed) {
+            // En lugar de un alert, abrimos nuestro nuevo panel estilizado
+            window.abrirControlClima();
+        } else {
+            window.abrirModal("Acceso Denegado", "<p>Otro visitante ya tiene el control del clima en este momento.</p>");
+        }
+    });
 };
 
 // --- Lógica del Banco ---
@@ -208,6 +328,160 @@ window.pagarPrestamo = function() {
         window.abrirModal("Error", "No se pudo conectar con el servidor.");
     });
 };
+
+window.obtenerGrupo = function(pos) {
+    return grupos.find(g => g.indices.includes(pos));
+};
+
+// Verifica si el jugador (o su equipo) posee todas las propiedades del color
+window.verificarMonopolio = function(pos, todasLasPropiedades) {
+    const grupo = obtenerGrupo(pos);
+    if (!grupo) return false;
+    // Compara si todos los índices del grupo tienen el mismo 'owner' que el jugador actual
+    return grupo.indices.every(idx => 
+        todasLasPropiedades && 
+        todasLasPropiedades[idx] && 
+        todasLasPropiedades[idx].owner === window.miIdx
+    );
+};
+
+window.comprar = function(pos) {
+    const propRef = ref(db, 'salas/' + window.sala + '/propiedades/' + pos);
+    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+
+    Promise.all([get(propRef), get(jugadorRef)]).then(([snapProp, snapJugador]) => {
+        const precio = mapa[pos].p;
+        const jugador = snapJugador.val();
+
+        if (jugador.dinero >= precio) {
+            update(propRef, { owner: window.miIdx, nivel: 0, hipotecada: false });
+            update(jugadorRef, { dinero: jugador.dinero - precio });
+            window.cerrarModal();
+            // Opcional: Agregar log al chat
+            push(ref(db, 'salas/' + window.sala + '/chat'), {
+                n: "Sistema", m: `${window.nombres[window.miIdx]} compró ${mapa[pos].n}.`, t: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+            });
+        } else {
+            alert("Dinero insuficiente.");
+        }
+    });
+};
+
+window.verPropiedad = function(pos) {
+    const p = mapa[pos];
+    if (p.p === 0) return;
+
+    get(ref(db, 'salas/' + window.sala)).then((snap) => {
+        const data = snap.val();
+        const climaIdx = data.climaIdx || 0;
+        const prop = data.propiedades ? data.propiedades[pos] : null;
+        const clima = window.climas[climaIdx];
+        const mult = clima.mult;
+
+        const niveles = [0.1, 0.15, 0.2, 0.3, 0.4, 0.5];
+        const nivel = prop ? (prop.nivel || 0) : 0;
+        const alquiler = Math.floor((p.p * niveles[nivel]) * mult);
+        
+        const esDuenio = prop && prop.owner === window.miIdx;
+        const estaHipotecada = prop && prop.hipotecada;
+        
+        // Estilos para el clima
+        const colorClima = mult < 1 ? '#e74c3c' : '#27ae60';
+        const infoClima = mult < 1 ? ' (Descuento aplicado)' : '';
+
+        // Generación de lista de niveles de alquiler
+        let listaAlquileres = niveles.map((n, i) => 
+            `<li style="margin: 3px 0;">Nivel ${i + 1}: $${Math.floor(p.p * n * mult)}</li>`
+        ).join('');
+
+        // Construcción de la tarjeta estilo Monopoly manteniendo toda la info
+        let contenido = `
+            <div class="card-property">
+                <div class="card-header">${p.n}</div>
+                <div class="card-body">
+                    <p>Valor de compra: <b>$${p.p}</b></p>
+                    <div class="alquiler-destacado" style="color: ${colorClima}; font-size: 1.2em; font-weight: bold;">
+                        Alquiler actual: $${estaHipotecada ? 0 : alquiler}
+                    </div>
+                    <p style="font-size: 0.85em;">Clima: ${clima.n}${infoClima}</p>
+                    <hr>
+                    <p><b>Detalle de alquileres:</b></p>
+                    <ul style="text-align: left; font-size: 0.9em; padding-left: 20px;">
+                        ${listaAlquileres}
+                    </ul>
+                    <hr>`;
+
+        // Lógica de botones y estado
+        if (!prop) {
+            contenido += `<button class="btn-accion" style="background:#ff80bf" onclick="window.comprar(${pos})">Comprar Propiedad</button>`;
+        } else if (esDuenio) {
+            contenido += `<button class="btn-accion" style="background:#2ecc71" onclick="window.mejorar(${pos})">Mejorar (+$50)</button>
+                          <button class="btn-accion" style="background:#95a5a6" onclick="window.hipotecar(${pos})">${estaHipotecada ? "Liberar" : "Hipotecar"}</button>`;
+        } else if (!estaHipotecada) {
+            contenido += `<p>Dueño: <b>${window.nombres[prop.owner]}</b></p>
+                          <button class="btn-accion" style="background:#e67e22" onclick="window.pagarAlquiler(${prop.owner}, ${alquiler})">Pagar Alquiler</button>`;
+        } else {
+            contenido += `<p>Propiedad hipotecada por <b>${window.nombres[prop.owner]}</b>. No paga alquiler.</p>`;
+        }
+
+        contenido += `</div></div>`;
+        window.abrirModal("Tarjeta de Propiedad", contenido);
+    });
+};
+
+// Función para procesar el pago al dueño
+window.pagarAlquiler = function(ownerIdx, monto) {
+    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const duenioRef = ref(db, 'salas/' + window.sala + '/jugadores/' + ownerIdx);
+    
+    // Aquí realizarías el update de dinero en Firebase
+    // Ejemplo lógico: restar a uno y sumar a otro
+    window.log("Pago de alquiler de $" + monto + " realizado.");
+    window.cerrarModal();
+};
+
+window.mejorar = function(pos) {
+    const propRef = ref(db, 'salas/' + window.sala + '/propiedades/' + pos);
+    const todasPropsRef = ref(db, 'salas/' + window.sala + '/propiedades');
+
+    get(todasPropsRef).then(snap => {
+        const todas = snap.val();
+        if (verificarMonopolio(pos, todas)) {
+            const nivelActual = todas[pos].nivel || 0;
+            if (nivelActual < 5) {
+                update(propRef, { nivel: nivelActual + 1 });
+                window.cerrarModal();
+            } else {
+                alert("Ya tienes un hotel.");
+            }
+        } else {
+            alert("Debes poseer todas las propiedades de este color para mejorar.");
+        }
+    });
+};
+
+window.hipotecar = function(pos) {
+    const propRef = ref(db, 'salas/' + window.sala + '/propiedades/' + pos);
+    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+
+    get(propRef).then(snap => {
+        const p = snap.val();
+        const valorHipoteca = Math.floor(mapa[pos].p * 0.5); // 50% del valor
+
+        if (!p.hipotecada) {
+            // Hipotecar
+            update(propRef, { hipotecada: true });
+            get(jugadorRef).then(s => update(jugadorRef, { dinero: s.val().dinero + valorHipoteca }));
+        } else {
+            // Liberar (pagando un 10% extra por interés)
+            update(propRef, { hipotecada: false });
+            get(jugadorRef).then(s => update(jugadorRef, { dinero: s.val().dinero - Math.floor(valorHipoteca * 1.1) }));
+        }
+        window.cerrarModal();
+    });
+};
+
+
 
 // --- Lógica de Misiones ---
 window.abrirModalMisiones = function() {
@@ -359,18 +633,36 @@ window.generarTablero = function() {
     const board = document.getElementById('board');
     const centerZone = document.getElementById('center-zone');
     if (!board) return;
+    
     board.innerHTML = '';
     board.appendChild(centerZone);
+    
     mapa.forEach((casilla, i) => {
         const d = document.createElement('div');
         d.className = 'celda-juego';
         d.id = 'cell-' + i;
         d.style.gridColumn = getGridColumn(i);
         d.style.gridRow = getGridRow(i);
+        
+        // Hacer la celda clicable y visualmente interactiva
+        d.style.cursor = "pointer";
+        d.onclick = () => window.verPropiedad(i);
+        
         let grupo = grupos.find(g => g.indices.includes(i));
-        d.innerHTML = (casilla.n === "?") ? `<div class="interrogacion">?</div>` : 
-                      (grupo ? `<div class="strip" style="background:${grupo.color}"></div><div class="celda-content"><div class="nombre">${casilla.n}</div><div class="precio">${casilla.p > 0 ? '$' + casilla.p : ''}</div></div>` : 
-                      `<div class="celda-content"><div class="nombre">${casilla.n}</div></div>`);
+        
+        d.innerHTML = (casilla.n === "?") ? 
+            `<div class="interrogacion">?</div>` : 
+            (grupo ? 
+                `<div class="strip" style="background:${grupo.color}"></div>
+                 <div class="celda-content">
+                    <div class="nombre">${casilla.n}</div>
+                    <div class="precio">${casilla.p > 0 ? '$' + casilla.p : ''}</div>
+                 </div>` : 
+                `<div class="celda-content">
+                    <div class="nombre">${casilla.n}</div>
+                 </div>`
+            );
+        
         board.appendChild(d);
     });
 };
