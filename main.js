@@ -1,6 +1,6 @@
 // main.js (Versión con Misiones y Banco integrados)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, child, get, set, runTransaction, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, child, get, set, runTransaction, update, onValue, push, onDisconnect } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { firebaseConfig } from './firebase-config.js'; 
 
 // 1. Inicialización
@@ -225,6 +225,8 @@ window.verificarSala = function() {
     });
 };
 
+window.yaEntro = false;
+
 window.crearSala = function(salaId) {
     set(ref(db, 'salas/' + salaId), {
         estado: "esperando",
@@ -232,90 +234,77 @@ window.crearSala = function(salaId) {
     }).then(() => {
         window.sala = salaId;
         window.miIdx = 0;
-        // Reemplazo de alert por Modal
-        window.abrirModal("Sala Creada", `
-            <div style="text-align: center;">
-                <p>La sala <b>${salaId}</b> ha sido creada.</p>
-                <p>Bienvenido al juego, eres el jugador <b>Dog</b>.</p>
-                <button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>
-            </div>
-        `);
+        window.yaEntro = true;
+        // Notificar creación al chat
+        push(ref(db, 'salas/' + salaId + '/chat'), { n: "Sistema", m: "Dog ha creado la sala.", t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+        window.sincronizar();
+        window.abrirModal("Sala Creada", `<p>Bienvenido, <b>Dog</b>.</p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
     });
 };
 
 window.unirseSala = function(salaId) {
+    if (window.yaEntro) return;
     const salaRef = ref(db, 'salas/' + salaId + '/jugadores');
+    
     runTransaction(salaRef, (jugadores) => {
         if (!jugadores) jugadores = {};
-        const ocupados = Object.keys(jugadores).length;
+        const ocupados = Object.keys(jugadores).filter(k => !k.startsWith('v')).length;
+        const visitantes = Object.keys(jugadores).filter(k => k.startsWith('v')).length;
         
         if (ocupados < 4) {
             window.miIdx = ocupados;
             window.esVisitante = false;
             jugadores[window.miIdx] = { nombre: window.nombres[window.miIdx], color: window.colores[window.miIdx], activo: true, dinero: 1500, tienePrestamo: false };
+        } else if (visitantes < 3) {
+            window.miIdx = 'v' + (visitantes + 1);
+            window.esVisitante = true;
+            jugadores[window.miIdx] = { nombre: "Citizen " + (visitantes + 1), activo: true };
         } else {
-            // Lógica de 3 visitantes máximo
-            const visitantes = Object.keys(jugadores).filter(k => k.startsWith('v')).length;
-            if (visitantes < 3) {
-                window.miIdx = 'v' + (visitantes + 1);
-                window.esVisitante = true;
-                jugadores[window.miIdx] = { nombre: "Citizen " + (visitantes + 1), activo: true };
-            } else {
-                window.miIdx = -1;
-            }
+            window.miIdx = -1;
         }
         return jugadores;
     }).then((res) => {
         if (res.committed && window.miIdx !== -1) {
             window.sala = salaId;
+            window.yaEntro = true;
             window.cerrarModal();
-            // Notificar al chat la entrada
             const nombre = window.esVisitante ? "Citizen " + window.miIdx.replace('v','') : window.nombres[window.miIdx];
-            import("https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js").then(fb => {
-                fb.push(fb.ref(db, 'salas/' + salaId + '/chat'), { n: "Sistema", m: nombre + " se ha unido a la partida.", t: "..." });
-            });
+            const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            onDisconnect(ref(db, 'salas/' + salaId + '/jugadores/' + window.miIdx)).remove();
+            onDisconnect(ref(db, 'salas/' + salaId + '/chat')).push({ n: "Sistema", m: nombre + " ha salido.", t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+
+            push(ref(db, 'salas/' + salaId + '/chat'), { n: "Sistema", m: nombre + " se ha unido.", t: t });
+            window.sincronizar();
             window.abrirModal("¡Bienvenido!", `<p>Te has unido como <b>${nombre}</b>.</p><button class="btn-sidebar" onclick="window.cerrarModal()">Aceptar</button>`);
         } else if (window.miIdx === -1) {
-            window.abrirModal("Error", "Sala llena (máx 4 jugadores y 3 visitantes).");
+            window.abrirModal("Error", "La sala está llena.");
         }
     });
 };
 
-// --- Lógica del Chat ---
-window.enviarMensaje = function() {
-    const input = document.getElementById('chat-msg');
-    const msg = input.value.trim();
-    if (msg === "") return; // No enviar espacios vacíos
-
-    const hora = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const nombre = window.esVisitante ? "Citizen " + window.miIdx.replace('v','') : window.nombres[window.miIdx];
-
-    import("https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js").then(fb => {
-        fb.push(fb.ref(db, 'salas/' + window.sala + '/chat'), { n: nombre, m: msg, t: hora });
-    });
-    input.value = '';
-};
-
-// Escuchar tecla Enter
-document.getElementById('chat-msg').addEventListener('keypress', function (e) {
-    if (e.key === 'Enter') window.enviarMensaje();
-});
-
-// Sincronización (debe ejecutarse al entrar a la sala)
-window.iniciarChat = function() {
-    import("https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js").then(fb => {
-        fb.onValue(fb.ref(db, 'salas/' + window.sala + '/chat'), (snap) => {
-            const chatLog = document.getElementById('chat-log');
-            chatLog.innerHTML = "";
-            snap.forEach(s => {
-                const m = s.val();
-                chatLog.innerHTML += `<div><small style="color:gray;">[${m.t}]</small> <b>${m.n}:</b> ${m.m}</div>`;
-            });
-            chatLog.scrollTop = chatLog.scrollHeight;
+window.sincronizar = function() {
+    if (!window.sala) return;
+    onValue(ref(db, 'salas/' + window.sala + '/chat'), (snap) => {
+        const chatLog = document.getElementById('chat-log');
+        if (!chatLog) return;
+        chatLog.innerHTML = "";
+        snap.forEach(s => {
+            const m = s.val();
+            const hora = m.t ? `[${m.t}]` : "";
+            const estilo = m.n === "Sistema" ? "color: #ff80bf; font-style: italic;" : "color: #333;";
+            chatLog.innerHTML += `<div style="${estilo}"><small>${hora}</small> <b>${m.n}:</b> ${m.m}</div>`;
         });
+        chatLog.scrollTop = chatLog.scrollHeight;
     });
 };
 
+const msgInput = document.getElementById('chat-msg');
+if (msgInput) {
+    msgInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') window.enviarMensaje();
+    });
+}
 window.generarTablero = function() {
     const board = document.getElementById('board');
     const centerZone = document.getElementById('center-zone');
@@ -360,6 +349,4 @@ window.enviarMensaje = function() {
     document.getElementById('chat-msg').value = ''; 
     chatLog.scrollTop = chatLog.scrollHeight;
 };
-window.abrirEnviar = () => { window.enviarMensaje(); window.abrirModal("Chat", "<p>Mensaje enviado.</p>"); };
-
 window.generarTablero();
