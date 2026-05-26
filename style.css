@@ -2,77 +2,49 @@
 body { background: #fff0f3; font-family: sans-serif; display: flex; justify-content: center; padding: 20px; color: #c71585; min-height: 100vh; }
 
 .container { display: flex; gap: 15px; justify-content: center; align-items: flex-start; width: 100%; max-width: 950px; }
-.main-column { display: flex; flex-direction: column; align-items: center; gap: 15px; width: 600px; flex-shrink: 0; }
+.main-column { display: flex; flex-direction: column; align-items: center; gap: 15px; width: 600px; }
 
 /* TABLERO */
 .board { 
-    display: grid; 
-    grid-template-columns: repeat(8, 1fr); 
-    grid-template-rows: repeat(8, 1fr); 
-    gap: 2px; 
-    background: #ffccd5; 
-    padding: 4px; 
-    border-radius: 10px; 
-    width: 600px; 
-    height: 600px; 
-    position: relative; 
+    display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); 
+    gap: 2px; background: #ffccd5; padding: 4px; border-radius: 10px; width: 600px; height: 600px; position: relative; 
 }
 
-/* CENTRO FLOTANTE - Asegurado con z-index y posición */
+/* CENTRO - Ajustado para que quepa bien */
 .center-zone { 
-    position: absolute;
-    top: 79px; /* Calculado para quedar centrado en el grid de 8x8 */
-    left: 79px;
-    width: 442px; 
-    height: 442px;
-    z-index: 100;
-    background: #fff5f7; 
-    border: 3px dashed #ff80bf; 
-    display: flex; 
-    flex-direction: column; 
-    align-items: center; 
-    justify-content: center; 
-    border-radius: 10px; 
-    gap: 10px; 
-    padding: 20px;
-    pointer-events: auto;
+    position: absolute; top: 79px; left: 79px; width: 442px; height: 442px; z-index: 50;
+    background: #fff5f7; border: 3px dashed #ff80bf; border-radius: 10px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px;
 }
 
-/* CELDAS GENERADAS POR JS */
+/* ELEMENTOS DEL CENTRO */
+.reputacion-label { font-weight: bold; cursor: pointer; color: #ff59aa; }
+.saldo-container { font-weight: bold; font-size: 1.2rem; }
+.btn-misiones { 
+    padding: 8px 15px; border: none; border-radius: 8px; background: #ff80bf; color: white; font-weight: bold; cursor: pointer; 
+}
+
+/* CELDAS (Aseguramos que no se solapen con el centro) */
 .celda-juego {
-    background: #fff;
-    border: 1px solid #ffccd5;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    font-size: 9px;
-    text-align: center;
-    overflow: hidden;
-    position: relative;
-    border-radius: 4px;
-    z-index: 1; /* Las celdas van debajo del centro */
+    background: #fff; border: 1px solid #ffccd5; display: flex; flex-direction: column; 
+    font-size: 9px; text-align: center; border-radius: 4px; z-index: 1;
 }
-.celda-content { padding: 2px; }
-.strip { height: 8px; width: 100%; }
-.interrogacion { font-size: 20px; font-weight: bold; color: #ff80bf; display: flex; align-items: center; justify-content: center; height: 100%; }
 
-/* DADO CORREGIDO */
-.dice-container { perspective: 600px; width: 60px; height: 60px; cursor: pointer; margin: 15px 0; }
+/* DADO 3D (Estilo completo) */
+.dice-container { perspective: 600px; width: 60px; height: 60px; cursor: pointer; margin: 10px; }
 .dice { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 1s ease-out; }
-.face { position: absolute; width: 60px; height: 60px; background: white; border: 2px solid #ff80bf; border-radius: 8px; display: grid; grid-template-columns: repeat(3, 1fr); padding: 5px; backface-visibility: hidden; }
-.dot { width: 10px; height: 10px; background: #ff59aa; border-radius: 50%; visibility: hidden; }
+.face { position: absolute; width: 60px; height: 60px; background: white; border: 2px solid #ff80bf; border-radius: 8px; display: grid; grid-template-columns: repeat(3, 1fr); backface-visibility: hidden; }
+.dot { width: 12px; height: 12px; background: #ff59aa; border-radius: 50%; margin: auto; visibility: hidden; }
 .show { visibility: visible; }
 .rolling { animation: girarDado 0.6s ease-out forwards; }
-@keyframes girarDado { 0% { transform: rotateX(0deg) rotateY(0deg); } 100% { transform: rotateX(720deg) rotateY(720deg); } }
+@keyframes girarDado { 100% { transform: rotateX(720deg) rotateY(720deg); } }
 
-/* SIDEBAR */
-.sidebar { width: 300px; min-height: 600px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
-.panel { background: #ffffff; padding: 15px; border-radius: 15px; border: 2px solid #ffccd5; display: flex; flex-direction: column; gap: 10px; flex-grow: 1; min-height: 400px; }
-.scroll-box { flex: 1; background: #fff5f7; border: 1px solid #ffccd5; border-radius: 8px; padding: 8px; overflow-y: auto; font-size: 12px; min-height: 80px; }
+/* SIDEBAR Y ACCIONES (Igual que antes) */
+.sidebar { width: 300px; display: flex; flex-direction: column; gap: 10px; }
+.panel { background: #ffffff; padding: 15px; border-radius: 15px; border: 2px solid #ffccd5; min-height: 400px; }
+.scroll-box { height: 120px; background: #fff5f7; border: 1px solid #ffccd5; border-radius: 8px; overflow-y: auto; font-size: 12px; padding: 5px; }
 .input-field { padding: 8px; border: 1px solid #ffccd5; border-radius: 8px; width: 100%; }
-.btn-sidebar { padding: 10px; border: none; border-radius: 10px; background: #ffccd5; color: #c71585; font-weight: bold; cursor: pointer; }
-
-/* ACCIONES */
+.btn-sidebar { padding: 10px; border: none; border-radius: 10px; background: #ffccd5; color: #c71585; font-weight: bold; cursor: pointer; width: 100%; }
 .actions-wrapper { width: 600px; }
 .actions-bar { display: flex; justify-content: space-between; gap: 10px; background: #ffffff; padding: 10px; border-radius: 15px; border: 2px solid #ffccd5; }
 .btn-action { flex: 1; padding: 10px; border: 1px solid #ffccd5; border-radius: 10px; background: #fff0f3; color: #ff59aa; font-weight: bold; cursor: pointer; }
