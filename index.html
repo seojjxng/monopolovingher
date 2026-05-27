@@ -18,7 +18,7 @@
 
 <body>
 
-<div class="container">
+<div class="game-layout">
     <div class="main-column">
         <div class="board" id="board">
             <div class="center-zone" id="center-zone">
@@ -58,25 +58,33 @@
         </div>
     </div>
     
-    <div class="sidebar">
-    <div class="panel">
-        <strong>Unirse a Sala</strong>
-        <input type="text" id="sala-id" class="input-field" placeholder="Nombre de la sala">
-        <button class="btn-sidebar" onclick="window.verificarSala()">Entrar</button>
-        <hr style="border:0; border-top:1px solid #ffccd5; margin:10px 0;">
-        <strong>Historial</strong>
-        <div id="game-log" class="scroll-box"></div>
-        <strong>Chat</strong>
-        <div id="chat-log" class="scroll-box"></div>
-        <input type="text" id="chat-msg" class="input-field" placeholder="Mensaje...">
+    <div class="sidebar-wrapper">
+        <div class="sidebar">
+            <div class="panel">
+                <strong>Unirse a Sala</strong>
+                <input type="text" id="sala-id" class="input-field" placeholder="Nombre de la sala">
+                <button class="btn-sidebar" onclick="window.verificarSala()">Entrar</button>
+                <hr style="border:0; border-top:1px solid #ffccd5; margin:10px 0;">
+                <strong>Historial</strong>
+                <div id="game-log" class="scroll-box"></div>
+                <strong>Chat</strong>
+                <div id="chat-log" class="scroll-box"></div>
+                <input type="text" id="chat-msg" class="input-field" placeholder="Mensaje...">
+            </div>
+            <div class="actions-wrapper" style="width: 100%;">
+                <button class="btn-action" style="width: 100%;" onclick="window.abrirEnviar()">Enviar Mensaje</button>
+            </div>
+        </div>
+
+        <div class="btn-container-exterior" style="margin-top: 10px;">
+            <button class="btn-sidebar" style="width: 100%; padding: 12px; background: #6c5ce7; color: white; border: none; cursor: pointer; border-radius: 5px;" 
+                    onclick="window.tomarControlClima()">
+                ☁️ Controlar Clima
+            </button>
+        </div>
     </div>
-    <div class="actions-wrapper" style="width: 100%;">
-        <div class="actions-bar">
-            <button class="btn-action" style="width: 100%;" onclick="window.abrirEnviar()">Enviar Mensaje</button>
-        </div>
-            <button class="btn-sidebar" style="width: 100%; margin-top: 5px;" onclick="window.tomarControlClima()">Controlar Clima</button>
-        </div>
-    </div> </div>
+
+</div> 
 <script type="module" src="main.js"></script>
 </body>
 </html>
