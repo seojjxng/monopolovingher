@@ -1,12 +1,41 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: #fff0f3; font-family: sans-serif; display: flex; justify-content: center; padding: 20px; color: #c71585; min-height: 100vh; }
-.container { display: flex; gap: 15px; justify-content: center; align-items: flex-start; width: 100%; max-width: 950px; }
-.main-column { display: flex; flex-direction: column; align-items: center; gap: 15px; width: 600px; flex-shrink: 0; }
+.container {
+    display: flex;
+    flex-direction: row;        /* Tablero y sidebar lado a lado */
+    justify-content: center;    /* Centra el conjunto en la pantalla */
+    align-items: flex-start;    /* ESTO EVITA QUE SE ESTIREN VERTICALMENTE */
+    gap: 20px;                  /* Espacio entre las columnas */
+    width: 1000px;              /* Ancho fijo para que no ocupe toda la pantalla */
+    margin: 0 auto;             /* Centrado horizontal */
+}
+.main-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 600px;
+    flex-shrink: 0;
+    /* QUITAMOS el margin-left para controlar el centro desde el board */
+    margin: 0 auto;
+}
 /* TABLERO */
-.board { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); gap: 2px; background: #ffccd5; padding: 4px; border-radius: 10px; width: 600px; height: 600px; position: relative; }
-.container { display: flex; gap: 25px; width: 1000px; align-items: flex-start; }
+.board { 
+    display: grid; 
+    grid-template-columns: repeat(8, 73px); 
+    grid-template-rows: repeat(8, 73px);    
+    gap: 2px; 
+    background: #ffccd5; 
+    width: 600px; 
+    height: 600px; 
+    border-radius: 10px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    overflow: hidden;
+
+    /* --- ESTA LÍNEA MUEVE SOLO EL CONTENIDO 1PX A LA DERECHA --- */
+    transform: translateX(0px);
+}
 .game-column, .sidebar { display: flex; flex-direction: column; gap: 15px; }
-.sidebar { width: 320px; }
 .board-wrapper, .panel { 
 
     background: #fff0f9; padding: 20px; border-radius: 20px; border: 2px solid #ffccd5; 
@@ -26,8 +55,6 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
     border-radius: 1px;
 
 }
-
-
 
 /* Contenedor de botones fuera del tablero */
 
@@ -51,8 +78,6 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 
 }
 
-
-
 /* Panel específico para el modo 2v2 */
 
 .mode-panel {
@@ -66,79 +91,25 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
     border: 2px solid #ffccd5;
 
     text-align: center;
-
 }
-
-
-
-/* Tablero */
-
-.board { 
-
-    display: grid; 
-
-    grid-template-columns: repeat(8, 70px); 
-
-    grid-template-rows: repeat(8, 70px);    
-
-    gap: 2px; 
-
-    background: #ffccd5; 
-
-    padding: 5px; 
-
-    width: 100%; 
-
-    max-width: 600px; 
-
-    aspect-ratio: 1 / 1;
-
-    position: relative; /* Clave para el control de hijos */
-
-}
-
-    
-
 /* Contenedores inferiores */
-
 #banco-container { display: flex; gap: 5px; justify-content: center; }
-
 #modo-2v2-container { margin-top: 10px; }
-
-
-
 /* Botones - Ajustados para que no se deformen */
-
 .btn { width: 100%; padding: 10px; background: #ff59aa; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 12px; }
-
 #banco-container .btn { width: auto; flex: 1; font-size: 10px; padding: 8px 5px; }
-
-    
-
 /* Ajustes críticos para Chat y Log */
-
 #log, #chat-log { 
-
     height: 125px !important; 
-
     overflow-y: auto; 
-
     font-size: 11px; 
-
     color: #c71585; 
-
     padding: 10px; 
-
     background: white; 
-
     border-radius: 10px; 
-
     border: 1px solid #ffccd5; 
-
     margin: 5px 0 15px 0; 
-
     width: 100%;
-
 }
 .input-field { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ffccd5; border-radius: 8px; }
 .center-zone { 
@@ -232,12 +203,12 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 .token { width: 25px; height: 25px; position: absolute; z-index: 10; pointer-events: none; }
 .board div[id^="cell-"] {
     background: #ffffff;
-    border-left: 8px solid #ffccd5; /* Tu efecto de franja */
-    border-top: 1px solid #ffccd5;
-    border-right: 1px solid #ffccd5;
-    border-bottom: 1px solid #ffccd5;
+    /* QUITAMOS EL BORDER-LEFT DE 8PX QUE DESCENTRA TODO */
+    border: 1px solid #ffccd5; 
     border-radius: 4px;
-    z-index: 1; /* Detrás de la zona central */
+    z-index: 1;
+    position: relative;
+    left: 1px;
 }
 .reputacion-container { width: 100px; height: 10px; background: #ffe0f0; border-radius: 10px; border: 1px solid #ff59aa; overflow: hidden; margin: 5px 0; }
 .reputacion-bar { height: 100%; width: 50%; background: #ff59aa; transition: width 0.5s ease-in-out; }
@@ -296,7 +267,13 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 .btn-misiones { background: linear-gradient(135deg, #ff80bf, #ff59aa); color: white; border: none; padding: 8px 16px; border-radius: 20px; font-weight: bold; cursor: pointer; }
 
 /* SIDEBAR, PANEL, ACCIONES (Manteniendo tu estructura estable) */
-.sidebar { width: 300px; min-height: 600px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+.sidebar {
+    width: 300px;
+    min-height: 600px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
 .panel { background: #ffffff; padding: 15px; border-radius: 15px; border: 2px solid #ffccd5; flex-grow: 1; min-height: 400px; display: flex; flex-direction: column; gap: 10px; }
 .scroll-box { flex: 1; background: #fff5f7; border: 1px solid #ffccd5; border-radius: 8px; padding: 8px; overflow-y: auto; font-size: 12px; min-height: 80px; }
 .input-field { padding: 8px; border: 1px solid #ffccd5; border-radius: 8px; width: 100%; }
@@ -388,8 +365,58 @@ button { cursor: pointer; }
 .icono-transporte img {
     object-fit: contain;
 }
+
+.game-layout {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 20px;
+    width: 920px; 
+    margin: 0 auto;
+}
+
+/* Fuerza el sidebar a mantener su ancho sin estirarse */
+.sidebar-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 300px;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
 /* Posicionamiento de celdas - MANTENIDO IGUAL */
-#cell-0 { grid-column: 8; grid-row: 8; } #cell-1 { grid-column: 7; grid-row: 8; } #cell-2 { grid-column: 6; grid-row: 8; } #cell-3 { grid-column: 5; grid-row: 8; } #cell-4 { grid-column: 4; grid-row: 8; } #cell-5 { grid-column: 3; grid-row: 8; } #cell-6 { grid-column: 2; grid-row: 8; } #cell-7 { grid-column: 1; grid-row: 8; }
-#cell-8 { grid-column: 1; grid-row: 7; } #cell-9 { grid-column: 1; grid-row: 6; } #cell-10 { grid-column: 1; grid-row: 5; } #cell-11 { grid-column: 1; grid-row: 4; } #cell-12 { grid-column: 1; grid-row: 3; } #cell-13 { grid-column: 1; grid-row: 2; } #cell-14 { grid-column: 1; grid-row: 1; }
-#cell-15 { grid-column: 2; grid-row: 1; } #cell-16 { grid-column: 3; grid-row: 1; } #cell-17 { grid-column: 4; grid-row: 1; } #cell-18 { grid-column: 5; grid-row: 1; } #cell-19 { grid-column: 6; grid-row: 1; } #cell-20 { grid-column: 7; grid-row: 1; } #cell-21 { grid-column: 8; grid-row: 1; }
-#cell-22 { grid-column: 8; grid-row: 2; } #cell-23 { grid-column: 8; grid-row: 3; } #cell-24 { grid-column: 8; grid-row: 4; } #cell-25 { grid-column: 8; grid-row: 5; } #cell-26 { grid-column: 8; grid-row: 6; } #cell-27 { grid-column: 8; grid-row: 7; }
+/* Fila inferior (Derecha a Izquierda) */
+#cell-0  { grid-column: 8; grid-row: 8; border-bottom-right-radius: 10px; }
+#cell-1  { grid-column: 7; grid-row: 8; }
+#cell-2  { grid-column: 6; grid-row: 8; }
+#cell-3  { grid-column: 5; grid-row: 8; }
+#cell-4  { grid-column: 4; grid-row: 8; }
+#cell-5  { grid-column: 3; grid-row: 8; }
+#cell-6  { grid-column: 2; grid-row: 8; }
+#cell-7  { grid-column: 1; grid-row: 8; border-bottom-left-radius: 10px; }
+
+/* Columna izquierda (Abajo hacia Arriba) */
+#cell-8  { grid-column: 1; grid-row: 7; }
+#cell-9  { grid-column: 1; grid-row: 6; }
+#cell-10 { grid-column: 1; grid-row: 5; }
+#cell-11 { grid-column: 1; grid-row: 4; }
+#cell-12 { grid-column: 1; grid-row: 3; }
+#cell-13 { grid-column: 1; grid-row: 2; }
+#cell-14 { grid-column: 1; grid-row: 1; border-top-left-radius: 10px; }
+
+/* Fila superior (Izquierda a Derecha) */
+#cell-15 { grid-column: 2; grid-row: 1; }
+#cell-16 { grid-column: 3; grid-row: 1; }
+#cell-17 { grid-column: 4; grid-row: 1; }
+#cell-18 { grid-column: 5; grid-row: 1; }
+#cell-19 { grid-column: 6; grid-row: 1; }
+#cell-20 { grid-column: 7; grid-row: 1; }
+#cell-21 { grid-column: 8; grid-row: 1; border-top-right-radius: 10px; }
+
+/* Columna derecha (Arriba hacia Abajo) */
+#cell-22 { grid-column: 8; grid-row: 2; }
+#cell-23 { grid-column: 8; grid-row: 3; }
+#cell-24 { grid-column: 8; grid-row: 4; }
+#cell-25 { grid-column: 8; grid-row: 5; }
+#cell-26 { grid-column: 8; grid-row: 6; }
+#cell-27 { grid-column: 8; grid-row: 7; }
