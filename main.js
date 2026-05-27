@@ -1150,23 +1150,29 @@ if (window.sala && window.miIdx !== undefined) {
 }
 
 // --- 2. UNIRSE A SALA (Con Persistencia) ---
+window.estaProcesandoUnion = false; // Bloqueo anti-spam
+
 window.unirseSala = function(salaId) {
+    // 1. Bloqueo para evitar clics infinitos
+    if (window.estaProcesandoUnion) return;
+    
     if (!window.db) {
         setTimeout(() => window.unirseSala(salaId), 500);
         return;
     }
 
+    window.estaProcesandoUnion = true; // Iniciamos proceso
     window.sala = salaId;
     localStorage.setItem('sala', salaId);
     
     if (typeof window.generarTablero === 'function') window.generarTablero();
     
-    // USAMOS getSafeRef PARA LA TRANSACCIÓN
     const salaRef = window.getSafeRef('salas/' + salaId + '/jugadores');
     
     runTransaction(salaRef, (jugadores) => {
         if (!jugadores) jugadores = {};
         
+        // Verificamos si ya existe el usuario para no duplicar ID
         const ocupados = Object.keys(jugadores).filter(k => !String(k).startsWith('v')).length;
         const visitantes = Object.keys(jugadores).filter(k => String(k).startsWith('v')).length;
         
@@ -1196,12 +1202,13 @@ window.unirseSala = function(salaId) {
         }
         return;
     }).then((res) => {
+        // Desbloqueamos proceso independientemente del resultado
+        window.estaProcesandoUnion = false;
+
         if (res.committed && window.miIdx !== undefined) {
             localStorage.setItem('miIdx', window.miIdx);
             localStorage.setItem('esVisitante', window.esVisitante);
             
-            // PEQUEÑO RETRASO: Esperamos 300ms para asegurar que la escritura terminó 
-            // antes de intentar leer con los listeners (sincronizar/escucharJugadores)
             setTimeout(() => {
                 window.sincronizar(); 
                 if (typeof window.escucharJugadores === 'function') window.escucharJugadores();
@@ -1211,19 +1218,32 @@ window.unirseSala = function(salaId) {
             
             const nombreMostrar = window.esVisitante ? "Citizen " + String(window.miIdx).replace('v','') : window.nombres[window.miIdx];
             
-            // Notificar al chat con getSafeRef
             const chatRef = window.getSafeRef('salas/' + salaId + '/chat');
             if (chatRef) {
+                // Notificación de unión
                 push(chatRef, { 
                     n: "Sistema", 
                     m: nombreMostrar + " se ha unido a la partida.", 
-                    t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                    t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    esChat: true,
+                    esRosa: true 
                 });
-            }
 
-            // Desconexión con getSafeRef
-            const miRef = window.getSafeRef('salas/' + salaId + '/jugadores/' + window.miIdx);
-            if (miRef) onDisconnect(miRef).remove();
+                // Notificación de abandono (usamos un ID único temporal para el set)
+                const miRef = window.getSafeRef('salas/' + salaId + '/jugadores/' + window.miIdx);
+                const leaveMsgRef = child(chatRef, 'leave_' + Date.now()); 
+                
+                if (miRef) {
+                    onDisconnect(miRef).remove();
+                    onDisconnect(leaveMsgRef).set({ 
+                        n: "Sistema", 
+                        m: nombreMostrar + " ha abandonado la partida.", 
+                        t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        esChat: true,
+                        esRosa: true 
+                    });
+                }
+            }
 
             window.abrirModal("Bienvenido", `
                 <div style="text-align:center; padding:10px;">
@@ -1235,6 +1255,7 @@ window.unirseSala = function(salaId) {
             window.abrirModal("Sala Llena", `<div style="text-align:center; padding:10px; color: #d32f2f;">Lo sentimos, la sala <b>${salaId}</b> está llena.</div>`);
         }
     }).catch((error) => {
+        window.estaProcesandoUnion = false;
         console.error("Error al unirse a la sala:", error);
     });
 };
