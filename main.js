@@ -93,52 +93,6 @@ window.escucharJugadores = function() {
     });
 };
 
-window.sincronizar = function() {
-    if (!window.sala) return;
-
-    const chatRef = ref(db, 'salas/' + window.sala + '/chat');
-    if (chatListener) off(chatRef);
-
-    chatListener = onValue(chatRef, (snap) => {
-        const chatLog = document.getElementById('chat-log');
-        const gameLog = document.getElementById('game-log'); 
-        
-        // Limpiamos los contenedores antes de procesar para evitar duplicados
-        if (chatLog) chatLog.innerHTML = "";
-        if (gameLog) gameLog.innerHTML = ""; 
-        
-        const data = snap.val();
-        
-        if (data) {
-            Object.values(data).forEach(m => {
-                // FILTRO: Si es sistema Y NO está marcado como chat, va al Game Log
-                if (m.n === "Sistema" && !m.esChat) {
-                    if (gameLog) {
-                        gameLog.innerHTML += `<div style="font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px;">[${m.t}] ${m.m}</div>`;
-                    }
-                } 
-                // CUALQUIER OTRA COSA (Jugadores o Sistema marcado como chat) va al Chat Log
-                else {
-                    if (chatLog) {
-                        // Aplicamos color rosa si tiene la propiedad esRosa
-                        const colorEstilo = m.esRosa ? "#ff80bf" : "#333";
-                        const nombreDisplay = m.n === "Info" ? "" : `<b>${m.n}:</b>`;
-                        
-                        chatLog.innerHTML += `<div style="color: ${colorEstilo}; margin-bottom: 5px; text-align: left;">
-                            <small>[${m.t}]</small> ${nombreDisplay} ${m.m}
-                        </div>`;
-                    }
-                }
-            });
-            
-            // Scroll automático al final en ambos
-            if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
-            if (gameLog) gameLog.scrollTop = gameLog.scrollHeight;
-        }
-    });
-};
-
-// --- 1. Datos Globales del Clima ---
 window.climas = Object.freeze([
     { n: "Primavera Soleada", mult: 1.0 },
     { n: "Primavera Lluviosa", mult: 1.0 },
@@ -153,43 +107,76 @@ window.climas = Object.freeze([
     { n: "Tornado", mult: 0.5 }
 ]);
 
-// --- 2. Sincronización (Listener único) ---
-window.sincronizarClima = function() {
+// --- 2. Función Maestra de Sincronización ---
+window.sincronizar = function() {
     if (!window.sala) return;
+
+    const chatRef = ref(db, 'salas/' + window.sala + '/chat');
     const climaRef = ref(db, 'salas/' + window.sala + '/climaIdx');
 
-    // Escucha principal para UI y anuncios de cambios
-    onValue(climaRef, (snap) => {
-        const idx = snap.val() !== null ? snap.val() : 0;
-        const clima = window.climas[idx];
-        const centroClima = document.getElementById('display-clima-centro');
-        
-        // 1. Actualizar UI central
-        if (centroClima) {
-            centroClima.innerHTML = `
-                <div style="font-size: 1.1em; font-weight:bold; color: #333;">${clima.n}</div>
-                <div style="font-size: 0.8em; color: ${clima.mult < 1 ? '#e74c3c' : '#27ae60'};">
-                    Mult: ${clima.mult}x
-                </div>`;
-        }
+    if (window.chatListener) off(window.chatListener);
+    if (window.climaListener) off(window.climaListener);
 
-        // 2. Anunciar en el historial solo si el clima ha cambiado
-        // Guardamos el clima previo en una variable global para comparar
-        if (window.climaPrevio !== undefined && window.climaPrevio !== idx) {
-            window.anunciar("El clima ha cambiado a: " + clima.n);
-        } else if (window.climaPrevio === undefined) {
-            // Anuncio al entrar por primera vez
-            window.anunciar("El clima actual es: " + clima.n);
-        }
+    // --- ESCUCHA DE CHAT Y GAME LOG ---
+    window.chatListener = onValue(chatRef, (snap) => {
+        const chatLog = document.getElementById('chat-log');
+        const gameLog = document.getElementById('game-log'); 
         
-        window.climaPrevio = idx;
+        if (chatLog) chatLog.innerHTML = "";
+        if (gameLog) gameLog.innerHTML = ""; 
+        
+        const data = snap.val();
+        if (data) {
+            Object.values(data).forEach(m => {
+                if (m.n === "Sistema" && !m.esChat) {
+                    if (gameLog) {
+                        gameLog.innerHTML += `<div style="font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px;">[${m.t}] ${m.m}</div>`;
+                    }
+                } else {
+                    if (chatLog) {
+                        const colorEstilo = m.esRosa ? "#ff80bf" : "#333";
+                        const nombreDisplay = (m.n === "Info" || m.n === "Sistema") ? "" : `<b>${m.n}:</b>`;
+                        chatLog.innerHTML += `<div style="color: ${colorEstilo}; margin-bottom: 5px; text-align: left;">
+                            <small>[${m.t}]</small> ${nombreDisplay} ${m.m}
+                        </div>`;
+                    }
+                }
+            });
+            if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
+            if (gameLog) gameLog.scrollTop = gameLog.scrollHeight;
+        }
     });
 
-    // Iniciar ciclo solo si es el dueño (idx 0)
-    if (window.miIdx === 0 || window.miIdx === "0") {
-        window.iniciarCicloClima();
-    }
+    // --- ESCUCHA DE CLIMA (Con anuncio automático) ---
+    window.climaListener = onValue(climaRef, (snap) => {
+        const idx = snap.val() !== null ? snap.val() : 0;
+        actualizarUIClima(idx);
+
+        const clima = window.climas ? window.climas[idx] : null;
+        if (clima) {
+            const gameLog = document.getElementById('game-log');
+            if (gameLog) {
+                // He eliminado la variable 't' y cambiado el color a #ff80bf (rosa)
+                gameLog.innerHTML += `<div style="font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px; color: #ff80bf; font-weight: bold;">
+                    ☁️ Clima actual: ${clima.n}
+                </div>`;
+                gameLog.scrollTop = gameLog.scrollHeight;
+            }
+        }
+    });
 };
+
+// --- Función Auxiliar (Sin el centroClima) ---
+function actualizarUIClima(idx) {
+    const clima = window.climas ? window.climas[idx] : null;
+    if (!clima) return;
+
+    const displayClima = document.getElementById('clima-display');
+    
+    if (displayClima) {
+        displayClima.innerText = `Clima: ${clima.n}`;
+    }
+}
 
 // --- 3. Lógica del Ciclo Automático ---
 window.iniciarCicloClima = function() {
@@ -933,7 +920,7 @@ window.unirseSala = function(salaId) {
     window.sala = salaId;
     localStorage.setItem('sala', salaId);
     
-    // 2. Generar el tablero visual ANTES de procesar los datos de Firebase
+    // 2. Generar el tablero visual
     if (typeof window.generarTablero === 'function') {
         window.generarTablero();
     }
@@ -976,10 +963,10 @@ window.unirseSala = function(salaId) {
             localStorage.setItem('miIdx', window.miIdx);
             localStorage.setItem('esVisitante', window.esVisitante);
             
-            // 3. Iniciar todos los listeners de datos necesarios
-            window.sincronizar();         // Chat
-            window.sincronizarClima();    // Clima (AÑADIDO)
-            window.escucharJugadores();   // Tokens
+            // --- AQUÍ ESTÁ EL CAMBIO CRÍTICO ---
+            // Llamamos a la función centralizada que gestiona todo
+            window.sincronizar(); 
+            window.escucharJugadores();
             
             if (typeof window.escucharOfertas === 'function') {
                 window.escucharOfertas();
@@ -987,7 +974,6 @@ window.unirseSala = function(salaId) {
             
             const nombreMostrar = window.esVisitante ? "Citizen " + String(window.miIdx).replace('v','') : window.nombres[window.miIdx];
             
-            // 4. Mensajes y desconexión
             push(ref(db, 'salas/' + salaId + '/chat'), { 
                 n: "Sistema", 
                 m: nombreMostrar + " se ha unido a la partida.", 
