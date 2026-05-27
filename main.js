@@ -707,6 +707,44 @@ window.solicitarPrestamo = function(monto) {
     });
 };
 
+// --- Puente para que el botón HTML funcione ---
+window.abrirverSaldos = function() {
+    window.verSaldos();
+};
+
+// --- Función lógica de Saldos ---
+window.verSaldos = function() {
+    if (!window.sala) return;
+    
+    const jugadoresRef = window.getSafeRef('salas/' + window.sala + '/jugadores');
+    
+    if (!jugadoresRef) return;
+
+    get(jugadoresRef).then((snap) => {
+        let txt = "<ul style='list-style:none; padding:0;'>";
+        
+        snap.forEach(c => {
+            let j = c.val();
+            let key = c.key;
+            
+            // Lógica: Si la clave empieza con 'v', es visitante. Si no, es jugador (0-3).
+            let nombre = key.startsWith('v') 
+                ? "Citizen " + key.replace('v','') 
+                : (window.nombres[parseInt(key)] || "Jugador " + (parseInt(key) + 1));
+            
+            // Mostramos el dinero. Si es undefined, ponemos 1500 por defecto.
+            let dinero = (j.dinero !== undefined) ? j.dinero : 1500;
+            
+            txt += `<li style="margin-bottom: 5px;"><b>${nombre}</b>: $${dinero}</li>`;
+        });
+        
+        txt += "</ul>";
+        window.abrirModal("Saldos de los jugadores", txt);
+    }).catch((error) => {
+        console.error("Error al cargar saldos:", error);
+    });
+};
+
 window.abrirPagar = function() {
     // 1. Verificación de Sala
     if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') {
