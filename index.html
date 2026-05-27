@@ -5,6 +5,7 @@
     <title>Monopoly Naeun Town</title>
     <link rel="stylesheet" href="style.css">
 </head>
+<body>
 
 <div id="modal" class="modal-hidden">
     <div class="modal-content">
@@ -15,8 +16,6 @@
         <div id="modal-body" class="modal-body"></div>
     </div>
 </div>
-
-<body>
 
 <div class="game-layout">
     <div class="main-column">
@@ -52,8 +51,8 @@
         <div class="actions-wrapper">
             <div class="actions-bar">
                 <button class="btn-action" onclick="window.abrirBanco()">🏦 Banco</button>
-<button class="btn-action" onclick="window.abrirPagar()">💳 Pagar</button>
-<button class="btn-action" onclick="window.abrirIntercambio()">🤝 Intercambio</button>
+                <button class="btn-action" onclick="window.abrirPagar()">💳 Pagar</button>
+                <button class="btn-action" onclick="window.abrirIntercambio()">🤝 Intercambio</button>
             </div>
         </div>
     </div>
@@ -72,19 +71,24 @@
                 <input type="text" id="chat-msg" class="input-field" placeholder="Mensaje...">
             </div>
             <div class="actions-wrapper" style="width: 100%;">
-                <button class="btn-action" style="width: 100%;" onclick="window.abrirEnviar()">Enviar Mensaje</button>
+                <button class="btn-action" style="width: 100%;" onclick="window.enviarMensaje()">Enviar Mensaje</button>
             </div>
         </div>
 
         <div class="btn-container-exterior" style="margin-top: 10px;">
+            <button id="btn-iniciar-partida" class="btn-sidebar" style="width: 100%; padding: 12px; background: #27ae60; color: white; border: none; cursor: pointer; border-radius: 5px; margin-bottom: 8px; display: none;" 
+                    onclick="window.iniciarPartida()">
+                ▶️ Iniciar Partida
+            </button>
+
             <button class="btn-sidebar" style="width: 100%; padding: 12px; background: #6c5ce7; color: white; border: none; cursor: pointer; border-radius: 5px;" 
                     onclick="window.tomarControlClima()">
                 ☁️ Controlar Clima
             </button>
         </div>
     </div>
+</div>
 
-</div> 
 <script type="module" src="main.js"></script>
 </body>
 </html>
