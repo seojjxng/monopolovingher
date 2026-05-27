@@ -14,8 +14,21 @@ let chatListener;
 window.anunciar = function(mensaje) {
     const logContainer = document.getElementById('game-log');
     if (logContainer) {
-        const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        logContainer.innerHTML = `<div style="font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px;">[${t}] ${mensaje}</div>` + logContainer.innerHTML;
+        // Crear el elemento del mensaje
+        const nuevoMensaje = document.createElement('div');
+        nuevoMensaje.style.marginBottom = "4px";
+        nuevoMensaje.style.borderBottom = "1px solid #ffccd5";
+        nuevoMensaje.style.paddingBottom = "2px";
+        nuevoMensaje.innerHTML = mensaje; // Acepta HTML (puedes usar <b>, <span style="color:red">, etc.)
+        
+        // Agregar al final
+        logContainer.appendChild(nuevoMensaje);
+        
+        // Scroll suave hacia el nuevo mensaje
+        logContainer.scrollTo({
+            top: logContainer.scrollHeight,
+            behavior: 'smooth'
+        });
     }
 };
 
@@ -53,41 +66,18 @@ window.generarTablero = function() {
     });
 };
 
-window.actualizarTokens = function(jugadores) {
-    // 1. Ocultar todos los tokens existentes antes de reposicionarlos
-    document.querySelectorAll('.token').forEach(t => t.style.display = 'none');
-
-    // 2. Posicionar tokens
-    Object.keys(jugadores).forEach(idx => {
-        const j = jugadores[idx];
-        const celda = document.getElementById(`cell-${j.pos}`);
-        if (!celda) return;
-
-        let token = document.getElementById(`token-${idx}`);
-        if (!token) {
-            token = document.createElement('img');
-            token.id = `token-${idx}`;
-            token.className = "token";
-            const fuentes = [
-                "https://i.imgur.com/FGnMi8Y.png", 
-                "https://i.imgur.com/fRZJfP8.png", 
-                "https://i.imgur.com/u2AtssG.png", 
-                "https://i.imgur.com/ekQp8WL.png"
-            ];
-            token.src = fuentes[idx % fuentes.length];
-            document.body.appendChild(token);
-        }
-        celda.appendChild(token);
-        token.style.display = "block";
-    });
-};
-
+// --- Listener mejorado ---
 window.escucharJugadores = function() {
     if (!window.sala) return;
     const jugadoresRef = ref(db, 'salas/' + window.sala + '/jugadores');
+    
     onValue(jugadoresRef, (snap) => {
         const jugadores = snap.val();
         if (jugadores) {
+            // Aseguramos que el tablero esté dibujado antes de poner tokens
+            if (!document.getElementById('cell-0')) {
+                window.generarTablero();
+            }
             window.actualizarTokens(jugadores);
         }
     });
@@ -107,78 +97,192 @@ window.climas = Object.freeze([
     { n: "Tornado", mult: 0.5 }
 ]);
 
-// --- 2. Función Maestra de Sincronización ---
+// Agregué el { al final de la línea 1
 window.sincronizar = function() {
     if (!window.sala) return;
 
+    const salaRef = ref(db, 'salas/' + window.sala);
     const chatRef = ref(db, 'salas/' + window.sala + '/chat');
     const climaRef = ref(db, 'salas/' + window.sala + '/climaIdx');
 
+    // 1. Limpieza de listeners previos
     if (window.chatListener) off(window.chatListener);
+    if (window.estadoListener) off(window.estadoListener);
     if (window.climaListener) off(window.climaListener);
 
-    // --- ESCUCHA DE CHAT Y GAME LOG ---
+    // 2. ESCUCHA DE CHAT
     window.chatListener = onValue(chatRef, (snap) => {
         const chatLog = document.getElementById('chat-log');
-        const gameLog = document.getElementById('game-log'); 
-        
-        if (chatLog) chatLog.innerHTML = "";
-        if (gameLog) gameLog.innerHTML = ""; 
-        
+        if (!chatLog) return;
+        chatLog.innerHTML = "";
         const data = snap.val();
         if (data) {
             Object.values(data).forEach(m => {
-                if (m.n === "Sistema" && !m.esChat) {
-                    if (gameLog) {
-                        gameLog.innerHTML += `<div style="font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px;">[${m.t}] ${m.m}</div>`;
-                    }
-                } else {
-                    if (chatLog) {
-                        const colorEstilo = m.esRosa ? "#ff80bf" : "#333";
-                        const nombreDisplay = (m.n === "Info" || m.n === "Sistema") ? "" : `<b>${m.n}:</b>`;
-                        chatLog.innerHTML += `<div style="color: ${colorEstilo}; margin-bottom: 5px; text-align: left;">
-                            <small>[${m.t}]</small> ${nombreDisplay} ${m.m}
-                        </div>`;
-                    }
+                if (!(m.n === "Sistema" && !m.esChat)) {
+                    const colorEstilo = m.esRosa ? "#ff80bf" : "#333";
+                    const nombreDisplay = (m.n === "Info" || m.n === "Sistema") ? "" : `<b>${m.n}:</b>`;
+                    chatLog.innerHTML += `<div style="color: ${colorEstilo}; margin-bottom: 5px; text-align: left;"><small>[${m.t}]</small> ${nombreDisplay} ${m.m}</div>`;
                 }
             });
-            if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
-            if (gameLog) gameLog.scrollTop = gameLog.scrollHeight;
+            chatLog.scrollTop = chatLog.scrollHeight;
         }
     });
 
-    // --- ESCUCHA DE CLIMA (Con anuncio automático) ---
+    // 3. ESCUCHA DE ESTADO
+    window.estadoListener = onValue(salaRef, (snap) => {
+        const s = snap.val();
+        if (!s) return;
+
+        // Botón Iniciar
+        const btnIniciar = document.getElementById('btn-iniciar-partida');
+        if (btnIniciar) {
+            btnIniciar.style.display = (window.miIdx === 0 && s.estado === "esperando") ? 'block' : 'none';
+        }
+
+        // Anuncio de inicio
+        if (window.estadoPrevio === "esperando" && s.estado === "jugando") {
+            window.anunciar("¡La partida ha comenzado!");
+        }
+        window.estadoPrevio = s.estado;
+
+        // Dinero y Turno
+        if (s.jugadores && s.jugadores[window.miIdx]) {
+            const elDinero = document.getElementById('dinero-mio');
+            if (elDinero) elDinero.innerText = s.jugadores[window.miIdx].dinero || 0;
+        }
+
+        const elTurno = document.getElementById('turno-text');
+        if (elTurno) {
+            elTurno.innerText = "Turno: " + (s.turno !== undefined && window.nombres ? (window.nombres[s.turno] || "Jugador " + (s.turno + 1)) : "Esperando...");
+        }
+
+        if (s.jugadores) {
+            window.actualizarTokens(s.jugadores);
+        }
+    });
+
+    // 4. ESCUCHA DE CLIMA (Con Sticky Header)
     window.climaListener = onValue(climaRef, (snap) => {
         const idx = snap.val() !== null ? snap.val() : 0;
-        actualizarUIClima(idx);
+        
+        // Actualizar UI externa
+        const elClima = document.getElementById('clima-display');
+        if (elClima && window.climas) elClima.innerText = `Clima: ${window.climas[idx].n}`;
 
-        const clima = window.climas ? window.climas[idx] : null;
-        if (clima) {
-            const gameLog = document.getElementById('game-log');
-            if (gameLog) {
-                // He eliminado la variable 't' y cambiado el color a #ff80bf (rosa)
-                gameLog.innerHTML += `<div style="font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px; color: #ff80bf; font-weight: bold;">
-                    ☁️ Clima actual: ${clima.n}
-                </div>`;
-                gameLog.scrollTop = gameLog.scrollHeight;
+        // Actualizar Log con Sticky Header
+        const gameLog = document.getElementById('game-log');
+        if (gameLog) {
+            let header = document.getElementById('clima-header');
+            if (!header) {
+                header = document.createElement('div');
+                header.id = 'clima-header';
+                header.style.cssText = "font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px; color: #ff80bf; font-weight: bold; position: sticky; top: 0; background: #fff5f7; z-index: 10;";
+                gameLog.prepend(header);
             }
+            header.innerHTML = `☁️ Clima actual: ${window.climas ? window.climas[idx].n : "Cargando..."}`;
         }
     });
 };
 
-// --- Función Auxiliar (Sin el centroClima) ---
-function actualizarUIClima(idx) {
-    const clima = window.climas ? window.climas[idx] : null;
-    if (!clima) return;
+    // 2. ESCUCHA DE ESTADO (Turno, Dinero, Fichas, Botón Iniciar)
+    window.sincronizar = function() {
+    if (!window.sala) return;
 
-    const displayClima = document.getElementById('clima-display');
+    // Las referencias deben definirse aquí adentro para que no den error
+    const salaRef = ref(db, 'salas/' + window.sala);
+    const chatRef = ref(db, 'salas/' + window.sala + '/chat');
+    const climaRef = ref(db, 'salas/' + window.sala + '/climaIdx');
+
+    // Limpiar listeners antiguos antes de crear los nuevos
+    if (window.chatListener) off(window.chatListener);
+    if (window.estadoListener) off(window.estadoListener);
+    if (window.climaListener) off(window.climaListener);
+
+    // --- 1. ESCUCHA DE CHAT ---
+    window.chatListener = onValue(chatRef, (snap) => {
+        const chatLog = document.getElementById('chat-log');
+        if (!chatLog) return;
+        chatLog.innerHTML = "";
+        const data = snap.val();
+        if (data) {
+            Object.values(data).forEach(m => {
+                if (!(m.n === "Sistema" && !m.esChat)) {
+                    const colorEstilo = m.esRosa ? "#ff80bf" : "#333";
+                    const nombreDisplay = (m.n === "Info" || m.n === "Sistema") ? "" : `<b>${m.n}:</b>`;
+                    chatLog.innerHTML += `<div style="color: ${colorEstilo}; margin-bottom: 5px; text-align: left;"><small>[${m.t}]</small> ${nombreDisplay} ${m.m}</div>`;
+                }
+            });
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+    });
+
+    // --- 2. ESCUCHA DE ESTADO (Tu lógica) ---
+    window.estadoListener = onValue(salaRef, (snap) => {
+        const s = snap.val();
+        if (!s) return;
+
+        // Lógica para mostrar/ocultar botón de inicio
+        const btnIniciar = document.getElementById('btn-iniciar-partida');
+        if (btnIniciar) {
+            btnIniciar.style.display = (window.miIdx === 0 && s.estado === "esperando") ? 'block' : 'none';
+        }
+
+        // Detectar cambio de estado para el Game-Log
+        if (window.estadoPrevio === "esperando" && s.estado === "jugando") {
+            window.anunciar("¡La partida ha comenzado!");
+        }
+        window.estadoPrevio = s.estado;
+
+        // Actualizar dinero
+        if (s.jugadores && s.jugadores[window.miIdx]) {
+            const elDinero = document.getElementById('dinero-mio');
+            if (elDinero) elDinero.innerText = s.jugadores[window.miIdx].dinero || 0;
+        }
+
+        // Actualizar texto de turno
+        const elTurno = document.getElementById('turno-text');
+        if (elTurno) {
+            elTurno.innerText = "Turno: " + (s.turno !== undefined && window.nombres ? (window.nombres[s.turno] || "Jugador " + (s.turno + 1)) : "Esperando...");
+        }
+
+        // Actualizar tokens
+        if (s.jugadores) {
+            window.actualizarTokens(s.jugadores);
+        }
+    });
+
+    // --- 3. ESCUCHA DE CLIMA ---
+    window.climaListener = onValue(climaRef, (snap) => {
+    const idx = snap.val() !== null ? snap.val() : 0;
     
-    if (displayClima) {
-        displayClima.innerText = `Clima: ${clima.n}`;
+    // 1. Actualizar UI externa del Clima
+    const elClima = document.getElementById('clima-display');
+    if (elClima && window.climas) {
+        elClima.innerText = `Clima: ${window.climas[idx].n}`;
     }
-}
 
-// --- 3. Lógica del Ciclo Automático ---
+    // 2. Actualizar el aviso dentro del Game-Log sin borrar el historial
+    const gameLog = document.getElementById('game-log');
+    if (gameLog) {
+        let header = document.getElementById('clima-header');
+        
+        // Si no existe el header de clima, lo creamos y lo ponemos al principio
+        if (!header) {
+            header = document.createElement('div');
+            header.id = 'clima-header';
+            header.style.cssText = "font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px; color: #ff80bf; font-weight: bold; position: sticky; top: 0; background: #fff5f7; z-index: 2;";
+            gameLog.prepend(header);
+        }
+        
+        // Actualizamos el texto
+        header.innerHTML = `☁️ Clima actual: ${window.climas ? window.climas[idx].n : "Cargando..."}`;
+    }
+    });
+};
+    
+
+// --- Función Auxiliar (Sin el centroClima) ---
+// --- Lógica del Ciclo Automático ---
 window.iniciarCicloClima = function() {
     if (window.climaInterval) clearInterval(window.climaInterval);
     
@@ -188,7 +292,6 @@ window.iniciarCicloClima = function() {
             const ctrl = snap.val();
             const ahora = Date.now();
             
-            // Si el control está libre o pasaron más de 5 min, el sistema cambia
             if (!ctrl || (ahora - ctrl.timestamp > 300000)) {
                 const nuevoIdx = Math.floor(Math.random() * window.climas.length);
                 const nuevoClima = window.climas[nuevoIdx];
@@ -204,7 +307,7 @@ window.iniciarCicloClima = function() {
     }, 600000); 
 };
 
-// --- 4. Panel de Control de Visitantes ---
+// --- Panel de Control de Visitantes ---
 window.abrirControlClima = function() {
     let html = `<div class="clima-container"><p>Selecciona el nuevo clima para Naeun Town:</p>`;
     window.climas.forEach((c, idx) => {
@@ -269,33 +372,40 @@ window.cerrarModal = function() {
     document.getElementById('modal').style.display = 'none';
 };
 
-window.lanzarDado3D = function() {
+// 1. ANIMACIÓN: Ahora recibe el resultado calculado por el sistema
+window.lanzarDado3D = function(resultado) {
     const dice = document.getElementById('dice');
+    if (!dice) return; // Seguridad
+
     dice.classList.remove('rolling');
     void dice.offsetWidth; 
     dice.classList.add('rolling');
+
+    const rot = { 
+        1: "rotateX(0deg) rotateY(0deg)", 
+        2: "rotateX(0deg) rotateY(180deg)", 
+        3: "rotateX(0deg) rotateY(-90deg)", 
+        4: "rotateX(0deg) rotateY(90deg)", 
+        5: "rotateX(-90deg) rotateY(0deg)", 
+        6: "rotateX(90deg) rotateY(0deg)" 
+    };
+
     setTimeout(() => {
-        const res = Math.floor(Math.random() * 6) + 1;
-        const rot = { 1: "rotateX(0deg) rotateY(0deg)", 2: "rotateX(0deg) rotateY(180deg)", 3: "rotateX(0deg) rotateY(-90deg)", 4: "rotateX(0deg) rotateY(90deg)", 5: "rotateX(-90deg) rotateY(0deg)", 6: "rotateX(90deg) rotateY(0deg)" };
-        dice.style.transform = rot[res];
+        dice.style.transform = rot[resultado];
     }, 600);
 };
 
+// 2. LÓGICA: Calcula y dispara la animación
 window.tirarDado = async function() {
-    // 1. Verificación básica
     if (typeof window.miIdx === 'undefined' || window.miIdx === -1) return;
 
     const btnDado = document.querySelector('img[alt="Lanzar dado"]');
-    
-    // 2. Bloqueo inmediato para evitar clics dobles
     if (btnDado) btnDado.style.pointerEvents = 'none';
 
     return new Promise((resolve) => {
-        // 3. Obtener estado de la sala
         get(ref(db, 'salas/' + window.sala)).then((snap) => {
             const s = snap.val();
 
-            // 4. Validación estricta del turno: si no es mi turno, abortamos y liberamos el botón
             if (!s || s.turno !== window.miIdx) {
                 console.warn("No es tu turno.");
                 if (btnDado) btnDado.style.pointerEvents = 'auto';
@@ -303,7 +413,6 @@ window.tirarDado = async function() {
                 return;
             }
 
-            // 5. Verificación de cárcel
             if (s.jugadores[window.miIdx].enCarcel > 0) {
                 window.log(window.nombres[window.miIdx] + " está en la cárcel.");
                 window.pasarTurno();
@@ -312,14 +421,17 @@ window.tirarDado = async function() {
                 return;
             }
 
-            // 6. Lógica de clima (opcional)
+            // Lógica de clima
             if (typeof window.climas !== 'undefined') {
                 const nuevoClima = Math.floor(Math.random() * window.climas.length);
                 set(ref(db, 'salas/' + window.sala + '/clima'), nuevoClima);
             }
 
-            // 7. Lógica del dado
+            // Lógica del dado: ESTE ES EL NÚMERO REAL
             const dado = Math.floor(Math.random() * 6) + 1;
+            
+            // DISPARAR ANIMACIÓN CON EL VALOR REAL
+            window.lanzarDado3D(dado);
             document.getElementById('dado-valor').innerText = dado;
 
             const contadorActual = s.jugadores[window.miIdx].seisSeguidos || 0;
@@ -327,13 +439,11 @@ window.tirarDado = async function() {
             const posActual = Number(s.jugadores[window.miIdx].pos);
             const nuevaPos = (posActual + dado) % window.mapa.length;
 
-            // 8. Paso por SALIDA
             if (nuevaPos < posActual) {
                 runTransaction(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'), (d) => (d || 0) + 100);
                 window.log(window.nombres[window.miIdx] + " pasó por SALIDA y cobró $100.");
             }
 
-            // 9. Actualización de estado y gestión de turno
             if (nuevoContador === 3) {
                 window.log("¡ACUSACIÓN DE FRAUDE! " + window.nombres[window.miIdx] + " sacó tres 6.");
                 update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { pos: 9, enCarcel: 2, seisSeguidos: 0 });
@@ -341,7 +451,6 @@ window.tirarDado = async function() {
             } else {
                 update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { pos: nuevaPos, seisSeguidos: nuevoContador });
                 
-                // Si no sacó 6, pasamos turno automáticamente
                 if (dado !== 6) {
                     window.pasarTurno();
                 } else {
@@ -349,7 +458,6 @@ window.tirarDado = async function() {
                 }
             }
 
-            // 10. Finalización de la animación y resolución de promesa
             setTimeout(() => {
                 if (typeof window.manejarCasilla === 'function') window.manejarCasilla(nuevaPos);
                 if (btnDado) btnDado.style.pointerEvents = 'auto';
@@ -363,53 +471,83 @@ window.tirarDado = async function() {
     });
 };
 
+// 3. LISTENERS: Corregidos para el SDK Modular
 window.escucharTurno = function() {
-    db.ref('salas/' + window.sala + '/turno').on('value', (snap) => {
-        const turnoIdx = snap.val();
-        const centroTablero = document.getElementById('centro-tablero'); // Asegúrate de tener este ID en tu HTML
-        
-        if (centroTablero) {
-            const nombreTurno = window.nombres[turnoIdx] || "Desconocido";
-            centroTablero.innerHTML = `<h3>Turno de:</h3><div style="color:${window.colores[turnoIdx]}">${nombreTurno}</div>`;
+    if (!window.sala) return;
+
+    // Escuchamos toda la sala para tener acceso tanto a 'estado' como a 'turno'
+    onValue(ref(db, 'salas/' + window.sala), (snap) => {
+        const data = snap.val();
+        if (!data) return;
+
+        const centroTablero = document.getElementById('centro-tablero');
+        if (!centroTablero) return;
+
+        // 1. Lógica de visualización del centro (Turno vs Esperando)
+        if (data.estado === "esperando") {
+            // Si no ha empezado, mostramos el botón de iniciar (solo para el anfitrión, índice 0)
+            const esAnfitrion = (window.miIdx === 0);
+            centroTablero.innerHTML = `
+                <div style="text-align:center;">
+                    <h3>Estado: Esperando...</h3>
+                    ${esAnfitrion ? '<button class="btn-sidebar" style="margin-top: 10px; padding: 10px 20px; background: #ff80bf; color: white; border: none; border-radius: 5px; cursor: pointer;" onclick="window.iniciarPartida()">Iniciar Partida</button>' : '<p>Esperando al anfitrión...</p>'}
+                </div>
+            `;
+        } else {
+            // Si ya empezó, mostramos de quién es el turno
+            const turnoIdx = data.turno !== undefined ? data.turno : 0;
+            const nombreTurno = window.nombres[turnoIdx] || "Jugador " + (turnoIdx + 1);
+            centroTablero.innerHTML = `
+                <div style="text-align:center;">
+                    <h3>Turno de:</h3>
+                    <div style="color:${window.colores[turnoIdx] || '#000'}; font-size: 1.2em; font-weight: bold;">${nombreTurno}</div>
+                </div>
+            `;
         }
 
-        // Habilitar/Deshabilitar botón de dado
+        // 2. Control del botón de lanzar dado
         const btnDado = document.querySelector('img[alt="Lanzar dado"]');
         if (btnDado) {
-            btnDado.style.pointerEvents = (turnoIdx === window.miIdx) ? 'auto' : 'none';
-            btnDado.style.opacity = (turnoIdx === window.miIdx) ? '1' : '0.5';
+            // Solo se puede lanzar si el estado es "jugando" y es el turno del jugador
+            const esMiTurno = (data.estado === "jugando" && data.turno === window.miIdx);
+            btnDado.style.pointerEvents = esMiTurno ? 'auto' : 'none';
+            btnDado.style.opacity = esMiTurno ? '1' : '0.5';
         }
+    });
+};
+
+// Función para cambiar el estado de la partida
+window.iniciarPartida = function() {
+    if (window.miIdx !== 0) return; // Solo el anfitrión (jugador 0) inicia
+
+    const salaRef = ref(db, 'salas/' + window.sala);
+    
+    // Solo actualizamos el estado. El anuncio al game-log ocurrirá 
+    // automáticamente cuando el listener detecte el cambio de "esperando" a "jugando".
+    update(salaRef, {
+        estado: "jugando",
+        turno: 0
+    }).catch((error) => {
+        console.error("Error al iniciar la partida:", error);
     });
 };
 
 window.pasarTurno = function() {
     const salaRef = ref(db, 'salas/' + window.sala);
-    
     get(salaRef).then((snap) => {
         const s = snap.val();
         if (!s || !s.jugadores) return;
 
-        // Calculamos el total basándonos en las claves de los jugadores
         const jugadoresKeys = Object.keys(s.jugadores);
         const totalJugadores = jugadoresKeys.length;
-        
-        // Obtenemos el turno actual, por defecto 0 si no existe
         const turnoActual = s.turno || 0;
-        
-        // Lógica de turno cíclico
         const siguienteTurno = (turnoActual + 1) % totalJugadores;
         
-        // Actualizamos en Firebase
-        update(salaRef, {
-            turno: siguienteTurno
-        });
+        update(salaRef, { turno: siguienteTurno });
         
-        // Log informativo
         const nombreSiguiente = s.jugadores[siguienteTurno]?.nombre || ("Jugador " + siguienteTurno);
         window.log("Turno de: " + nombreSiguiente);
-    }).catch((error) => {
-        console.error("Error al pasar el turno:", error);
-    });
+    }).catch((error) => console.error("Error al pasar el turno:", error));
 };
 
 // --- Lógica del Banco ---
@@ -446,6 +584,33 @@ window.abrirBanco = function() {
         }
     }).catch((error) => {
         console.error("Error al cargar datos del banco:", error);
+    });
+};
+
+window.actualizarTokens = function(jugadores) {
+    // 1. Limpiar fichas existentes en todas las celdas
+    document.querySelectorAll('.token').forEach(t => t.remove());
+
+    // 2. Iterar sobre los jugadores y colocar su token
+    Object.keys(jugadores).forEach((idx) => {
+        const jugador = jugadores[idx];
+        const pos = jugador.pos !== undefined ? jugador.pos : 0; // Si no tiene pos, default a 0 (Salida)
+        const celda = document.getElementById('cell-' + pos);
+
+        if (celda) {
+            const token = document.createElement('div');
+            token.className = 'token';
+            token.style.backgroundColor = window.colores[idx]; // Usa tu array de colores
+            token.style.width = '20px';
+            token.style.height = '20px';
+            token.style.borderRadius = '50%';
+            token.style.position = 'absolute';
+            token.style.border = '2px solid white';
+            token.style.zIndex = '10';
+            
+            celda.style.position = 'relative'; // Asegurar posicionamiento
+            celda.appendChild(token);
+        }
     });
 };
 
@@ -951,7 +1116,8 @@ window.unirseSala = function(salaId) {
                 window.esVisitante = true;
                 jugadores[window.miIdx] = { 
                     nombre: "Citizen " + (visitantes + 1), 
-                    activo: true 
+                    activo: true,
+                    pos: 0 // Importante: inicializar posición también para visitantes
                 };
             }
             return jugadores;
@@ -963,8 +1129,7 @@ window.unirseSala = function(salaId) {
             localStorage.setItem('miIdx', window.miIdx);
             localStorage.setItem('esVisitante', window.esVisitante);
             
-            // --- AQUÍ ESTÁ EL CAMBIO CRÍTICO ---
-            // Llamamos a la función centralizada que gestiona todo
+            // --- INICIALIZACIÓN DE LISTENERS ---
             window.sincronizar(); 
             window.escucharJugadores();
             
@@ -1040,3 +1205,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 window.generarTablero();
+
