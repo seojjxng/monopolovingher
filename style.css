@@ -280,7 +280,7 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 .top { transform: rotateX(90deg) translateZ(20px); }
 .bottom { transform: rotateX(-90deg) translateZ(20px); }
 @keyframes girarDado { 0% { transform: rotateX(0deg) rotateY(0deg); } 100% { transform: rotateX(720deg) rotateY(720deg); } }
-.rolling { animation: girarDado 0.6s ease-out; }
+.rolling { animation: girarDado 0.6s ease-out forwards; }
 
 /* SALDO Y MISIONES (Botón original con gradient) */
 .saldo-container { background: #fff5f7; padding: 6px 15px; border-radius: 20px; border: 1px solid #ff80bf; color: #c71585; font-weight: bold; display: flex; align-items: center; gap: 8px; }
