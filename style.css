@@ -1,12 +1,265 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: #fff0f3; font-family: sans-serif; display: flex; justify-content: center; padding: 20px; color: #c71585; min-height: 100vh; }
-
 .container { display: flex; gap: 15px; justify-content: center; align-items: flex-start; width: 100%; max-width: 950px; }
 .main-column { display: flex; flex-direction: column; align-items: center; gap: 15px; width: 600px; flex-shrink: 0; }
-
 /* TABLERO */
 .board { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); gap: 2px; background: #ffccd5; padding: 4px; border-radius: 10px; width: 600px; height: 600px; position: relative; }
-.celda-juego { background: #ffffff; border: 1px solid #ffccd5; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; width: 100%; height: 100%; font-size: 7px; }
+.container { display: flex; gap: 25px; width: 1000px; align-items: flex-start; }
+.game-column, .sidebar { display: flex; flex-direction: column; gap: 15px; }
+.sidebar { width: 320px; }
+.board-wrapper, .panel { 
+
+    background: #fff0f9; padding: 20px; border-radius: 20px; border: 2px solid #ffccd5; 
+
+}
+
+.actions-divider {
+
+    width: 100%;
+
+    height: 2px;
+
+    background: #ffccd5;
+
+    margin: 15px 0;
+
+    border-radius: 1px;
+
+}
+
+
+
+/* Contenedor de botones fuera del tablero */
+
+.actions-bar {
+
+    display: flex;
+
+    gap: 10px;
+
+    justify-content: center;
+
+    padding: 10px;
+
+    background: #fff0f9;
+
+    border: 2px solid #ffccd5;
+
+    border-radius: 20px;
+
+    margin-top: 10px;
+
+}
+
+
+
+/* Panel específico para el modo 2v2 */
+
+.mode-panel {
+
+    background: #fff0f9;
+
+    padding: 15px;
+
+    border-radius: 20px;
+
+    border: 2px solid #ffccd5;
+
+    text-align: center;
+
+}
+
+
+
+/* Tablero */
+
+.board { 
+
+    display: grid; 
+
+    grid-template-columns: repeat(8, 70px); 
+
+    grid-template-rows: repeat(8, 70px);    
+
+    gap: 2px; 
+
+    background: #ffccd5; 
+
+    padding: 5px; 
+
+    width: 100%; 
+
+    max-width: 600px; 
+
+    aspect-ratio: 1 / 1;
+
+    position: relative; /* Clave para el control de hijos */
+
+}
+
+    
+
+/* Contenedores inferiores */
+
+#banco-container { display: flex; gap: 5px; justify-content: center; }
+
+#modo-2v2-container { margin-top: 10px; }
+
+
+
+/* Botones - Ajustados para que no se deformen */
+
+.btn { width: 100%; padding: 10px; background: #ff59aa; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 12px; }
+
+#banco-container .btn { width: auto; flex: 1; font-size: 10px; padding: 8px 5px; }
+
+    
+
+/* Ajustes críticos para Chat y Log */
+
+#log, #chat-log { 
+
+    height: 125px !important; 
+
+    overflow-y: auto; 
+
+    font-size: 11px; 
+
+    color: #c71585; 
+
+    padding: 10px; 
+
+    background: white; 
+
+    border-radius: 10px; 
+
+    border: 1px solid #ffccd5; 
+
+    margin: 5px 0 15px 0; 
+
+    width: 100%;
+
+}
+.input-field { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ffccd5; border-radius: 8px; }
+.center-zone { 
+
+    grid-column: 3 / 7; 
+
+    grid-row: 3 / 7; 
+
+    background: #fff5f7; 
+
+    border: 3px dashed #ff80bf; 
+
+    display: flex; 
+
+    flex-direction: column; 
+
+    align-items: center; 
+
+    justify-content: center; 
+
+    padding: 10px;
+
+    border-radius: 15px; 
+
+    z-index: 999; /* Mucho más alto para que nada lo tape */
+
+    position: relative;
+
+    pointer-events: auto; /* Asegura que los clicks funcionen */
+
+}
+
+    
+
+/* Modales - Centrado y Estandarizado */
+
+#modal {
+
+    display: none; 
+
+    position: fixed; 
+
+    top: 0; left: 0; 
+
+    width: 100%; height: 100%; 
+
+    background: rgba(0,0,0,0.7); 
+
+    z-index: 10000; 
+
+    justify-content: center; 
+
+    align-items: center; 
+
+}
+
+.modal-content { 
+
+    width: 90%; 
+
+    max-width: 400px; 
+
+    background: #ffe4e9; 
+
+    padding: 30px; 
+
+    border: 3px solid #ff80bf; 
+
+    border-radius: 20px; 
+
+    text-align: center; 
+
+    position: relative; 
+
+}
+
+.btn-cerrar-x {
+
+    position: absolute;
+
+    top: 10px;
+
+    right: 15px;
+
+    font-size: 35px;
+
+    cursor: pointer;
+
+    color: #c71585;
+}
+.token { width: 25px; height: 25px; position: absolute; z-index: 10; pointer-events: none; }
+.board div[id^="cell-"] {
+    background: #ffffff;
+    border-left: 8px solid #ffccd5; /* Tu efecto de franja */
+    border-top: 1px solid #ffccd5;
+    border-right: 1px solid #ffccd5;
+    border-bottom: 1px solid #ffccd5;
+    border-radius: 4px;
+    z-index: 1; /* Detrás de la zona central */
+}
+.reputacion-container { width: 100px; height: 10px; background: #ffe0f0; border-radius: 10px; border: 1px solid #ff59aa; overflow: hidden; margin: 5px 0; }
+.reputacion-bar { height: 100%; width: 50%; background: #ff59aa; transition: width 0.5s ease-in-out; }
+#lista-misiones { list-style: none; padding: 0; text-align: left; max-height: 300px; overflow-y: auto; font-size: 13px; }
+.celda-juego {
+    position: relative; /* ¡INDISPENSABLE! */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.token {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    pointer-events: none;
+    width: 25px;
+    height: 25px;
+}
 .celda-content { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; text-align: center; padding: 2px; }
 .strip { width: 100%; height: 20%; border-bottom: 2px solid #ffccd5; }
 .nombre { font-size: 8px; font-weight: bold; line-height: 1; }
@@ -92,7 +345,49 @@ button { cursor: pointer; }
     border: 1px solid #ff80bf;
     color: #ff59aa;
 }
+.clima-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 15px;
+    padding: 10px;
+}
 
+.clima-btn {
+    padding: 10px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.2s;
+}
+
+.clima-btn:hover {
+    background-color: #ff80bf;
+    color: white;
+}
+.card-property {
+    width: 280px;
+    background: #fff;
+    border: 3px solid #000;
+    font-family: 'Arial', sans-serif;
+    color: #000;
+    padding: 0;
+    box-shadow: 5px 5px 15px rgba(0,0,0,0.1);
+}
+
+.card-property { width: 280px; background: #fff; border: 3px solid #000; font-family: 'Arial', sans-serif; color: #000; padding: 0; }
+.card-header { background: #ff80bf; color: white; padding: 15px; text-align: center; font-weight: bold; font-size: 1.4em; text-transform: uppercase; border-bottom: 3px solid #000; }
+.card-body { padding: 15px; text-align: center; }
+.btn-accion { width: 100%; padding: 10px; margin-top: 5px; border: none; cursor: pointer; font-weight: bold; color: white; border-radius: 4px; }
+.icono-transporte {
+    display: flex; 
+    justify-content: center; 
+    margin: 10px 0;
+}
+.icono-transporte img {
+    object-fit: contain;
+}
 /* Posicionamiento de celdas - MANTENIDO IGUAL */
 #cell-0 { grid-column: 8; grid-row: 8; } #cell-1 { grid-column: 7; grid-row: 8; } #cell-2 { grid-column: 6; grid-row: 8; } #cell-3 { grid-column: 5; grid-row: 8; } #cell-4 { grid-column: 4; grid-row: 8; } #cell-5 { grid-column: 3; grid-row: 8; } #cell-6 { grid-column: 2; grid-row: 8; } #cell-7 { grid-column: 1; grid-row: 8; }
 #cell-8 { grid-column: 1; grid-row: 7; } #cell-9 { grid-column: 1; grid-row: 6; } #cell-10 { grid-column: 1; grid-row: 5; } #cell-11 { grid-column: 1; grid-row: 4; } #cell-12 { grid-column: 1; grid-row: 3; } #cell-13 { grid-column: 1; grid-row: 2; } #cell-14 { grid-column: 1; grid-row: 1; }
