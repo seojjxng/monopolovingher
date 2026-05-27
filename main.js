@@ -1,69 +1,198 @@
-// main.js (Versión con Misiones y Banco integrados)
+// main.js 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, child, get, set, runTransaction, update, onValue, push, onDisconnect, off } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { firebaseConfig } from './firebase-config.js'; 
 
-// 1. Inicialización
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 window.db = db;
 
-// Configuración Global
 window.nombres = ["Dog", "Horse", "Hat", "Car"];
 window.colores = ["#ffb7b2", "#baa695", "#c2f0c9", "#c2ddf2"];
-let chatListener; // Listener global para el chat
+let chatListener; 
 
-// --- DEFINICIÓN DE SINCRONIZAR  ---
+window.anunciar = function(mensaje) {
+    const logContainer = document.getElementById('game-log');
+    if (logContainer) {
+        const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        logContainer.innerHTML = `<div style="font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px;">[${t}] ${mensaje}</div>` + logContainer.innerHTML;
+    }
+};
+
+window.generarTablero = function() {
+    const board = document.getElementById('board');
+    const centerZone = document.querySelector('.center-zone') || document.getElementById('center-zone'); 
+    if (!board) return;
+    
+    board.innerHTML = '';
+    if (centerZone) board.appendChild(centerZone);
+    
+    mapa.forEach((casilla, i) => {
+        const d = document.createElement('div');
+        d.className = 'celda-juego';
+        d.id = 'cell-' + i;
+        d.style.gridColumn = getGridColumn(i);
+        d.style.gridRow = getGridRow(i);
+        d.style.cursor = "pointer";
+        d.onclick = () => window.verPropiedad(i);
+        
+        let grupo = grupos.find(g => g.indices.includes(i));
+        d.innerHTML = (casilla.n === "?") ? 
+            `<div class="interrogacion">?</div>` : 
+            (grupo ? 
+                `<div class="strip" style="background:${grupo.color}"></div>
+                 <div class="celda-content">
+                    <div class="nombre">${casilla.n}</div>
+                    <div class="precio">${casilla.p > 0 ? '$' + casilla.p : ''}</div>
+                 </div>` : 
+                `<div class="celda-content">
+                    <div class="nombre">${casilla.n}</div>
+                 </div>`
+            );
+        board.appendChild(d);
+    });
+};
+
+window.actualizarTokens = function(jugadores) {
+    // 1. Ocultar todos los tokens existentes antes de reposicionarlos
+    document.querySelectorAll('.token').forEach(t => t.style.display = 'none');
+
+    // 2. Posicionar tokens
+    Object.keys(jugadores).forEach(idx => {
+        const j = jugadores[idx];
+        const celda = document.getElementById(`cell-${j.pos}`);
+        if (!celda) return;
+
+        let token = document.getElementById(`token-${idx}`);
+        if (!token) {
+            token = document.createElement('img');
+            token.id = `token-${idx}`;
+            token.className = "token";
+            const fuentes = [
+                "https://i.imgur.com/FGnMi8Y.png", 
+                "https://i.imgur.com/fRZJfP8.png", 
+                "https://i.imgur.com/u2AtssG.png", 
+                "https://i.imgur.com/ekQp8WL.png"
+            ];
+            token.src = fuentes[idx % fuentes.length];
+            document.body.appendChild(token);
+        }
+        celda.appendChild(token);
+        token.style.display = "block";
+    });
+};
+
+window.escucharJugadores = function() {
+    if (!window.sala) return;
+    const jugadoresRef = ref(db, 'salas/' + window.sala + '/jugadores');
+    onValue(jugadoresRef, (snap) => {
+        const jugadores = snap.val();
+        if (jugadores) {
+            window.actualizarTokens(jugadores);
+        }
+    });
+};
+
 window.sincronizar = function() {
     if (!window.sala) return;
 
-    // --- 1. Sincronización del Chat ---
     const chatRef = ref(db, 'salas/' + window.sala + '/chat');
     if (chatListener) off(chatRef);
 
     chatListener = onValue(chatRef, (snap) => {
         const chatLog = document.getElementById('chat-log');
-        if (!chatLog) return;
+        const gameLog = document.getElementById('game-log'); 
         
-        chatLog.innerHTML = "";
+        // Limpiamos los contenedores antes de procesar para evitar duplicados
+        if (chatLog) chatLog.innerHTML = "";
+        if (gameLog) gameLog.innerHTML = ""; 
+        
         const data = snap.val();
+        
         if (data) {
             Object.values(data).forEach(m => {
-                const estilo = m.n === "Sistema" ? "color: #ff80bf; font-style: italic; font-size: 0.8em;" : "color: #333;";
-                chatLog.innerHTML += `<div style="${estilo} margin-bottom: 5px;"><small>[${m.t}]</small> <b>${m.n}:</b> ${m.m}</div>`;
+                // FILTRO: Si es sistema Y NO está marcado como chat, va al Game Log
+                if (m.n === "Sistema" && !m.esChat) {
+                    if (gameLog) {
+                        gameLog.innerHTML += `<div style="font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px;">[${m.t}] ${m.m}</div>`;
+                    }
+                } 
+                // CUALQUIER OTRA COSA (Jugadores o Sistema marcado como chat) va al Chat Log
+                else {
+                    if (chatLog) {
+                        // Aplicamos color rosa si tiene la propiedad esRosa
+                        const colorEstilo = m.esRosa ? "#ff80bf" : "#333";
+                        const nombreDisplay = m.n === "Info" ? "" : `<b>${m.n}:</b>`;
+                        
+                        chatLog.innerHTML += `<div style="color: ${colorEstilo}; margin-bottom: 5px; text-align: left;">
+                            <small>[${m.t}]</small> ${nombreDisplay} ${m.m}
+                        </div>`;
+                    }
+                }
             });
-            chatLog.scrollTop = chatLog.scrollHeight;
+            
+            // Scroll automático al final en ambos
+            if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
+            if (gameLog) gameLog.scrollTop = gameLog.scrollHeight;
         }
     });
+};
 
-    // --- 2. Sincronización del Clima ---
+// --- 1. Datos Globales del Clima ---
+window.climas = Object.freeze([
+    { n: "Primavera Soleada", mult: 1.0 },
+    { n: "Primavera Lluviosa", mult: 1.0 },
+    { n: "Verano Caluroso", mult: 1.0 },
+    { n: "Verano Nublado", mult: 1.0 },
+    { n: "Otoño Fresco", mult: 1.0 },
+    { n: "Otoño Ventoso", mult: 1.0 },
+    { n: "Lluvia Fuerte", mult: 0.7 },
+    { n: "Tormenta Eléctrica", mult: 0.5 },
+    { n: "Ventisca", mult: 0.6 },
+    { n: "Nevada Intensa", mult: 0.6 },
+    { n: "Tornado", mult: 0.5 }
+]);
+
+// --- 2. Sincronización (Listener único) ---
+window.sincronizarClima = function() {
+    if (!window.sala) return;
     const climaRef = ref(db, 'salas/' + window.sala + '/climaIdx');
+
+    // Escucha principal para UI y anuncios de cambios
     onValue(climaRef, (snap) => {
         const idx = snap.val() !== null ? snap.val() : 0;
         const clima = window.climas[idx];
-        
-        // Actualizar centro del tablero
         const centroClima = document.getElementById('display-clima-centro');
+        
+        // 1. Actualizar UI central
         if (centroClima) {
             centroClima.innerHTML = `
                 <div style="font-size: 1.1em; font-weight:bold; color: #333;">${clima.n}</div>
                 <div style="font-size: 0.8em; color: ${clima.mult < 1 ? '#e74c3c' : '#27ae60'};">
                     Mult: ${clima.mult}x
-                </div>
-            `;
+                </div>`;
         }
+
+        // 2. Anunciar en el historial solo si el clima ha cambiado
+        // Guardamos el clima previo en una variable global para comparar
+        if (window.climaPrevio !== undefined && window.climaPrevio !== idx) {
+            window.anunciar("El clima ha cambiado a: " + clima.n);
+        } else if (window.climaPrevio === undefined) {
+            // Anuncio al entrar por primera vez
+            window.anunciar("El clima actual es: " + clima.n);
+        }
+        
+        window.climaPrevio = idx;
     });
 
-    // --- 3. Iniciar Ciclo Automático (Solo si es el primer jugador o dueño) ---
-    // Verificamos si somos el dueño de la sala (idx 0) para ejecutar el timer
+    // Iniciar ciclo solo si es el dueño (idx 0)
     if (window.miIdx === 0 || window.miIdx === "0") {
         window.iniciarCicloClima();
     }
 };
 
-// Función auxiliar para el ciclo automático
+// --- 3. Lógica del Ciclo Automático ---
 window.iniciarCicloClima = function() {
-    // Evitar múltiples intervalos si se llama varias veces
     if (window.climaInterval) clearInterval(window.climaInterval);
     
     window.climaInterval = setInterval(() => {
@@ -72,12 +201,12 @@ window.iniciarCicloClima = function() {
             const ctrl = snap.val();
             const ahora = Date.now();
             
-            // Si el control está libre o pasaron más de 5 min (300,000ms), el sistema cambia
+            // Si el control está libre o pasaron más de 5 min, el sistema cambia
             if (!ctrl || (ahora - ctrl.timestamp > 300000)) {
                 const nuevoIdx = Math.floor(Math.random() * window.climas.length);
                 const nuevoClima = window.climas[nuevoIdx];
                 
-                set(ref(db, 'salas/' + window.sala + '/climaIdx'), nuevoIdx);
+                update(ref(db, 'salas/' + window.sala), { climaIdx: nuevoIdx });
                 push(ref(db, 'salas/' + window.sala + '/chat'), {
                     n: "Sistema",
                     m: `El clima ha cambiado automáticamente a ${nuevoClima.n}. Alquileres ajustados a ${nuevoClima.mult * 100}%.`,
@@ -85,7 +214,38 @@ window.iniciarCicloClima = function() {
                 });
             }
         });
-    }, 600000); // 10 minutos
+    }, 600000); 
+};
+
+// --- 4. Panel de Control de Visitantes ---
+window.abrirControlClima = function() {
+    let html = `<div class="clima-container"><p>Selecciona el nuevo clima para Naeun Town:</p>`;
+    window.climas.forEach((c, idx) => {
+        html += `<button class="clima-btn" onclick="window.cambiarClima(${idx}); window.cerrarModal();">
+                    <b>${c.n}</b> <small>(Mult: ${c.mult}x)</small>
+                 </button>`;
+    });
+    html += `</div>`;
+    window.abrirModal("☁️ Panel de Control Climático", html);
+};
+
+window.tomarControlClima = function() {
+    if (!window.esVisitante) return;
+    const refControl = ref(db, 'salas/' + window.sala + '/controladorClima');
+    
+    runTransaction(refControl, (data) => {
+        const ahora = Date.now();
+        if (!data || (ahora - data.timestamp > 300000)) {
+            return { usuario: window.miIdx, timestamp: ahora };
+        }
+        return; 
+    }).then((res) => {
+        if (res.committed) {
+            window.abrirControlClima();
+        } else {
+            window.abrirModal("Acceso Denegado", "<p>Otro visitante ya tiene el control del clima en este momento.</p>");
+        }
+    });
 };
 
 // 2. Datos Globales
@@ -122,75 +282,146 @@ window.cerrarModal = function() {
     document.getElementById('modal').style.display = 'none';
 };
 
-// --- Lógica del clima ---
-window.climas = Object.freeze([
-    { n: "Primavera Soleada", mult: 1.0 },
-    { n: "Primavera Lluviosa", mult: 1.0 },
-    { n: "Verano Caluroso", mult: 1.0 },
-    { n: "Verano Nublado", mult: 1.0 },
-    { n: "Otoño Fresco", mult: 1.0 },
-    { n: "Otoño Ventoso", mult: 1.0 },
-    { n: "Lluvia Fuerte", mult: 0.7 },
-    { n: "Tormenta Eléctrica", mult: 0.5 },
-    { n: "Ventisca", mult: 0.6 },
-    { n: "Nevada Intensa", mult: 0.6 },
-    { n: "Tornado", mult: 0.5 }
-]);
+window.lanzarDado3D = function() {
+    const dice = document.getElementById('dice');
+    dice.classList.remove('rolling');
+    void dice.offsetWidth; 
+    dice.classList.add('rolling');
+    setTimeout(() => {
+        const res = Math.floor(Math.random() * 6) + 1;
+        const rot = { 1: "rotateX(0deg) rotateY(0deg)", 2: "rotateX(0deg) rotateY(180deg)", 3: "rotateX(0deg) rotateY(-90deg)", 4: "rotateX(0deg) rotateY(90deg)", 5: "rotateX(-90deg) rotateY(0deg)", 6: "rotateX(90deg) rotateY(0deg)" };
+        dice.style.transform = rot[res];
+    }, 600);
+};
 
-window.iniciarCicloClima = function() {
-    const climaRef = ref(db, 'salas/' + window.sala + '/climaIdx');
-    const controlRef = ref(db, 'salas/' + window.sala + '/controladorClima');
+window.tirarDado = async function() {
+    // 1. Verificación básica
+    if (typeof window.miIdx === 'undefined' || window.miIdx === -1) return;
 
-    setInterval(() => {
-        // Verificar si hay alguien controlándolo
-        get(controlRef).then(snap => {
-            const ctrl = snap.val();
-            const ahora = Date.now();
-            
-            // Si el control está libre o expiró, el sistema toma el mando
-            if (!ctrl || (ahora - ctrl.timestamp > 300000)) {
-                const nuevoIdx = Math.floor(Math.random() * window.climas.length);
-                set(climaRef, nuevoIdx).then(() => {
-                    const nuevoClima = window.climas[nuevoIdx];
-                    window.log("Sistema: El clima cambió automáticamente a " + nuevoClima.n);
-                });
+    const btnDado = document.querySelector('img[alt="Lanzar dado"]');
+    
+    // 2. Bloqueo inmediato para evitar clics dobles
+    if (btnDado) btnDado.style.pointerEvents = 'none';
+
+    return new Promise((resolve) => {
+        // 3. Obtener estado de la sala
+        get(ref(db, 'salas/' + window.sala)).then((snap) => {
+            const s = snap.val();
+
+            // 4. Validación estricta del turno: si no es mi turno, abortamos y liberamos el botón
+            if (!s || s.turno !== window.miIdx) {
+                console.warn("No es tu turno.");
+                if (btnDado) btnDado.style.pointerEvents = 'auto';
+                resolve();
+                return;
             }
+
+            // 5. Verificación de cárcel
+            if (s.jugadores[window.miIdx].enCarcel > 0) {
+                window.log(window.nombres[window.miIdx] + " está en la cárcel.");
+                window.pasarTurno();
+                if (btnDado) btnDado.style.pointerEvents = 'auto';
+                resolve();
+                return;
+            }
+
+            // 6. Lógica de clima (opcional)
+            if (typeof window.climas !== 'undefined') {
+                const nuevoClima = Math.floor(Math.random() * window.climas.length);
+                set(ref(db, 'salas/' + window.sala + '/clima'), nuevoClima);
+            }
+
+            // 7. Lógica del dado
+            const dado = Math.floor(Math.random() * 6) + 1;
+            document.getElementById('dado-valor').innerText = dado;
+
+            const contadorActual = s.jugadores[window.miIdx].seisSeguidos || 0;
+            const nuevoContador = (dado === 6) ? contadorActual + 1 : 0;
+            const posActual = Number(s.jugadores[window.miIdx].pos);
+            const nuevaPos = (posActual + dado) % window.mapa.length;
+
+            // 8. Paso por SALIDA
+            if (nuevaPos < posActual) {
+                runTransaction(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'), (d) => (d || 0) + 100);
+                window.log(window.nombres[window.miIdx] + " pasó por SALIDA y cobró $100.");
+            }
+
+            // 9. Actualización de estado y gestión de turno
+            if (nuevoContador === 3) {
+                window.log("¡ACUSACIÓN DE FRAUDE! " + window.nombres[window.miIdx] + " sacó tres 6.");
+                update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { pos: 9, enCarcel: 2, seisSeguidos: 0 });
+                window.pasarTurno();
+            } else {
+                update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { pos: nuevaPos, seisSeguidos: nuevoContador });
+                
+                // Si no sacó 6, pasamos turno automáticamente
+                if (dado !== 6) {
+                    window.pasarTurno();
+                } else {
+                    window.log("¡Sacaste un 6! Tienes turno extra.");
+                }
+            }
+
+            // 10. Finalización de la animación y resolución de promesa
+            setTimeout(() => {
+                if (typeof window.manejarCasilla === 'function') window.manejarCasilla(nuevaPos);
+                if (btnDado) btnDado.style.pointerEvents = 'auto';
+                resolve();
+            }, 800);
+        }).catch((err) => {
+            console.error("Error al tirar el dado:", err);
+            if (btnDado) btnDado.style.pointerEvents = 'auto';
+            resolve();
         });
-    }, 600000); // 10 minutos
-};
-
-window.abrirControlClima = function() {
-    let html = `<div class="clima-container">
-        <p>Selecciona el nuevo clima para Naeun Town:</p>`;
-    
-    window.climas.forEach((c, idx) => {
-        html += `<button class="clima-btn" onclick="window.cambiarClima(${idx}); window.cerrarModal();">
-                    <b>${c.n}</b> <small>(Mult: ${c.mult}x)</small>
-                 </button>`;
     });
-    
-    html += `</div>`;
-    window.abrirModal("☁️ Panel de Control Climático", html);
 };
 
-window.tomarControlClima = function() {
-    if (!window.esVisitante) return;
-    
-    const refControl = ref(db, 'salas/' + window.sala + '/controladorClima');
-    
-    runTransaction(refControl, (data) => {
-        const ahora = Date.now();
-        if (!data || (ahora - data.timestamp > 300000)) {
-            return { usuario: window.miIdx, timestamp: ahora };
+window.escucharTurno = function() {
+    db.ref('salas/' + window.sala + '/turno').on('value', (snap) => {
+        const turnoIdx = snap.val();
+        const centroTablero = document.getElementById('centro-tablero'); // Asegúrate de tener este ID en tu HTML
+        
+        if (centroTablero) {
+            const nombreTurno = window.nombres[turnoIdx] || "Desconocido";
+            centroTablero.innerHTML = `<h3>Turno de:</h3><div style="color:${window.colores[turnoIdx]}">${nombreTurno}</div>`;
         }
-        return; 
-    }).then((res) => {
-        if (res.committed) {
-            // En lugar de un alert, abrimos nuestro nuevo panel estilizado
-            window.abrirControlClima();
-        } else {
-            window.abrirModal("Acceso Denegado", "<p>Otro visitante ya tiene el control del clima en este momento.</p>");
+
+        // Habilitar/Deshabilitar botón de dado
+        const btnDado = document.querySelector('img[alt="Lanzar dado"]');
+        if (btnDado) {
+            btnDado.style.pointerEvents = (turnoIdx === window.miIdx) ? 'auto' : 'none';
+            btnDado.style.opacity = (turnoIdx === window.miIdx) ? '1' : '0.5';
         }
+    });
+};
+
+window.pasarTurno = function() {
+    const salaRef = ref(db, 'salas/' + window.sala);
+    
+    get(salaRef).then((snap) => {
+        const s = snap.val();
+        if (!s || !s.jugadores) return;
+
+        // Calculamos el total basándonos en las claves de los jugadores
+        const jugadoresKeys = Object.keys(s.jugadores);
+        const totalJugadores = jugadoresKeys.length;
+        
+        // Obtenemos el turno actual, por defecto 0 si no existe
+        const turnoActual = s.turno || 0;
+        
+        // Lógica de turno cíclico
+        const siguienteTurno = (turnoActual + 1) % totalJugadores;
+        
+        // Actualizamos en Firebase
+        update(salaRef, {
+            turno: siguienteTurno
+        });
+        
+        // Log informativo
+        const nombreSiguiente = s.jugadores[siguienteTurno]?.nombre || ("Jugador " + siguienteTurno);
+        window.log("Turno de: " + nombreSiguiente);
+    }).catch((error) => {
+        console.error("Error al pasar el turno:", error);
     });
 };
 
@@ -230,6 +461,7 @@ window.abrirBanco = function() {
         console.error("Error al cargar datos del banco:", error);
     });
 };
+
 
 window.solicitarPrestamo = function(monto) {
     const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
@@ -409,7 +641,7 @@ window.verPropiedad = function(pos) {
 
         const esDuenio = prop && prop.owner === window.miIdx;
         const estaHipotecada = prop && prop.hipotecada;
-        const colorClima = mult < 1 ? '#e74c3c' : '#27ae60';
+        const colorClima = mult < 1 ? '#e74c3c' : '#ff80bf';
 
         let contenido = `
             <div class="card-property">
@@ -442,6 +674,103 @@ window.verPropiedad = function(pos) {
 
         contenido += `</div></div>`;
         window.abrirModal("Tarjeta de Propiedad", contenido);
+    });
+};
+
+window.abrirIntercambio = function() {
+    let modal = document.getElementById('modal');
+    if (!modal) return;
+
+    // Usamos 'get' y 'ref' en lugar de window.db.ref
+    get(ref(db, 'salas/' + window.sala)).then((snap) => {
+        let data = snap.val();
+        if (!data || !data.propiedades) {
+            window.abrirModal("Error", "No tienes propiedades para intercambiar.");
+            return;
+        }
+
+        let misProps = Object.keys(data.propiedades).filter(idx => data.propiedades[idx].owner === window.miIdx);
+        
+        if (misProps.length === 0) {
+            window.abrirModal("Aviso", "No posees propiedades actualmente.");
+            return;
+        }
+
+        let optionsProps = misProps.map(idx => `<option value="${idx}">${window.mapa[idx].n}</option>`).join('');
+        let optionsJugadores = Object.keys(data.jugadores || {}).filter(jIdx => String(jIdx) !== String(window.miIdx)).map(jIdx => 
+            `<option value="${jIdx}">${window.nombres[jIdx]}</option>`
+        ).join('');
+
+        const contenido = `
+            <div style="display:flex; flex-direction:column; gap: 10px; width: 100%;">
+                <label><b>Selecciona propiedad:</b></label>
+                <select id="select-prop" class="input-field">${optionsProps}</select>
+                
+                <label><b>Vender a:</b></label>
+                <select id="select-jugador" class="input-field">${optionsJugadores}</select>
+                
+                <label><b>Valor de venta:</b></label>
+                <input type="number" id="input-valor" class="input-field" min="100" max="999" value="250">
+                
+                <button class="btn-sidebar" style="background:#ff80bf; color:white; margin-top:10px;" onclick="window.ejecutarIntercambio()">Confirmar Oferta</button>
+                <button class="btn-sidebar" style="background:#ffccd5;" onclick="window.cerrarModal()">Cancelar</button>
+            </div>
+        `;
+        window.abrirModal("🤝 Intercambio", contenido);
+    });
+};
+
+window.ejecutarIntercambio = function() {
+    let pIdx = document.getElementById('select-prop').value;
+    let destino = document.getElementById('select-jugador').value;
+    let valor = parseInt(document.getElementById('input-valor').value);
+
+    if (!destino) { alert("No hay jugadores disponibles."); return; }
+    if (isNaN(valor) || valor < 100 || valor > 999) {
+        alert("El valor debe estar entre 100 y 999.");
+        return;
+    }
+
+    // Usamos 'push' con 'ref'
+    push(ref(db, 'salas/' + window.sala + '/ofertas'), {
+        de: window.miIdx,
+        para: destino,
+        propiedad: pIdx,
+        precio: valor,
+        estado: 'pendiente'
+    });
+
+    alert("Oferta enviada a " + window.nombres[destino]);
+    window.cerrarModal();
+};
+
+window.escucharOfertas = function() {
+    if (!window.sala) return;
+    
+    const ofertasRef = ref(db, 'salas/' + window.sala + '/ofertas');
+    
+    onChildAdded(ofertasRef, (snap) => {
+        const o = snap.val();
+        const key = snap.key;
+
+        if (o && o.para == window.miIdx && o.estado === 'pendiente') {
+            const nombreVendedor = window.nombres[o.de] || "Jugador " + o.de;
+            window.abrirModal("¡Oferta de Venta!", `
+                <p>${nombreVendedor} te ofrece la propiedad ${o.propiedad} por <b>$${o.precio}</b></p>
+                <button class="btn-sidebar" style="background:#27ae60;" onclick="window.confirmarCompra('${key}')">Aceptar</button>
+                <button class="btn-sidebar" style="background:#e74c3c;" onclick="window.cerrarModal()">Rechazar</button>
+            `);
+        }
+    });
+};
+
+window.confirmarCompra = function(ofertaKey) {
+    const ofertaRef = ref(db, 'salas/' + window.sala + '/ofertas/' + ofertaKey);
+    
+    get(ofertaRef).then((snap) => {
+        const o = snap.val();
+        if (!o || o.estado !== 'pendiente') return;
+        window.ejecutarTransaccionCompra(o.de, o.para, o.propiedad, o.precio, ofertaKey);
     });
 };
       window.obtenerAlquilerFerrocarril = function(dueñoIdx, todasLasPropiedades) {
@@ -519,8 +848,6 @@ window.hipotecar = function(pos) {
     });
 };
 
-
-
 // --- Lógica de Misiones ---
 window.abrirModalMisiones = function() {
     const misiones = [
@@ -576,10 +903,13 @@ window.crearSala = function(salaId) {
         window.esVisitante = false;
         window.yaEntro = true;
         
+        // Enviamos con esChat: true para que vaya al chat y esRosa: true para el estilo
         push(ref(db, 'salas/' + salaId + '/chat'), { 
             n: "Sistema", 
             m: "Dog ha creado la sala.", 
-            t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+            t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            esChat: true,
+            esRosa: true 
         });
         
         window.sincronizar();
@@ -599,56 +929,97 @@ if (window.sala && window.miIdx !== undefined) {
 
 // --- 2. UNIRSE A SALA (Con Persistencia) ---
 window.unirseSala = function(salaId) {
+    // 1. Inicialización de variables
     window.sala = salaId;
     localStorage.setItem('sala', salaId);
+    
+    // 2. Generar el tablero visual ANTES de procesar los datos de Firebase
+    if (typeof window.generarTablero === 'function') {
+        window.generarTablero();
+    }
     
     const salaRef = ref(db, 'salas/' + salaId + '/jugadores');
     
     runTransaction(salaRef, (jugadores) => {
         if (!jugadores) jugadores = {};
+        
         const ocupados = Object.keys(jugadores).filter(k => !String(k).startsWith('v')).length;
         const visitantes = Object.keys(jugadores).filter(k => String(k).startsWith('v')).length;
         
-        if (ocupados < 4) {
-            window.miIdx = ocupados;
-            window.esVisitante = false;
-            jugadores[window.miIdx] = { 
-                nombre: window.nombres[window.miIdx], 
-                color: window.colores[window.miIdx], 
-                activo: true, dinero: 1500, tienePrestamo: false 
-            };
-        } else if (visitantes < 3) {
-            window.miIdx = 'v' + (visitantes + 1);
-            window.esVisitante = true;
-            jugadores[window.miIdx] = { nombre: "Citizen " + (visitantes + 1), activo: true };
+        if (ocupados < 4 || visitantes < 3) {
+            if (ocupados < 4) {
+                window.miIdx = ocupados;
+                window.esVisitante = false;
+                jugadores[window.miIdx] = { 
+                    nombre: window.nombres[window.miIdx], 
+                    color: window.colores[window.miIdx], 
+                    activo: true, 
+                    dinero: 1500, 
+                    tienePrestamo: false,
+                    pos: 0,
+                    seisSeguidos: 0
+                };
+            } else {
+                window.miIdx = 'v' + (visitantes + 1);
+                window.esVisitante = true;
+                jugadores[window.miIdx] = { 
+                    nombre: "Citizen " + (visitantes + 1), 
+                    activo: true 
+                };
+            }
+            return jugadores;
         } else {
             return;
         }
-        return jugadores;
     }).then((res) => {
         if (res.committed && window.miIdx !== undefined) {
             localStorage.setItem('miIdx', window.miIdx);
             localStorage.setItem('esVisitante', window.esVisitante);
-            window.sincronizar();
             
-            // Lógica de aviso en el chat
+            // 3. Iniciar todos los listeners de datos necesarios
+            window.sincronizar();         // Chat
+            window.sincronizarClima();    // Clima (AÑADIDO)
+            window.escucharJugadores();   // Tokens
+            
+            if (typeof window.escucharOfertas === 'function') {
+                window.escucharOfertas();
+            }
+            
             const nombreMostrar = window.esVisitante ? "Citizen " + String(window.miIdx).replace('v','') : window.nombres[window.miIdx];
+            
+            // 4. Mensajes y desconexión
             push(ref(db, 'salas/' + salaId + '/chat'), { 
                 n: "Sistema", 
                 m: nombreMostrar + " se ha unido a la partida.", 
                 t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
             });
 
-            // Configurar eliminación automática al salir
             const miRef = ref(db, 'salas/' + salaId + '/jugadores/' + window.miIdx);
+            const chatRef = ref(db, 'salas/' + salaId + '/chat');
+            
             onDisconnect(miRef).remove();
+            onDisconnect(chatRef).push({ 
+                n: "Sistema", 
+                m: nombreMostrar + " ha abandonado la partida.", 
+                t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+            });
 
-            // Modal de bienvenida con estilo CSS
             window.abrirModal("Bienvenido", `
-                <p>Lograste entrar al juego.</p>
-                <button class="btn-sidebar" style="width:100%" onclick="window.cerrarModal()">Comenzar</button>
+                <div style="text-align:center; padding:10px;">
+                    <p>Lograste entrar al juego como <b>${nombreMostrar}</b>.</p>
+                    <button class="btn-sidebar" style="width:100%; margin-top:10px;" onclick="window.cerrarModal()">Comenzar</button>
+                </div>
+            `);
+        } else {
+            window.abrirModal("Sala Llena", `
+                <div style="text-align:center; padding:10px; color: #d32f2f;">
+                    <p>Lo sentimos, la sala <b>${salaId}</b> ya no tiene plazas disponibles.</p>
+                    <button class="btn-sidebar" style="width:100%; margin-top:10px; background: #e74c3c;" onclick="window.cerrarModal()">Cerrar</button>
+                </div>
             `);
         }
+    }).catch((error) => {
+        console.error("Error al unirse a la sala:", error);
     });
 };
 
@@ -667,65 +1038,7 @@ window.enviarMensaje = function() {
     }).then(() => input.value = "");
 };
 
-window.generarTablero = function() {
-    const board = document.getElementById('board');
-    // Aseguramos que busque la zona central por clase o ID
-    const centerZone = document.querySelector('.center-zone') || document.getElementById('center-zone'); 
-    if (!board) return;
-    
-    board.innerHTML = '';
-    if (centerZone) board.appendChild(centerZone);
-    
-    // Re-añadimos los tokens (jugadores) para que no desaparezcan
-    const tokens = document.querySelectorAll('.token');
-    tokens.forEach(t => board.appendChild(t));
-    
-    mapa.forEach((casilla, i) => {
-        const d = document.createElement('div');
-        d.className = 'celda-juego';
-        d.id = 'cell-' + i;
-        d.style.gridColumn = getGridColumn(i);
-        d.style.gridRow = getGridRow(i);
-        
-        // --- HABILITAMOS EL CLICK PARA ABRIR LA TARJETA ---
-        d.style.cursor = "pointer";
-        d.onclick = () => window.verPropiedad(i);
-        // --------------------------------------------------
-        
-        let grupo = grupos.find(g => g.indices.includes(i));
-        
-        d.innerHTML = (casilla.n === "?") ? 
-            `<div class="interrogacion">?</div>` : 
-            (grupo ? 
-                `<div class="strip" style="background:${grupo.color}"></div>
-                 <div class="celda-content">
-                    <div class="nombre">${casilla.n}</div>
-                    <div class="precio">${casilla.p > 0 ? '$' + casilla.p : ''}</div>
-                 </div>` : 
-                `<div class="celda-content">
-                    <div class="nombre">${casilla.n}</div>
-                 </div>`
-            );
-        
-        board.appendChild(d);
-    });
-};
-
-window.lanzarDado3D = function() {
-    const dice = document.getElementById('dice');
-    dice.classList.remove('rolling');
-    void dice.offsetWidth; 
-    dice.classList.add('rolling');
-    setTimeout(() => {
-        const res = Math.floor(Math.random() * 6) + 1;
-        const rot = { 1: "rotateX(0deg) rotateY(0deg)", 2: "rotateX(0deg) rotateY(180deg)", 3: "rotateX(0deg) rotateY(-90deg)", 4: "rotateX(0deg) rotateY(90deg)", 5: "rotateX(-90deg) rotateY(0deg)", 6: "rotateX(90deg) rotateY(0deg)" };
-        dice.style.transform = rot[res];
-    }, 600);
-};
-
 window.mostrarAvisoReputacion = () => window.abrirModal("Reputación", "<p>Tu nivel en Naeun Town es: <b>Estrella Naciente</b></p>");
-window.abrirIntercambio = () => window.abrirModal("🤝 Intercambio", "<p>Esperando conexión con otro jugador...</p>");
-
 // Listener para enviar mensaje con la tecla ENTER
 document.addEventListener('DOMContentLoaded', () => {
     const chatInput = document.getElementById('chat-msg');
