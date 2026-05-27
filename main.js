@@ -379,50 +379,16 @@ window.cerrarModal = function() {
     if (modal) modal.style.display = 'none';
 };
 
-// 1. ANIMACIÓN DEL DADO 3D
-window.lanzarDado3D = function(resultado) {
-    // Protección contra valores nulos o indefinidos
-    if (resultado === undefined || resultado === null) return;
-
-    const dice = document.getElementById('dice');
-    if (!dice) return;
-
-    // 1. Reiniciamos la animación: quitamos la clase y forzamos reflow
-    dice.classList.remove('rolling');
-    void dice.offsetWidth; 
-    
-    // 2. Aplicamos la animación
-    dice.classList.add('rolling');
-
-    const rot = { 
-        1: "rotateX(0deg) rotateY(0deg)", 
-        2: "rotateX(0deg) rotateY(180deg)", 
-        3: "rotateX(0deg) rotateY(-90deg)", 
-        4: "rotateX(0deg) rotateY(90deg)", 
-        5: "rotateX(-90deg) rotateY(0deg)", 
-        6: "rotateX(90deg) rotateY(0deg)" 
-    };
-
-    const transformacion = rot[resultado];
-    
-    // 3. Al finalizar la animación (600ms), fijamos la cara
-    setTimeout(() => {
-        // ELIMINAMOS 'rolling' para que el CSS no sobrescriba nuestro transform
-        dice.classList.remove('rolling'); 
-        
-        if(transformacion) {
-            dice.style.transform = transformacion;
-        }
-    }, 600);
-};
-
 // --- 2. LÓGICA DE TIRAR DADO Y MOVER ---
 window.estaLanzando = false;
 window.tirarDado = async function() {
-    // 1. Verificaciones iniciales
-    if (typeof window.miIdx === 'undefined' || window.miIdx === -1) return;
+    // 1. Verificaciones iniciales y bloqueo de doble clic
+    if (typeof window.miIdx === 'undefined' || window.miIdx === -1 || window.estaLanzando) return;
 
     const btnDado = document.querySelector('img[alt="Lanzar dado"]') || document.getElementById('dice');
+    
+    // Activamos el bloqueo
+    window.estaLanzando = true;
     if (btnDado) btnDado.style.pointerEvents = 'none';
 
     try {
@@ -432,6 +398,7 @@ window.tirarDado = async function() {
 
         // Validar turno y estado
         if (!s || s.turno !== window.miIdx || s.estado !== "jugando") {
+            window.estaLanzando = false;
             if (btnDado) btnDado.style.pointerEvents = 'auto';
             return;
         }
@@ -440,6 +407,7 @@ window.tirarDado = async function() {
         if (s.jugadores[window.miIdx].enCarcel > 0) {
             window.anunciar(window.nombres[window.miIdx] + " está en la cárcel.");
             window.pasarTurno();
+            window.estaLanzando = false;
             if (btnDado) btnDado.style.pointerEvents = 'auto';
             return;
         }
@@ -451,17 +419,19 @@ window.tirarDado = async function() {
         
         // 3. Calcular posición exacta
         const posActual = Number(s.jugadores[window.miIdx].pos) || 0;
-        const mapaLong = window.mapa ? window.mapa.length : 28;
-        const nuevaPos = (posActual + dado) % mapaLong;
+        const TAMANO_TABLERO = 28; 
+        const nuevaPos = (posActual + dado) % TAMANO_TABLERO;
 
-        // --- Log de depuración ---
-        console.log("DEBUG: Pos actual:", posActual, "| Dado:", dado, "| Nueva Pos:", nuevaPos);
+        console.log(`DEBUG: Posición Actual (${posActual}) + Dado (${dado}) = Nueva Posición (${nuevaPos})`);
 
-        // 4. Animación visual
+        // 4. ANIMACIÓN SINCRONIZADA (LLAMADA ÚNICA)
         window.lanzarDado3D(dado);
         if(document.getElementById('dado-valor')) document.getElementById('dado-valor').innerText = dado;
+        
+        // Pausa forzada para que la animación se vea antes de mover el token
+        await new Promise(resolve => setTimeout(resolve, 700));
 
-        // 5. Actualización Visual Optimista
+        // 5. Actualización Visual
         if (typeof window.actualizarTokens === 'function') {
             const tempJugadores = JSON.parse(JSON.stringify(s.jugadores));
             tempJugadores[window.miIdx].pos = nuevaPos;
@@ -496,16 +466,47 @@ window.tirarDado = async function() {
             else window.anunciar("¡Sacaste un 6! Tienes turno extra.");
         }
 
-        // 8. Manejo final
-        setTimeout(async () => {
-            if (typeof window.manejarCasilla === 'function') await window.manejarCasilla(nuevaPos);
-            if (btnDado) btnDado.style.pointerEvents = 'auto';
-        }, 1200);
+        // 8. Manejo final (Casilla)
+        if (typeof window.manejarCasilla === 'function') await window.manejarCasilla(nuevaPos);
 
     } catch (error) {
         console.error("Error crítico en tirarDado:", error);
+    } finally {
+        window.estaLanzando = false;
         if (btnDado) btnDado.style.pointerEvents = 'auto';
     }
+};
+
+window.lanzarDado3D = function(resultado) {
+    console.log("--- Lógica 3D forzada para el número:", resultado);
+    
+    const dice = document.getElementById('dice');
+    if (!dice) return;
+
+    // 1. Limpiar TODAS las interferencias visuales
+    dice.classList.remove('rolling');
+    dice.style.animation = "none"; // Mata cualquier animación CSS activa
+    dice.style.transition = "none"; // Elimina transiciones para saltar directo a la posición
+    
+    // 2. Mapeo geométrico (Ajusta estos valores según la cara real que veas)
+    const rot = { 
+        1: "rotateX(0deg) rotateY(0deg)", 
+        2: "rotateX(0deg) rotateY(-90deg)", 
+        3: "rotateX(-90deg) rotateY(0deg)", 
+        4: "rotateX(90deg) rotateY(0deg)", 
+        5: "rotateX(0deg) rotateY(90deg)", 
+        6: "rotateX(0deg) rotateY(180deg)" 
+    };
+
+    const transformacion = rot[resultado];
+    
+    // 3. Forzar el cambio (Reflow)
+    void dice.offsetWidth; 
+    
+    // 4. Aplicar la rotación final sin transiciones que estorben
+    dice.style.transform = transformacion;
+    
+    console.log("Dado visual posicionado en:", transformacion);
 };
 
 // --- 3. ACTUALIZAR TOKENS (Renderizado Visual) ---
@@ -1270,27 +1271,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- CONFIGURACIÓN DEL EVENTO DEL DADO ---
 (function() {
-    // Intentamos asignar el clic de forma persistente
     const configurarDado = () => {
-        const btnDado = document.getElementById('dice') || document.querySelector('img[alt="Lanzar dado"]');
-        
-        if (btnDado) {
-            btnDado.style.cursor = "pointer"; // Indica que es interactivo
-            btnDado.onclick = function() {
-                console.log("Clic detectado en el dado. Ejecutando window.tirarDado()...");
+        const dice = document.getElementById('dice');
+        if (dice) {
+            // Eliminar listeners previos clonando el nodo
+            const nuevoDice = dice.cloneNode(true);
+            dice.parentNode.replaceChild(nuevoDice, dice);
+            
+            // Asignar el evento único
+            nuevoDice.onclick = function(e) {
+                e.stopPropagation(); // Evita que se dispare dos veces
                 if (typeof window.tirarDado === 'function') {
                     window.tirarDado();
-                } else {
-                    console.error("Error: window.tirarDado no está definida.");
                 }
             };
-            console.log("Evento del dado configurado correctamente.");
+            console.log("Evento del dado configurado: Control único centralizado.");
         } else {
-            // Si el elemento no ha aparecido, reintentamos en 1 segundo
             setTimeout(configurarDado, 1000);
         }
     };
-
     configurarDado();
 })();
 
