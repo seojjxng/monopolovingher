@@ -20,6 +20,35 @@
 <div class="game-layout">
     <div class="main-column">
         <div class="board" id="board">
+            <div id="cell-0" class="celda-juego"></div>
+            <div id="cell-1" class="celda-juego"></div>
+            <div id="cell-2" class="celda-juego"></div>
+            <div id="cell-3" class="celda-juego"></div>
+            <div id="cell-4" class="celda-juego"></div>
+            <div id="cell-5" class="celda-juego"></div>
+            <div id="cell-6" class="celda-juego"></div>
+            <div id="cell-7" class="celda-juego"></div>
+            <div id="cell-8" class="celda-juego"></div>
+            <div id="cell-9" class="celda-juego"></div>
+            <div id="cell-10" class="celda-juego"></div>
+            <div id="cell-11" class="celda-juego"></div>
+            <div id="cell-12" class="celda-juego"></div>
+            <div id="cell-13" class="celda-juego"></div>
+            <div id="cell-14" class="celda-juego"></div>
+            <div id="cell-15" class="celda-juego"></div>
+            <div id="cell-16" class="celda-juego"></div>
+            <div id="cell-17" class="celda-juego"></div>
+            <div id="cell-18" class="celda-juego"></div>
+            <div id="cell-19" class="celda-juego"></div>
+            <div id="cell-20" class="celda-juego"></div>
+            <div id="cell-21" class="celda-juego"></div>
+            <div id="cell-22" class="celda-juego"></div>
+            <div id="cell-23" class="celda-juego"></div>
+            <div id="cell-24" class="celda-juego"></div>
+            <div id="cell-25" class="celda-juego"></div>
+            <div id="cell-26" class="celda-juego"></div>
+            <div id="cell-27" class="celda-juego"></div>
+
             <div class="center-zone" id="center-zone">
                 <div class="reputacion-label" onclick="mostrarAvisoReputacion()">Reputación</div>
                 <div class="estrellas-container">
@@ -29,7 +58,10 @@
                     <span class="estrella" id="star-4">★</span>
                     <span class="estrella" id="star-5">★</span>
                 </div>
+                
                 <div id="clima-display">Clima: -</div>
+                <div id="turno-display" style="margin: 5px 0; font-size: 0.9em; font-weight: bold; color: #ff59aa;">Turno: Esperando...</div>
+                
                 <div class="dice-container" onclick="lanzarDado3D()">
                     <div id="dice" class="dice">
                         <div class="face front"><div class="dot show" style="grid-area: 2 / 2;"></div></div>
@@ -40,6 +72,7 @@
                         <div class="face bottom"><div class="dot show" style="grid-area: 1 / 1;"></div><div class="dot show" style="grid-area: 1 / 3;"></div><div class="dot show" style="grid-area: 3 / 1;"></div><div class="dot show" style="grid-area: 3 / 3;"></div></div>
                     </div>
                 </div>
+                
                 <div class="saldo-container">
                     <div class="moneda-icono">$</div> 
                     Saldo: $<span id="dinero-mio">1000</span>
@@ -80,7 +113,6 @@
                     onclick="window.iniciarPartida()">
                 ▶️ Iniciar Partida
             </button>
-
             <button class="btn-sidebar" style="width: 100%; padding: 12px; background: #6c5ce7; color: white; border: none; cursor: pointer; border-radius: 5px;" 
                     onclick="window.tomarControlClima()">
                 ☁️ Controlar Clima
