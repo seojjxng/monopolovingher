@@ -132,38 +132,6 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
     font-weight: bold;
 }
 .input-field { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ffccd5; border-radius: 8px; }
-.center-zone { 
-
-    grid-column: 3 / 7; 
-
-    grid-row: 3 / 7; 
-
-    background: #fff5f7; 
-
-    border: 3px dashed #ff80bf; 
-
-    display: flex; 
-
-    flex-direction: column; 
-
-    align-items: center; 
-
-    justify-content: center; 
-
-    padding: 10px;
-
-    border-radius: 15px; 
-
-    z-index: 999; /* Mucho más alto para que nada lo tape */
-
-    position: relative;
-
-    pointer-events: auto; /* Asegura que los clicks funcionen */
-
-}
-
-    
-
 /* Modales - Centrado y Estandarizado */
 
 #modal {
@@ -239,15 +207,31 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 .interrogacion { font-size: 32px; font-weight: bold; color: #ff59aa; flex-grow: 1; display: flex; align-items: center; justify-content: center; }
 
 /* CENTER ZONE (Ahora ocupa exactamente el centro) */
-.center-zone { grid-column: 3 / 7; grid-row: 3 / 7; background: #fff5f7; border: 3px dashed #ff80bf; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; border-radius: 10px; gap: 5px; padding: 10px; }
-.reputacion-label { cursor: pointer; font-size: 11px; font-weight: bold; color: #ff59aa; }
+.center-zone {
+    grid-column: 3 / 7;
+    grid-row: 3 / 7;
+    background: #fff5f7;
+    border: 3px dashed #ff80bf;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0px; /* Ajusta este valor: 0px para muy cerca, 5px para un poco más de aire */
+    padding: 5px; /* Reduje el padding para ganar espacio interior */
+    border-radius: 15px;
+    z-index: 999; /* Prioridad máxima para que no lo tape nada */
+    position: relative;
+    pointer-events: auto;
+}
+.reputacion-label { cursor: pointer; position: relative;
+    top: 10px; font-size: 11px; font-weight: bold; color: #ff59aa; }
 .estrellas-container { display: flex; gap: 4px; justify-content: center; margin: 5px 0; }
 .estrella { font-size: 20px; color: #ffdceb; }
 .estrella.activa { color: #ff59aa; }
-#clima-display { font-size: 12px; color: #ff59aa; font-weight: bold; margin: 5px 0; }
+#clima-display { font-size: 12px; color: #ff59aa;margin: -0px 0 5px 0 !important; font-weight: bold; }
 
 /* DADO (Rotación original rápida) */
-.dice-container { perspective: 800px; width: 40px; height: 40px; cursor: pointer; margin: 10px 0; }
+.dice-container { perspective: 800px; width: 40px; height: 40px; cursor: pointer; margin: 25px 0 5px 0; transform: translateY(-20px); }
 .dice { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 0.6s ease-out; }
 .face { position: absolute; width: 40px; height: 40px; background: white; border: 1px solid #ff80bf; border-radius: 6px; display: grid; grid-template-columns: repeat(3, 1fr); padding: 5px; backface-visibility: hidden; }
 .dot { width: 8px; height: 8px; background: #ff59aa; border-radius: 50%; visibility: hidden; }
@@ -266,9 +250,34 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 .rolling { animation: girarDado 0.6s ease-out forwards; }
 
 /* SALDO Y MISIONES (Botón original con gradient) */
-.saldo-container { background: #fff5f7; padding: 6px 15px; border-radius: 20px; border: 1px solid #ff80bf; color: #c71585; font-weight: bold; display: flex; align-items: center; gap: 8px; }
-.moneda-icono { width: 20px; height: 20px; background: #ff59aa; border-radius: 50%; color: white; display: flex; justify-content: center; align-items: center; }
-.btn-misiones { background: linear-gradient(135deg, #ff80bf, #ff59aa); color: white; border: none; padding: 8px 16px; border-radius: 20px; font-weight: bold; cursor: pointer; }
+.saldo-container {
+    background: #fff5f7;
+    padding: 6px 15px;
+    border-radius: 20px;
+    border: 1px solid #ff80bf;
+    color: #c71585;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* Esta es la forma más limpia de subirlo sin romper el Flexbox */
+    margin-top: -50px !important; 
+
+    /* Asegura que esté por encima de otros elementos si se enciman */
+    z-index: 10;
+}
+.moneda-icono {
+    width: 20px;
+    height: 20px;
+    background: #ff59aa;
+    border-radius: 50%;
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    /* Elimina el translateY de aquí, no lo necesitas */
+}
+.btn-misiones { background: linear-gradient(135deg, #ff80bf, #ff59aa); color: white; margin-top: 10px; border: none; padding: 8px 16px; border-radius: 20px; font-weight: bold; cursor: pointer; }
 
 /* SIDEBAR, PANEL, ACCIONES (Manteniendo tu estructura estable) */
 .sidebar {
