@@ -486,7 +486,7 @@ window.unirseComoVisitante = async function(salaId, esCreacion, nombreVisitante 
             estado: "esperando",
             creador: nuevoRol,
             jugadores: { 
-                [nuevoRol]: { nombre: nombreVisitante, activo: true, pos: 0 } 
+                [nuevoRol]: { nombre: nombreVisitante, activo: true, pos: 0, dinero: 2000 } 
             }
         };
         await set(ref(db, 'salas/' + salaId), roomData);
@@ -494,24 +494,30 @@ window.unirseComoVisitante = async function(salaId, esCreacion, nombreVisitante 
         window.creadorSala = nuevoRol;
     } else {
         const dbRef = ref(db, 'salas/' + salaId + '/jugadores');
-        // Usamos una transacción para asignar el ID v2, v3, etc.
         const res = await runTransaction(dbRef, (jugadores) => {
             if (!jugadores) jugadores = {};
-            const visitantes = Object.keys(jugadores).filter(k => k.startsWith('v')).length;
-            const nuevoRol = 'v' + (visitantes + 1);
-            jugadores[nuevoRol] = { nombre: nombreVisitante + " " + (visitantes + 1), activo: true, pos: 0 };
+            const numVisitantes = Object.keys(jugadores).filter(k => k.startsWith('v')).length;
+            const nuevoRol = 'v' + (numVisitantes + 1);
+            jugadores[nuevoRol] = { 
+                nombre: nombreVisitante + " " + (numVisitantes + 1), 
+                activo: true, 
+                pos: 0, 
+                dinero: 2000 
+            };
             window.miIdx = nuevoRol;
             return jugadores;
         });
-        if (!res.committed) return; // Si falló la transacción
+        if (!res.committed) return;
     }
 
-    // --- INICIALIZACIÓN DE DATOS Y REPUTACIÓN ---
-    // Guardamos los datos iniciales del visitante en su nodo dedicado
+    // --- INICIALIZACIÓN DE DATOS ---
+    // Usamos window.miIdx directamente, que ya está definido arriba
     const visitanteRef = ref(db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
     await set(visitanteRef, {
         nombre: nombreVisitante,
-        reputacion: 0,        // Comienza en 0 como pediste
+        activo: true, 
+        pos: 0, 
+        reputacion: 0,
         misionesCompletadas: 0
     });
 
@@ -519,10 +525,7 @@ window.unirseComoVisitante = async function(salaId, esCreacion, nombreVisitante 
     window.cerrarModal();
     window.anunciarEnChat(salaId, "Un visitante se ha unido a la partida.");
     window.actualizarBotonesPoderes();
-    
-    // Renderizamos las estrellas iniciales (0)
     window.renderEstrellas(0);
-    
     window.abrirModal("Éxito", `<p>Entraste como <b>Visitante</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
     window.sincronizar();
 };
@@ -548,14 +551,112 @@ window.anunciarEnChat = function(salaId, mensaje) {
 };
 
 // --- 6. Poderes de Visitante ---
+// --- 1. MENÚ DE PODERES ORDENADO Y FILTRADO ---
 window.actualizarBotonesPoderes = function() {
     const sidebar = document.querySelector('.sidebar');
-    if (window.esVisitante && sidebar && !document.getElementById("btn-clima")) {
-        const divPoderes = document.createElement('div');
-        divPoderes.id = "btn-clima";
-        divPoderes.innerHTML = `<button class="btn-sidebar" style="background: #6c5ce7; margin-top:10px; width:100%;" onclick="window.tomarControlClima()">☁️ Controlar Clima</button>`;
-        sidebar.appendChild(divPoderes);
+    if (window.esVisitante && sidebar && !document.getElementById("container-poderes")) {
+        const container = document.createElement('div');
+        container.id = "container-poderes";
+        // CSS Grid para ordenar botones en pares y que se vea profesional
+        container.innerHTML = `
+            <h4 style="color:#ff59aa; margin:15px 0 10px; text-align:center; border-bottom:1px solid #ffdde2;">
+                <i class="fas fa-magic"></i> Poderes
+            </h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                <button class="btn-sidebar" onclick="window.abrirMenuProteccion()" style="padding: 5px; font-size: 0.8em;"><i class="fas fa-shield-alt"></i> Escudo</button>
+                <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.05, 300)" style="padding: 5px; font-size: 0.8em;"><i class="fas fa-chart-line"></i> Sabotaje 5%</button>
+                <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.10, 500)" style="padding: 5px; font-size: 0.8em;"><i class="fas fa-biohazard"></i> Sabotaje 10%</button>
+                <button class="btn-sidebar" onclick="window.tomarControlClima()" style="padding: 5px; font-size: 0.8em;"><i class="fas fa-cloud-sun"></i> Clima</button>
+            </div>
+            <button class="btn-sidebar" onclick="window.pagarFianzaVisitante()" style="margin-top:5px; width:100%; padding: 5px;"><i class="fas fa-unlock"></i> Pagar Fianza ($300)</button>
+        `;
+        sidebar.appendChild(container);
     }
+};
+
+// --- 2. SELECCIÓN DE JUGADOR (FILTRO: SOLO JUGADORES, NO VISITANTES) ---
+window.abrirMenuProteccion = async function() {
+    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
+    let html = `<div class="modal-content"><p>Protege a un jugador (los visitantes no pueden ser protegidos):</p>`;
+    
+    snap.forEach(c => {
+        // FILTRO: Solo mostrar si no empieza con 'v' (visitante)
+        if (!c.key.startsWith('v')) {
+            html += `<button class="btn-accion" style="margin-bottom:5px; width:100%" onclick="window.activarEscudo('${c.key}'); window.cerrarModal()">
+                        <i class="fas fa-user-shield"></i> ${c.key}
+                     </button>`;
+        }
+    });
+    
+    html += `<button class="btn-cerrar" style="width:100%" onclick="window.cerrarModal()">Cancelar</button></div>`;
+    window.abrirModal("🛡️ Proteger Ciudadano", html);
+};
+
+// --- 3. LÓGICA DE ESCUDO CON NOTIFICACIÓN EN LOG ---
+window.activarEscudo = async function(jugadorIdx) {
+    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + jugadorIdx);
+    const nombreVisitante = window.nombres[window.miIdx] || "Visitante";
+    
+    await update(jRef, { 
+        tieneEscudo: true,
+        protegidoPor: window.miIdx,
+        timestampEscudo: Date.now() 
+    });
+    
+    // Notificar al log global
+    window.log(`🛡️ ${nombreVisitante} ha establecido un contrato de protección para ${jugadorIdx}. ¡Cobrarán el 50% de sus ganancias!`);
+    
+    window.abrirModal("¡Protección Activa!", `<div class="modal-content"><p>Ahora proteges a <b>${jugadorIdx}</b>.</p><button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button></div>`);
+};
+
+// --- 4. SELECCIÓN DE OBJETIVO PARA SABOTAJE (EVITA VISITANTES) ---
+window.seleccionarObjetivoSabotaje = async function(porcentaje, costo) {
+    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
+    let html = `<div class="modal-content"><p>Elige a quién sabotear (${porcentaje*100}%):</p>`;
+    
+    snap.forEach(c => {
+        if (!c.key.startsWith('v')) {
+            html += `<button class="btn-accion" style="margin-bottom:5px; width:100%" 
+                        onclick="window.ejecutarSabotaje('${c.key}', ${porcentaje}, ${costo}); window.cerrarModal()">
+                        <i class="fas fa-skull"></i> ${c.key}
+                     </button>`;
+        }
+    });
+    
+    html += `<button class="btn-cerrar" style="width:100%" onclick="window.cerrarModal()">Cancelar</button></div>`;
+    window.abrirModal("💥 Sabotaje", html);
+};
+
+window.ejecutarSabotaje = async function(objetivoIdx, porcentaje, costo) {
+    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + objetivoIdx);
+    const snap = await get(jRef);
+    const j = snap.val();
+
+    if (j.tieneEscudo) {
+        window.abrirModal("Bloqueado", `<div class="modal-content"><p><i class="fas fa-ban"></i> ¡El jugador tiene un escudo activo!</p></div>`);
+        return;
+    }
+    
+    await update(jRef, { dinero: increment(-(j.dinero * porcentaje)) });
+    await update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { dinero: increment(-costo) });
+    
+    window.log(`💥 ${window.nombres[window.miIdx]} saboteó a ${objetivoIdx} restándole el ${porcentaje*100}%.`);
+};
+
+// --- 5. LÓGICA DE COMISIÓN 50% ---
+// Esta función debe ejecutarse cuando alguien paga alquiler
+window.procesarAlquiler = async function(propietarioIdx, monto) {
+    const propRef = ref(db, 'salas/' + window.sala + '/jugadores/' + propietarioIdx);
+    const snap = await get(propRef);
+    const propietario = snap.val();
+
+    if (propietario.tieneEscudo && propietario.protegidoPor) {
+        const comision = monto * 0.5;
+        const visitanteRef = ref(db, 'salas/' + window.sala + '/jugadores/' + propietario.protegidoPor);
+        await update(visitanteRef, { dinero: increment(comision) });
+        window.log(`💰 ¡Comisión recibida! $${comision} por proteger a ${propietarioIdx}.`);
+    }
+    await update(propRef, { dinero: increment(monto) });
 };
 
 window.abrirControlClima = function() {
@@ -1075,19 +1176,31 @@ window.verSaldos = function() {
     const jugadoresRef = ref(db, 'salas/' + window.sala + '/jugadores');
 
     get(jugadoresRef).then((snap) => {
-        // Usamos .modal-content para el estilo rosa y el .btn-cerrar-x
-        let txt = `<div class="abrirModal">
-                     <h2 style="color: #ff59aa; margin-top: 0;">Saldos</h2>
+        let txt = `<div class="modal-content">
+                     <h2 style="color: #ff59aa; margin-top: 0; text-align: center;">Saldos</h2>
                      <div style="max-height: 300px; overflow-y: auto; text-align: left;">
                        <ul style='list-style:none; padding:0; margin:10px 0;'>`;
         
         snap.forEach(c => {
             let j = c.val();
-            let nombre = c.key.startsWith('v') ? "Citizen " + c.key.replace('v','') : c.key;
-            let dinero = (j.dinero !== undefined) ? j.dinero : 1500;
+            let key = c.key.toString();
+            
+            // FILTRO ESTRICTO: 
+            // Un visitante es SOLAMENTE si la clave empieza por 'v' minúscula.
+            // Si tu clave es "v1", "v2", etc., esto funcionará.
+            let esVisitante = key.startsWith('v') && key.length > 1; 
+            
+            let nombre = esVisitante ? "Citizen " + key.replace('v','') : key;
+            
+            // LÓGICA DE SALDO:
+            // Aseguramos que si es ciudadano (no visitante), el saldo inicial sea 1000
+            let saldoInicial = esVisitante ? 2000 : 1000;
+            
+            // Si j.dinero no existe, asignamos el inicial, SI NO, usamos el que tiene en BD
+            let dinero = (j.dinero !== undefined && j.dinero !== null) ? j.dinero : saldoInicial;
             
             txt += `<li style="margin-bottom: 8px; border-bottom: 1px solid #ffdde2; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                        <span style="font-weight:bold; color:#555;">${nombre}</span> 
+                        <span style="font-weight:bold; color:#555;">${nombre} ${esVisitante ? '<i class="fas fa-shield-alt" style="color:#6c5ce7"></i>' : ''}</span> 
                         <span style="color:#ff59aa;">$${dinero}</span>
                     </li>`;
         });
@@ -1096,7 +1209,7 @@ window.verSaldos = function() {
                 <button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Cerrar</button>
                 </div>`;
         
-        window.abrirModal("Saldos", txt);
+        window.abrirModal("🏦 Saldos", txt);
     });
 };
 
