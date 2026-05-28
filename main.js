@@ -411,13 +411,23 @@ window.modalSeleccionRol = function(salaId, esCreacion) {
 window.procesarUnion = async function(salaId, rol, esCreacion) {
     window.sala = salaId;
     
+    // Objeto base con los campos de reputación e intentos
+    const datosJugador = { 
+        nombre: rol, 
+        dinero: 1500, 
+        pos: 0, 
+        activo: true, 
+        intentosFallidos: 0, 
+        estrellas: 5 
+    };
+    
     if (esCreacion) {
         // Inicialización completa de la sala como creador
         const roomData = {
             estado: "esperando",
-            creador: rol, // Guardamos al creador aquí
+            creador: rol,
             jugadores: { 
-                [rol]: { nombre: rol, dinero: 1500, pos: 0, activo: true } 
+                [rol]: datosJugador 
             }
         };
         await set(ref(db, 'salas/' + salaId), roomData);
@@ -437,7 +447,7 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
             if (!jugadores) jugadores = {};
             if (jugadores[rol]) return; // Ya ocupado
             
-            jugadores[rol] = { nombre: rol, dinero: 1500, pos: 0, activo: true };
+            jugadores[rol] = datosJugador;
             return jugadores;
         }).then((res) => {
             if (res.committed) {
@@ -1211,7 +1221,7 @@ window.verSaldos = function() {
     const jugadoresRef = ref(db, 'salas/' + window.sala + '/jugadores');
 
     get(jugadoresRef).then((snap) => {
-        let txt = `<div class="modal-content">
+        let txt = `<div class="abrirModal">
                      <h2 style="color: #ff59aa; margin-top: 0; text-align: center;">Saldos</h2>
                      <div style="max-height: 300px; overflow-y: auto; text-align: left;">
                        <ul style='list-style:none; padding:0; margin:10px 0;'>`;
@@ -1258,11 +1268,12 @@ window.abrirPagar = function() {
         if (j && j.tienePrestamo) {
             contenido = `
                 <p>Saldo pendiente: <b>$${j.montoPrestamo}</b></p>
-                <button style="width:100%; margin-top: 10px;" onclick="window.pagarPrestamo()">Liquidar Préstamo</button>
-                <button style="width:100%; margin-top: 5px;" onclick="window.cerrarModal()">Cancelar</button>`;
+                <button class="btn-accion" style="width:100%; margin-top: 10px;" onclick="window.pagarPrestamo()">Liquidar Préstamo</button>
+                <button class="btn-accion" style="width:100%; margin-top: 5px; background: #4a4a4a;" onclick="window.cerrarModal()">Cancelar</button>`;
         } else {
-            contenido = `<p>No tienes deudas pendientes.</p>
-                         <button style="width:100%;" onclick="window.cerrarModal()">Aceptar</button>`;
+            contenido = `
+                <p>No tienes deudas pendientes.</p>
+                <button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Aceptar</button>`;
         }
         
         window.abrirModal("Gestión Bancaria", contenido);
@@ -1349,7 +1360,21 @@ window.comprar = function(pos) {
             window.log("Has comprado " + window.mapa[pos].n);
             window.cerrarModal();
         } else {
-            alert("Dinero insuficiente.");
+            // Ventana emergente con estilo CSS y opción de préstamo
+            window.abrirModal("Fondos insuficientes", `
+                <div style="text-align: center; padding: 10px;">
+                    <p>No tienes suficiente dinero para esta compra.</p>
+                    <p>¿Deseas solicitar un préstamo de <b>$1000</b>?</p>
+                    
+                    <button class="btn-accion" style="width: 100%; margin-bottom: 10px;" onclick="window.solicitarPrestamo(1000); window.cerrarModal();">
+                        Solicitar Préstamo ($1000)
+                    </button>
+                    
+                    <button class="btn-accion" style="width: 100%; background: #4a4a4a;" onclick="window.cerrarModal()">
+                        Cancelar
+                    </button>
+                </div>
+            `);
         }
     });
 };
@@ -1536,15 +1561,6 @@ window.escucharOfertas = function() {
     });
 };
 
-window.confirmarCompra = function(ofertaKey) {
-    const ofertaRef = ref(db, 'salas/' + window.sala + '/ofertas/' + ofertaKey);
-    get(ofertaRef).then((snap) => {
-        const o = snap.val();
-        if (!o || o.estado !== 'pendiente') return;
-        window.ejecutarTransaccionCompra(o.de, o.para, o.propiedad, o.precio, ofertaKey);
-    });
-};
-
 window.ejecutarTransaccionCompra = function(vendedorIdx, compradorIdx, pos, precio, ofertaKey) {
     const vRef = ref(db, 'salas/' + window.sala + '/jugadores/' + vendedorIdx);
     const cRef = ref(db, 'salas/' + window.sala + '/jugadores/' + compradorIdx);
@@ -1578,6 +1594,61 @@ window.pagarAlquiler = function(ownerIdx, monto) {
         window.log("Alquiler de $" + monto + " pagado.");
         window.cerrarModal();
     });
+};
+
+// 1. Interfaz para que el jugador elija qué hacer
+window.interaccionAlquiler = function(ownerIdx, monto) {
+    const contenido = `
+        <h3>Alquiler de $${monto}</h3>
+        <p>¿Qué deseas hacer?</p>
+        <button class="btn-accion" onclick="window.procesarEvasion('${ownerIdx}', ${monto})">Intentar Evadir</button>
+        <button class="btn-accion" style="background:#ff59aa;" onclick="window.confirmarPago('${ownerIdx}', ${monto})">Pagar normal</button>
+    `;
+    window.abrirModal("Alquiler", contenido);
+};
+
+// 2. Ejecuta el pago normal si el jugador no quiere arriesgarse
+window.confirmarPago = async function(ownerIdx, monto) {
+    // Llamamos a la función de pago existente
+    window.pagarAlquiler(ownerIdx, monto);
+    window.cerrarModal();
+};
+
+// 3. Lógica principal de evasión con azar y penalizaciones
+window.procesarEvasion = async function(ownerIdx, monto) {
+    const exito = Math.random() < 0.4; // 40% de éxito
+    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const snap = await get(jugadorRef);
+    let j = snap.val();
+
+    if (exito) {
+        // Cálculo del éxito (reducción aleatoria)
+        const azar = Math.random();
+        let montoFinal = (azar < 0.3) ? monto * 0.9 : (azar < 0.6) ? monto * 0.95 : 0;
+        
+        window.log(`🎉 ¡Éxito! ${window.miIdx} evadió el pago exitosamente.`);
+        window.pagarAlquiler(ownerIdx, montoFinal);
+    } else {
+        // Fallo: Se paga multa + alquiler original
+        const multa = 100 + monto;
+        
+        // Manejo de intentos fallidos y reputación
+        let intentos = (j.intentosFallidos || 0) + 1;
+        let updates = { intentosFallidos: intentos };
+        
+        // Penalización: al llegar a 10 fallos, se descuenta 1 estrella
+        if (intentos >= 10) {
+            updates.intentosFallidos = 0;
+            updates.estrellas = (j.estrellas || 5) - 1;
+            window.log(`⚠️ ${window.miIdx} perdió 1 estrella por evasión recurrente.`);
+        }
+        
+        await update(jugadorRef, updates);
+        window.log(`❌ ¡Falló la evasión! ${window.miIdx} paga una multa de $100.`);
+        window.pagarAlquiler(ownerIdx, multa);
+    }
+    // Cerramos el modal tras procesar la acción
+    window.cerrarModal();
 };
 
 window.mejorar = function(pos) {
@@ -1680,7 +1751,8 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
                 const trans = [8, 24, 26, 27];
                 const count = trans.filter(i => data.propiedades && data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
                 const alquiler = { 1: 100, 2: 150, 3: 250, 4: 300 }[count] || 100;
-                window.pagarAlquiler(prop.owner, alquiler);
+                window.interaccionAlquiler(prop.owner, alquiler);
+                
                 window.verPropiedad(posInt, false);
             }
         } else window.verPropiedad(posInt, false);
