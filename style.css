@@ -96,7 +96,7 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 #banco-container { display: flex; gap: 5px; justify-content: center; }
 #modo-2v2-container { margin-top: 10px; }
 /* Botones - Ajustados para que no se deformen */
-.btn { width: 100%; padding: 10px; background: #ff59aa; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 12px; }
+.btn { width: 100%; padding: 10px; background: #ff59aa; color: #d24285; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 12px; }
 #banco-container .btn { width: auto; flex: 1; font-size: 10px; padding: 8px 5px; }
 /* Ajustes críticos para Chat y Log */
 #game-log, #chat-log { 
@@ -199,21 +199,6 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 .modal-hidden {
     display: none !important; 
 }
-
-.btn-cerrar-x {
-
-    position: absolute;
-
-    top: 10px;
-
-    right: 15px;
-
-    font-size: 35px;
-
-    cursor: pointer;
-
-    color: #c71585;
-}
 .board div[id^="cell-"] {
     background: #ffffff;
     border: 1px solid #ffccd5;
@@ -297,10 +282,10 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 .panel { background: #ffffff; padding: 15px; border-radius: 15px; border: 2px solid #ffccd5; flex-grow: 1; min-height: 400px; display: flex; flex-direction: column; gap: 10px; }
 .scroll-box { flex-grow: 1; background: #fff5f7; border: 1px solid #ffccd5; border-radius: 8px; padding: 8px; overflow-y: auto; font-size: 12px; min-height: 100px; }
 .input-field { padding: 8px; border: 1px solid #ffccd5; border-radius: 8px; width: 100%; }
-.btn-sidebar { padding: 10px; border: none; border-radius: 10px; flex-grow: 1; background: #ffccd5; color: #c71585; font-weight: bold; cursor: pointer; }
+.btn-sidebar { padding: 10px; border: none; border-radius: 10px; flex-grow: 0; background: #ffccd5; color: #c71585; font-weight: bold; cursor: pointer; }
 .actions-wrapper { width: 600px; }
 .actions-bar { display: flex; justify-content: space-between; gap: 10px; background: #ffffff; padding: 10px; border-radius: 15px; border: 2px solid #ffccd5; }
-.btn-action { flex: 1; padding: 10px; border: 1px solid #ffccd5; border-radius: 10px; background: #fff0f3; color: #ff59aa; font-weight: bold; cursor: pointer; }
+.btn-action { flex: 1; padding: 10px; border: 1px solid #ffccd5; border-radius: 10px; background: #ff80bf; color: #ff59aa; font-weight: bold; cursor: pointer; }
 .modal-hidden { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 182, 193, 0.5); z-index: 1000; align-items: center; justify-content: center; }
 .modal-content { background: #fff; border: 2px solid #ff80bf; border-radius: 10px; width: 300px; padding: 10px; box-shadow: 0 4px 15px rgba(255, 128, 191, 0.3); }
 .modal-header { display: flex; justify-content: space-between; color: #ff59aa; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #ffccd5; padding-bottom: 5px; }
@@ -351,7 +336,7 @@ button { cursor: pointer; }
 
 .clima-btn {
     padding: 10px;
-    background-color: #f0f0f0;
+    background-color: #d24285;
     border: 1px solid #ccc;
     border-radius: 5px;
     cursor: pointer;
@@ -376,7 +361,18 @@ button { cursor: pointer; }
 .card-property { width: 280px; background: #fff; border: 3px solid #000; font-family: 'Arial', sans-serif; color: #000; padding: 0; }
 .card-header { background: #ff80bf; color: white; padding: 15px; text-align: center; font-weight: bold; font-size: 1.4em; text-transform: uppercase; border-bottom: 3px solid #000; }
 .card-body { padding: 15px; text-align: center; }
-.btn-accion { width: 100%; padding: 10px; margin-top: 5px; border: none; cursor: pointer; font-weight: bold; color: white; border-radius: 4px; }
+.btn-accion {
+    width: 100%;
+    padding: 10px;
+    margin-top: 5px;
+    border: none;
+    cursor: pointer;
+    font-weight: bold;
+    color: white;
+    border-radius: 4px;
+    background-color: #ff59aa; /* Color rosa Barbie */
+    transition: background-color 0.3s ease; /* Efecto suave al pasar el mouse */
+}
 .icono-transporte {
     display: flex; 
     justify-content: center; 
@@ -403,6 +399,17 @@ button { cursor: pointer; }
     gap: 10px;
     flex-shrink: 0;
 }
+.carta-monopoly {
+    background: #f7f1e3;
+    border: 3px solid #333;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 5px 5px 0px #333;
+    margin: 10px;
+}
+.impuestos { border: 3px solid #c0392b; background: #fadbd8; }
+.carcel { border: 3px solid #f1c40f; background: #fef9e7; }
 
 /* Posicionamiento de celdas - MANTENIDO IGUAL */
 /* Fila inferior (Derecha a Izquierda) */
