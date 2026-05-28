@@ -29,9 +29,26 @@ window.checkDb = function() {
 
 window.log = function(mensaje) {
     console.log("LOG:", mensaje);
-    // Si quieres que también aparezca en tu chat:
+    
+    // 1. Intentar usar el sistema existente
     if (typeof window.enviarMensaje === 'function') {
-        window.enviarMensaje("Sistema", mensaje, true); // true para indicar que es aviso del sistema
+        window.enviarMensaje("Sistema", mensaje, true);
+    }
+    
+    // 2. FORZAR VISUALIZACIÓN EN EL GAME LOG (Por si 'enviarMensaje' no refresca el DOM)
+    const logContainer = document.getElementById('game-log');
+    if (logContainer) {
+        const nuevoMensaje = document.createElement('div');
+        nuevoMensaje.style.cssText = "font-size: 0.85em; margin: 2px 0; color: #d63384; font-weight: bold;";
+        nuevoMensaje.innerText = `> ${mensaje}`;
+        
+        // Lo insertamos después del header si existe, o al principio
+        const header = document.getElementById('clima-header');
+        if (header && header.nextSibling) {
+            logContainer.insertBefore(nuevoMensaje, header.nextSibling);
+        } else {
+            logContainer.prepend(nuevoMensaje);
+        }
     }
 };
 
@@ -283,6 +300,7 @@ window.iniciarCicloClima = function() {
         const salaData = salaSnap.val();
         if (!salaData) return;
 
+        // Si hay visitantes, el sistema automático se detiene
         const hayVisitantes = salaData.visitantes && Object.keys(salaData.visitantes).length > 0;
         if (hayVisitantes) return; 
 
@@ -297,12 +315,10 @@ window.iniciarCicloClima = function() {
             
             await update(ref(db, 'salas/' + window.sala), { climaIdx: nuevoIdx });
             
-            // Registro del Sistema
-            push(ref(db, 'salas/' + window.sala + '/chat'), {
-                n: "Sistema",
-                m: `¡El clima ha cambiado a ${nuevoClima.n}!`,
-                t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            });
+            // Registro del Sistema vía tu log
+            if (typeof window.log === 'function') {
+                window.log(`¡El clima ha cambiado a ${nuevoClima.n}!`);
+            }
         }
     }, 600000); 
 };
@@ -566,6 +582,8 @@ window.abrirControlClima = function() {
 window.cambiarClimaConCooldown = function(idx) {
     const ahora = Date.now();
     const nuevoClima = window.climas[idx];
+    const nombreJugador = (window.nombres && window.nombres[window.miIdx]) ? window.nombres[window.miIdx] : "Ciudadano";
+    const porcentaje = Math.round(nuevoClima.mult * 100);
 
     // 1. Guardar cooldown
     update(ref(db, 'salas/' + window.sala + '/controladorClima'), {
@@ -576,21 +594,22 @@ window.cambiarClimaConCooldown = function(idx) {
     // 2. Actualizar clima
     update(ref(db, 'salas/' + window.sala), { climaIdx: idx });
 
-    // 3. Registrar en el log/chat (Mensaje del Ciudadano)
-    push(ref(db, 'salas/' + window.sala + '/chat'), {
-        n: "Sistema",
-        m: `¡El ciudadano ${window.miIdx} ha cambiado el clima a ${nuevoClima.n}!`,
-        t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    });
+    // 3. Registrar en el log usando tu función centralizada
+    const mensaje = `¡${nombreJugador} ha cambiado el clima a ${nuevoClima.n}! Las propiedades ahora valen un ${porcentaje}% de su valor original.`;
+    if (typeof window.log === 'function') {
+        window.log(mensaje);
+    }
 
     // 4. Actualizar display visual
     const display = document.getElementById('clima-display');
     if (display) display.innerText = `Clima: ${nuevoClima.n}`;
 
+    // 5. Ventana de confirmación
     window.cerrarModal();
     window.abrirModal("¡Cambio Exitoso!", `
-        <div style="text-align: center; padding: 10px;">
-            <p>Clima: <b>${nuevoClima.n}</b> aplicado con éxito.</p>
+        <div class="modal-content" style="text-align: center;">
+            <p>Clima: <b>${nuevoClima.n}</b> aplicado.</p>
+            <p>Impacto: <b>${porcentaje}%</b> del valor original.</p>
             <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Aceptar</button>
         </div>
     `);
