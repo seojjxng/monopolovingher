@@ -72,12 +72,15 @@ window.log = function(mensaje) {
     if (logContainer) {
         const nuevoMensaje = document.createElement('div');
         nuevoMensaje.style.cssText = "font-size: 0.85em; margin: 2px 0; color: #d63384; font-weight: bold;";
-        nuevoMensaje.innerText = `> ${mensaje}`;
         
-        // CORRECCIÓN: Usamos appendChild para que se añada al final (debajo de todo)
+        // CORRECCIÓN CRÍTICA: Usamos innerHTML en lugar de innerText
+        // para que el navegador renderice los iconos CSS que enviamos desde procesarEvasion
+        nuevoMensaje.innerHTML = `> ${mensaje}`;
+        
+        // Añadimos el mensaje al contenedor
         logContainer.appendChild(nuevoMensaje);
         
-        // Auto-scroll para que el usuario vea el mensaje nuevo al final
+        // Auto-scroll para ver el mensaje nuevo al final
         logContainer.scrollTop = logContainer.scrollHeight;
     }
 };
@@ -152,7 +155,7 @@ window.sincronizar = function() {
 
     console.log("Sincronizando sala:", window.sala);
 
-    // 2. LIMPIEZA TOTAL DE LISTENERS (El patrón más seguro contra Memory Leaks)
+    // 2. LIMPIEZA TOTAL DE LISTENERS
     if (window.chatListener) { off(window.chatListener); window.chatListener = null; }
     if (window.estadoListener) { off(window.estadoListener); window.estadoListener = null; }
     if (window.climaListener) { off(window.climaListener); window.climaListener = null; }
@@ -187,14 +190,19 @@ window.sincronizar = function() {
     // 5. ESTADO LISTENER (Sincronización maestra)
     window.estadoListener = onValue(salaRef, (snap) => {
         const s = snap.val();
-        if (!s) return;
+        // PROTECCIÓN: Si no hay datos, abortar para evitar errores
+        if (!s || !s.jugadores) return;
 
         // VITAL: Guardamos el estado global
         window.salaData = s;
 
-        // Pintamos el tablero
+        // Pintamos el tablero con try-catch para evitar crash si una ficha es undefined
         if (typeof window.pintarTodasLasCasillas === 'function') {
-            window.pintarTodasLasCasillas(s);
+            try {
+                window.pintarTodasLasCasillas(s);
+            } catch (err) {
+                console.warn("Retrasando pintado, esperando datos de fichas...", err);
+            }
         }
 
         // Lógica de Creador y UI
@@ -412,7 +420,7 @@ window.validarYConectar = function() {
     get(ref(db, 'salas/' + id)).then((snapshot) => {
         if (snapshot.exists()) {
             window.abrirModal("Sala encontrada", `
-                <div class="modal-content">
+                <div class="abrirModal">
                     <p>La sala <b>${id}</b> está activa.</p>
                     <button class="btn-sidebar" style="width: 100%;" onclick="window.modalSeleccionRol('${id}', false)">Unirse como Jugador</button>
                     <button class="btn-sidebar" style="width: 100%; margin-top: 10px;" onclick="window.unirseComoVisitante('${id}', false)">Entrar como Visitante</button>
@@ -433,32 +441,70 @@ window.validarYConectar = function() {
 // --- 2. Selección de Personaje (Fichas) ---
 window.modalSeleccionRol = function(salaId, esCreacion) {
     const roles = ["Dog", "Horse", "Hat", "Car"];
-    let html = `<div style="display:flex; flex-direction:column; gap:10px;">`;
-    roles.forEach((rol) => {
-        html += `<button class="btn-sidebar" onclick="window.procesarUnion('${salaId}', '${rol}', ${esCreacion})">${rol}</button>`;
+    
+    get(ref(db, 'salas/' + salaId + '/jugadores')).then((snap) => {
+        const jugadoresOcupados = snap.exists() ? Object.keys(snap.val()) : [];
+        
+        let html = `<div style="display:flex; flex-direction:column; gap:10px;">`;
+        roles.forEach((rol) => {
+            const ocupado = jugadoresOcupados.includes(rol);
+            const estilo = ocupado ? "background:#ccc; color:#666; cursor:not-allowed;" : "";
+            
+            // Si está ocupado, simplemente llama a la función de error
+            html += `<button class="btn-sidebar" style="${estilo}" 
+                        onclick="${ocupado ? `window.mostrarErrorOcupado('${rol}')` : `window.procesarUnion('${salaId}', '${rol}', ${esCreacion})`}">
+                        ${rol} ${ocupado ? "(Ocupado)" : ""}
+                     </button>`;
+        });
+        html += `</div>`;
+        window.abrirModal("Elige tu ficha", html);
     });
-    html += `</div>`;
-    window.abrirModal("Elige tu ficha", html);
+};
+
+window.mostrarErrorOcupado = function(rol) {
+    // Aquí no se cierra nada, solo se abre el modal de aviso
+    const htmlError = `
+        <div style="text-align:center;">
+            <p style="color:red; font-size: 1.1em;">La ficha <b>${rol}</b> ya ha sido seleccionada.</p>
+            <p>Por favor, elige otra ficha disponible.</p>
+        </div>`;
+        
+    window.abrirModal("⚠️ Ficha Ocupada", htmlError);
 };
 
 // --- 3. Lógica de Unión/Creación de Jugador (Fichas) ---
-// A. Función para cuando alguien entra o crea la sala
 window.procesarUnion = async function(salaId, rol, esCreacion) {
     window.sala = salaId;
     const botonIniciar = document.getElementById('btn-iniciar-partida');
     
+    // Mapeo para asignar un ID de pieza único a cada rol y evitar el error de 'pieceNum_'
+    const pieceMap = { "Dog": 0, "Horse": 1, "Hat": 2, "Car": 3 };
+    
     const datosJugador = { 
-        nombre: rol, dinero: 0, pos: 0, activo: true, intentosFallidos: 0, 
-        estrellas: 0, visitasCarcel: 0, cumplidasCarcel: 0
+        nombre: rol, 
+        pieceNum_: pieceMap[rol] ?? 0, // Evita el error de lectura undefined
+        dinero: 0, 
+        pos: 0, 
+        activo: true, 
+        intentosFallidos: 0, 
+        estrellas: 0, 
+        visitasCarcel: 0, 
+        cumplidasCarcel: 0,
+        enCarcel: 0 // Asegura que esta propiedad exista siempre
     };
     
     if (esCreacion) {
-        const roomData = { estado: "esperando", creador: rol, jugadores: { [rol]: datosJugador } };
+        const roomData = { 
+            estado: "esperando", 
+            creador: rol, 
+            jugadores: { [rol]: datosJugador } 
+        };
         await set(ref(db, 'salas/' + salaId), roomData);
         
-        window.miIdx = rol; window.creadorSala = rol; window.esVisitante = false;
+        window.miIdx = rol; 
+        window.creadorSala = rol; 
+        window.esVisitante = false;
         
-        // El creador sí ve el botón
         if (botonIniciar) botonIniciar.style.display = 'flex';
         
         window.cerrarModal();
@@ -469,16 +515,21 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         const dbRef = ref(db, 'salas/' + salaId + '/jugadores');
         runTransaction(dbRef, (jugadores) => {
             if (!jugadores) jugadores = {};
-            if (jugadores[rol]) return; 
+            // Si el rol ya está ocupado, abortamos
+            if (jugadores[rol]) return undefined; 
+            
             jugadores[rol] = datosJugador;
             return jugadores;
         }).then((res) => {
             if (res.committed) {
-                window.miIdx = rol; window.esVisitante = false;
-                // El jugador que entra NO ve el botón, se queda en 'none'
+                window.miIdx = rol; 
+                window.esVisitante = false;
                 window.cerrarModal();
                 window.anunciarEnChat(salaId, rol + " se ha unido.");
                 window.sincronizar();
+            } else {
+                // El rol fue ocupado mientras el usuario elegía
+                window.mostrarErrorOcupado(rol);
             }
         });
     }
@@ -525,6 +576,7 @@ window.iniciarPartida = function() {
         // Asignamos el dinero a todos los jugadores detectados
         Object.keys(s.jugadores).forEach(id => {
             actualizaciones['jugadores/' + id + '/dinero'] = 1500;
+            actualizaciones['jugadores/' + id + '/enCarcel'] = 0; 
         });
 
         update(salaRef, actualizaciones)
@@ -640,7 +692,6 @@ window.actualizarBotonesPoderes = function() {
     if (window.esVisitante && sidebar && !document.getElementById("container-poderes")) {
         const container = document.createElement('div');
         container.id = "container-poderes";
-        // CSS Grid para ordenar botones en pares y que se vea profesional
         container.innerHTML = `
             <h4 style="color:#ff59aa; margin:15px 0 10px; text-align:center; border-bottom:1px solid #ffdde2;">
                 <i class="fas fa-magic"></i> Poderes
@@ -651,7 +702,9 @@ window.actualizarBotonesPoderes = function() {
                 <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.10, 500)" style="padding: 5px; font-size: 0.8em;"><i class="fas fa-biohazard"></i> Sabotaje 10%</button>
                 <button class="btn-sidebar" onclick="window.tomarControlClima()" style="padding: 5px; font-size: 0.8em;"><i class="fas fa-cloud-sun"></i> Clima</button>
             </div>
-            <button class="btn-sidebar" onclick="window.pagarFianzaVisitante()" style="margin-top:5px; width:100%; padding: 5px;"><i class="fas fa-unlock"></i> Pagar Fianza ($300)</button>
+            <button class="btn-sidebar" onclick="window.abrirMenuRescate()" style="margin-top:5px; width:100%; padding: 5px; background:#3498db; color:white;">
+                <i class="fas fa-unlock"></i> Rescatar / Pagar Fianza ($300)
+            </button>
         `;
         sidebar.appendChild(container);
     }
@@ -668,28 +721,19 @@ window.activarEscudo = async function(jugadorIdx) {
         timestampEscudo: Date.now() 
     });
     
-    // Notificar al log global
-    window.log(`🛡️ ${nombreVisitante} ha establecido un contrato de protección para ${jugadorIdx}. ¡Cobrarán el 50% de sus ganancias!`);
-    
+    window.log(`${nombreVisitante} ha establecido un contrato de protección para ${jugadorIdx}. ¡Cobrarán el 50% de sus ganancias!`);
     window.abrirModal("¡Protección Activa!", `<div class="modal-content"><p>Ahora proteges a <b>${jugadorIdx}</b>.</p><button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button></div>`);
 };
 
-// --- 4. SELECCIÓN DE OBJETIVO PARA SABOTAJE (EVITA VISITANTES) ---
-// --- FUNCIÓN DE FILTRADO REUTILIZABLE ---
-// Centralizamos aquí la lógica de quién es un jugador válido para proteger o sabotear
+// --- 4. SELECCIÓN DE OBJETIVO ---
 window.esJugadorValido = function(id, datosJugador) {
-    // PRIORIDAD 1: Verificar el campo 'tipo' si existe en Firebase
     if (datosJugador && datosJugador.tipo === 'jugador') return true;
-    
-    // PRIORIDAD 2: Respaldo (Backwards compatibility) con el prefijo 'v'
     return !id.startsWith('v');
 };
 
-// --- MENÚ PROTECCIÓN CORREGIDO ---
 window.abrirMenuProteccion = async function() {
     const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
     let html = `<div class="modal-content"><p>Protege a un jugador (los visitantes no pueden ser protegidos):</p>`;
-    
     snap.forEach(c => {
         const datos = c.val();
         if (window.esJugadorValido(c.key, datos)) {
@@ -698,48 +742,84 @@ window.abrirMenuProteccion = async function() {
                      </button>`;
         }
     });
-    
     html += `<button class="btn-sidebar" style="width:100%; background:#95a5a6;" onclick="window.cerrarModal()">Cancelar</button></div>`;
-    window.abrirModal("🛡️ Proteger Ciudadano", html);
+    window.abrirModal("Proteger Ciudadano", html);
 };
 
-// --- MENÚ SABOTAJE CORREGIDO ---
 window.seleccionarObjetivoSabotaje = async function(porcentaje, costo) {
     const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
     let html = `<div class="modal-content"><p>Elige a quién sabotear (${porcentaje*100}% de éxito):</p>`;
-    
     snap.forEach(c => {
         const datos = c.val();
         if (window.esJugadorValido(c.key, datos)) {
-            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" 
-                        onclick="window.ejecutarSabotaje('${c.key}', ${porcentaje}, ${costo}); window.cerrarModal()">
+            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" onclick="window.ejecutarSabotaje('${c.key}', ${porcentaje}, ${costo}); window.cerrarModal()">
                         <i class="fas fa-skull"></i> ${c.key}
                      </button>`;
         }
     });
-    
     html += `<button class="btn-sidebar" style="width:100%; background:#95a5a6;" onclick="window.cerrarModal()">Cancelar</button></div>`;
-    window.abrirModal("💥 Sabotaje", html);
+    window.abrirModal("Sabotaje", html);
 };
 
 window.ejecutarSabotaje = async function(objetivoIdx, porcentaje, costo) {
     const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + objetivoIdx);
     const snap = await get(jRef);
     const j = snap.val();
-
     if (j.tieneEscudo) {
         window.abrirModal("Bloqueado", `<div class="modal-content"><p><i class="fas fa-ban"></i> ¡El jugador tiene un escudo activo!</p></div>`);
         return;
     }
-    
     await update(jRef, { dinero: increment(-(j.dinero * porcentaje)) });
     await update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { dinero: increment(-costo) });
-    
-    window.log(`💥 ${window.nombres[window.miIdx]} saboteó a ${objetivoIdx} restándole el ${porcentaje*100}%.`);
+    window.log(`${window.nombres[window.miIdx]} saboteó a ${objetivoIdx} restándole el ${porcentaje*100}%.`);
 };
 
-// --- 5. LÓGICA DE COMISIÓN 50% ---
-// Esta función debe ejecutarse cuando alguien paga alquiler
+// --- 5. UNIFICACIÓN: RESCATE Y FIANZA ---
+window.abrirMenuRescate = async function() {
+    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
+    let html = `<div class="modal-content"><p>Selecciona un prisionero para pagar su fianza ($300):</p>`;
+    let hayPresos = false;
+
+    snap.forEach(c => {
+        const datos = c.val();
+        if (datos.enCarcel > 0) {
+            hayPresos = true;
+            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" 
+                        onclick="window.ejecutarRescate('${c.key}', 300); window.cerrarModal()">
+                        <i class="fas fa-unlock-alt"></i> Pagar fianza de ${c.key}
+                     </button>`;
+        }
+    });
+
+    if (!hayPresos) html += `<p style="text-align:center;">Nadie está en la cárcel ahora.</p>`;
+    
+    html += `<button class="btn-sidebar" style="width:100%; background:#95a5a6; margin-top:10px;" onclick="window.cerrarModal()">Cancelar</button></div>`;
+    window.abrirModal("Rescate / Fianza", html);
+};
+
+window.ejecutarRescate = async function(idPreso, costo) {
+    const visitanteRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const snapVisitante = await get(visitanteRef);
+    const dineroVisitante = snapVisitante.val().dinero || 0;
+
+    if (dineroVisitante < costo) {
+        window.abrirModal("Error", "No tienes suficiente dinero para pagar la fianza.");
+        return;
+    }
+
+    const presoRef = ref(db, 'salas/' + window.sala + '/jugadores/' + idPreso);
+    
+    // Ejecutar rescate: Cobrar al visitante y liberar al preso
+    await Promise.all([
+        update(visitanteRef, { dinero: increment(-costo) }),
+        update(presoRef, { enCarcel: 0 })
+    ]);
+
+    window.log(`¡El visitante ${window.nombres[window.miIdx]} pagó la fianza de ${idPreso}!`);
+    window.abrirModal("Éxito", `<div class="modal-content"><p>Has pagado $${costo} y liberado a <b>${idPreso}</b>.</p></div>`);
+};
+
+// --- 6. LÓGICA DE COMISIÓN 50% ---
 window.procesarAlquiler = async function(propietarioIdx, monto) {
     const propRef = ref(db, 'salas/' + window.sala + '/jugadores/' + propietarioIdx);
     const snap = await get(propRef);
@@ -749,7 +829,7 @@ window.procesarAlquiler = async function(propietarioIdx, monto) {
         const comision = monto * 0.5;
         const visitanteRef = ref(db, 'salas/' + window.sala + '/jugadores/' + propietario.protegidoPor);
         await update(visitanteRef, { dinero: increment(comision) });
-        window.log(`💰 ¡Comisión recibida! $${comision} por proteger a ${propietarioIdx}.`);
+        window.log(`¡Comisión recibida! $${comision} por proteger a ${propietarioIdx}.`);
     }
     await update(propRef, { dinero: increment(monto) });
 };
@@ -900,10 +980,12 @@ window.tirarDado = async function() {
             return;
         }
 
-        // Verificación de cárcel
+        // --- CORRECCIÓN CÁRCEL ---
         if (s.jugadores[window.miIdx].enCarcel > 0) {
-            window.anunciar(window.nombres[window.miIdx] + " está en la cárcel.");
-            if (!esSolo) window.pasarTurno();
+            // Ya no pasamos el turno, abrimos el menú para que el usuario elija
+            window.mostrarOpcionesCarcel();
+            window.estaLanzando = false; // Liberamos el bloqueo
+            if (btnDado) btnDado.style.pointerEvents = 'auto';
             return;
         }
 
@@ -935,7 +1017,8 @@ window.tirarDado = async function() {
             if (dado !== 6) {
                 window.pasarTurno();
             } else {
-                window.log(window.nombres[window.miIdx] + " sacó 6 y repite turno!");
+                const nombreJugador = (window.nombres && window.nombres[window.miIdx]) ? window.nombres[window.miIdx] : window.miIdx;
+                window.log(nombreJugador + " sacó 6 y repite turno!");
             }
         }
 
@@ -952,29 +1035,21 @@ window.tirarDado = async function() {
     }
 };
 
-// --- Visualización 3D ---
 window.lanzarDado3D = function(resultado) {
     const dice = document.getElementById('dice');
     if (!dice) return;
 
-    // 1. Resetear el estado
     dice.classList.remove('rolling');
     dice.style.animation = "none";
     dice.style.transition = "none";
     dice.style.transform = "rotateX(0deg) rotateY(0deg)";
-    
-    // 2. Forzar reflow para que el navegador "olvide" el estado anterior
     void dice.offsetWidth;
-
-    // 3. Aplicar la animación de giro (rolling)
     dice.style.animation = "girarDado 0.6s ease-out forwards";
     dice.classList.add('rolling');
 
-    // 4. Tras la animación, aplicar la rotación final del resultado
     setTimeout(() => {
         dice.style.animation = "none";
         dice.style.transition = "transform 0.3s ease-out";
-        
         const rot = { 
             1: "rotateX(0deg) rotateY(0deg)", 
             2: "rotateX(0deg) rotateY(-90deg)", 
@@ -983,9 +1058,8 @@ window.lanzarDado3D = function(resultado) {
             5: "rotateX(0deg) rotateY(90deg)", 
             6: "rotateX(0deg) rotateY(180deg)" 
         };
-
         dice.style.transform = rot[resultado];
-    }, 650); // Ligeramente más que la duración de la animación (0.6s)
+    }, 650);
 };
 
 // --- LÓGICA DE PASAR TURNO (BLINDADA) ---
@@ -1010,35 +1084,33 @@ window.pasarTurno = function() {
         if (!s || !s.jugadores) return;
 
         const listaJugadores = Object.keys(s.jugadores);
-        const turnoActual = s.turno;
+        const idxActual = listaJugadores.indexOf(s.turno);
         
-        // Buscamos el índice actual
-        let idxActual = listaJugadores.indexOf(turnoActual);
+        let siguienteIdx = -1;
         
-        // Intentamos encontrar el siguiente jugador que NO esté en la cárcel
-        let siguienteIdx = idxActual;
-        let encontrado = false;
-        
-        // Probamos hasta dar una vuelta completa a la lista
+        // Buscamos el siguiente jugador libre
         for (let i = 1; i <= listaJugadores.length; i++) {
-            siguienteIdx = (idxActual + i) % listaJugadores.length;
-            const idCandidato = listaJugadores[siguienteIdx];
-            const jugadorCandidato = s.jugadores[idCandidato];
-
-            // Si el jugador no está en la cárcel, le damos el turno
-            if (!jugadorCandidato.enCarcel) {
-                encontrado = true;
+            let intentoIdx = (idxActual + i) % listaJugadores.length;
+            let idCandidato = listaJugadores[intentoIdx];
+            
+            // Verificamos si existe el jugador y no está en la cárcel
+            // NOTA: Usamos !jugador.enCarcel (asumiendo que 1 es cárcel, 0 o undefined es libre)
+            if (s.jugadores[idCandidato] && !s.jugadores[idCandidato].enCarcel) {
+                siguienteIdx = intentoIdx;
                 break;
-            } else {
-                window.log("Saltando turno de " + idCandidato + " (en la cárcel).");
             }
+        }
+        
+        // Si no encontramos a nadie libre (todos en cárcel), 
+        // forzamos al menos el siguiente de la lista para no romper el juego
+        if (siguienteIdx === -1) {
+            siguienteIdx = (idxActual + 1) % listaJugadores.length;
+            window.log("¡Todos están en la cárcel! El tiempo avanza...");
         }
         
         const siguienteId = listaJugadores[siguienteIdx];
         
-        update(salaRef, { 
-            turno: siguienteId 
-        }).then(() => {
+        update(salaRef, { turno: siguienteId }).then(() => {
             const nombre = s.jugadores[siguienteId]?.nombre || siguienteId;
             window.log("Turno de: " + nombre);
         });
@@ -1057,8 +1129,7 @@ window.actualizarTurnoUI = function(s) {
 
     let turnoId = s.turno; 
     
-    // CORRECCIÓN: Si el turno actual es un visitante, forzamos que UI muestre "Esperando jugador real"
-    // y no le damos relevancia al nombre del visitante.
+    // CORRECCIÓN: Si el turno actual es un visitante, forzamos mensaje de espera
     if (turnoId && String(turnoId).startsWith('v')) {
         display.innerText = "Turno: Esperando jugador...";
         return;
@@ -1072,11 +1143,19 @@ window.actualizarTurnoUI = function(s) {
     const jugadorInfo = s.jugadores ? s.jugadores[turnoId] : null;
     const nombreJugador = (jugadorInfo && jugadorInfo.nombre) ? jugadorInfo.nombre : ("ID: " + turnoId);
     
-    display.innerText = "Turno: " + nombreJugador;
+    // INDICADOR VISUAL DE CÁRCEL: Añade el icono si el jugador está encarcelado
+    const estadoCárcel = (jugadorInfo && jugadorInfo.enCarcel === 1) ? " 🔒" : "";
+    
+    display.innerText = "Turno: " + nombreJugador + estadoCárcel;
 };
 
 window.depurarTurno = async function() {
     console.log("--- INICIANDO DEPURACIÓN DE TURNO ---");
+    if (!window.db || !window.sala) {
+        console.log("Error: DB o ID de sala no inicializados.");
+        return;
+    }
+
     const salaRef = ref(db, 'salas/' + window.sala);
     const snap = await get(salaRef);
     const s = snap.val();
@@ -1093,8 +1172,12 @@ window.depurarTurno = async function() {
     console.log("Jugadores reales (filtrados):", jugadoresReales);
     
     if (jugadoresReales.length === 0) {
-        console.log("FALLO CRÍTICO: No hay jugadores que NO empiecen con 'v'. Revisa si tus jugadores reales tienen IDs que empiezan con 'v'.");
+        console.log("FALLO CRÍTICO: No hay jugadores que NO empiecen con 'v'.");
     } else {
+        console.log("Estado actual de cárceles:");
+        jugadoresReales.forEach(id => {
+            console.log(`Jugador ${id}: enCarcel = ${s.jugadores[id].enCarcel || 0}`);
+        });
         console.log("Todo bien: Se seleccionará uno de estos:", jugadoresReales);
     }
 };
@@ -1187,7 +1270,7 @@ window.verificarBancarrota = function(jugadorIdx, saldo) {
         // 1. Anuncio en el Game Log (usando push al chat/log de la sala)
         push(ref(db, 'salas/' + window.sala + '/chat'), {
             n: "Banco",
-            m: `⚠️ ¡Alerta! ${nombre} ha caído en bancarrota con un saldo de $${saldo}.`,
+            m: `¡Alerta! ${nombre} ha caído en bancarrota con un saldo de $${saldo}.`,
             t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         });
 
@@ -1233,10 +1316,9 @@ window.abrirBanco = async function() {
         });
     }
 
-    window.abrirModal("🏦 Banco Central", `
+    window.abrirModal("Banco Central", `
         <div class="abrirModal">
             ${contenido}
-            <button class="btn-cerrar" style="width:100%; margin-top:10px;" onclick="window.cerrarModal()">Cerrar</button>
         </div>
     `);
 };
@@ -1248,7 +1330,7 @@ window.solicitarPrestamo = async function(monto) {
     const j = snap.val();
 
     if (j.tienePrestamo) {
-        window.abrirModal("Error", `<div class="abrirModal"><p>Ya tienes un préstamo activo.</p><button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button></div>`);
+        window.abrirModal("Error", `<div class="abrirModal"><p>Ya tienes un préstamo activo.</p></div>`);
         return;
     }
 
@@ -1258,7 +1340,7 @@ window.solicitarPrestamo = async function(monto) {
         dinero: (j.dinero || 0) + monto 
     });
 
-    window.abrirModal("✅ Éxito", `
+    window.abrirModal("Éxito", `
         <div class="abrirModal">
             <p>Transacción aceptada.</p>
             <p>Monto recibido: <b>$${monto}</b></p>
@@ -1299,7 +1381,7 @@ window.verificarBancarrota = function(jugadorIdx, saldo) {
         
         push(ref(db, 'salas/' + window.sala + '/chat'), {
             n: "Banco",
-            m: `⚠️ ¡Alerta! ${nombre} ha caído en bancarrota con un saldo de $${saldo}.`,
+            m: `¡Alerta! ${nombre} ha caído en bancarrota con un saldo de $${saldo}.`,
             t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         });
 
@@ -1351,7 +1433,7 @@ window.verSaldos = function() {
         }
         
         txt += `</ul></div><button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Cerrar</button></div>`;
-        window.abrirModal("🏦 Saldos", txt);
+        window.abrirModal("Saldos", txt);
     });
 };
 
@@ -1407,10 +1489,10 @@ window.pagarPrestamo = function() {
                 tienePrestamo: false, 
                 montoPrestamo: 0 
             }).then(() => {
-                window.abrirModal("✅ Banco", "Préstamo pagado exitosamente.");
+                window.abrirModal("Banco", "Préstamo pagado exitosamente.");
             });
         } else {
-            window.abrirModal("❌ Error", "Fondos insuficientes para liquidar el préstamo.");
+            window.abrirModal("Error", "Fondos insuficientes para liquidar el préstamo.");
         }
     }).catch((error) => {
         console.error("Error al pagar:", error);
@@ -1564,24 +1646,25 @@ window.verPropiedad = function(pos, permitirCompra = false) {
                 <ul style="text-align: left; font-size: 0.9em; padding-left: 20px;">${listaAlquileres}</ul>
                 <hr>`;
 
+    contenido += `<div style="text-align: center; margin-top: 25px;">`; 
+
     if (!prop) {
         contenido += permitirCompra ? 
-            `<button class="btn-sidebar" style="background:#ff80bf; color:white;" onclick="window.comprar(${pos}); window.cerrarModal();">Comprar Propiedad</button>` : 
+            `<button class="btn-sidebar" style="width:100%; display:block; background:#ff80bf; color:white; margin-bottom:10px;" onclick="window.comprar(${pos}); window.cerrarModal();">Comprar Propiedad</button>` : 
             `<p style="color:gray; font-size:0.8em;">Debes estar en la casilla para comprar.</p>`;
     } else if (esDuenio) {
         contenido += `
-            <button class="btn-sidebar" style="background:#2ecc71; color:white; margin-bottom:5px;" onclick="window.mejorar(${pos}); window.cerrarModal();">Mejorar (+$50)</button>
-            <button class="btn-sidebar" style="background:#95a5a6; color:white;" onclick="window.hipotecar(${pos}); window.cerrarModal();">${estaHipotecada ? "Liberar" : "Hipotecar"}</button>`;
+            <button class="btn-sidebar" style="width:100%; display:block; background:#2ecc71; color:white; margin-bottom:10px;" onclick="window.mejorar(${pos}); window.cerrarModal();">Mejorar (+$50)</button>
+            <button class="btn-sidebar" style="width:100%; display:block; background:#95a5a6; color:white; margin-bottom:10px;" onclick="window.hipotecar(${pos}); window.cerrarModal();">${estaHipotecada ? "Liberar" : "Hipotecar"}</button>`;
     } else if (!estaHipotecada) {
-        // AQUÍ SE CORRIGIÓ: Llama a la interacción, no al pago directo
         contenido += `
             <p>Dueño: <b>${window.nombres[prop.owner]}</b></p>
-            <button class="btn-sidebar" style="background:#e67e22; color:white;" onclick="window.interaccionAlquiler('${prop.owner}', ${alquiler}); window.cerrarModal();">Pagar Alquiler</button>`;
+            <button class="btn-sidebar" style="width:100%; display:block; background:#e67e22; color:white; margin-bottom:10px;" onclick="window.interaccionAlquiler('${prop.owner}', ${alquiler}); window.cerrarModal();">Pagar Alquiler</button>`;
     } else {
         contenido += `<p>Propiedad hipotecada por <b>${window.nombres[prop.owner]}</b>. No paga alquiler.</p>`;
     }
 
-    contenido += `</div></div>`;
+    contenido += `</div></div></div>`;
     window.abrirModal("Tarjeta de Propiedad", contenido);
 };
 
@@ -1601,9 +1684,18 @@ window.abrirIntercambio = function() {
         }
 
         let optionsProps = misProps.map(idx => `<option value="${idx}">${window.mapa[idx].n}</option>`).join('');
-        let optionsJugadores = Object.keys(data.jugadores || {}).filter(jIdx => String(jIdx) !== String(window.miIdx)).map(jIdx => 
-            `<option value="${jIdx}">${window.nombres[jIdx]}</option>`
-        ).join('');
+        
+        // CORRECCIÓN AQUÍ: Verificamos si existe el nombre, si no, ponemos "Jugador + ID"
+        let optionsJugadores = Object.keys(data.jugadores || {}).filter(jIdx => String(jIdx) !== String(window.miIdx)).map(jIdx => {
+            const nombre = (window.nombres && window.nombres[jIdx]) ? window.nombres[jIdx] : "Jugador " + jIdx;
+            return `<option value="${jIdx}">${nombre}</option>`;
+        }).join('');
+
+        // Si no hay jugadores, evitamos mostrar el modal roto
+        if (!optionsJugadores) {
+            window.abrirModal("Aviso", "No hay otros jugadores en la sala para realizar intercambios.");
+            return;
+        }
 
         const contenido = `
             <div style="display:flex; flex-direction:column; gap: 10px; width: 100%;">
@@ -1625,24 +1717,28 @@ window.abrirIntercambio = function() {
 };
 
 window.ejecutarIntercambio = function() {
-    let pIdx = document.getElementById('select-prop').value;
-    let destino = document.getElementById('select-jugador').value;
-    let valor = parseInt(document.getElementById('input-valor').value);
+    const pIdx = document.getElementById('select-prop').value;
+    const destino = document.getElementById('select-jugador').value;
+    const valor = parseInt(document.getElementById('input-valor').value);
 
+    // Validaciones
     if (!destino) { alert("No hay jugadores disponibles."); return; }
     if (isNaN(valor) || valor < 100 || valor > 999) {
         alert("El valor debe estar entre 100 y 999.");
         return;
     }
 
+    // Referencia a la sala y ofertas
     const ofertasRef = ref(db, 'salas/' + window.sala + '/ofertas');
     
+    // Guardamos la oferta
     push(ofertasRef, {
         de: window.miIdx,
         para: destino,
         propiedad: pIdx,
         precio: valor,
-        estado: 'pendiente'
+        estado: 'pendiente',
+        timestamp: Date.now() // Útil para filtrar
     });
     
     alert("Oferta enviada a " + (window.nombres[destino] || "Jugador " + destino));
@@ -1650,27 +1746,44 @@ window.ejecutarIntercambio = function() {
 };
 
 window.escucharOfertas = function() {
-    // 1. Verificación básica: sala y DB
-    if (!window.sala || typeof db === 'undefined' || !db) return;
-    
-    // 2. Referencia directa
+    if (!window.sala || typeof db === 'undefined' || !db) {
+        console.error("No se puede iniciar escucha: sala o db no definidos");
+        return;
+    }
+
     const ofertasRef = ref(db, 'salas/' + window.sala + '/ofertas');
     
+    // Escuchamos nuevas ofertas
     onChildAdded(ofertasRef, (snap) => {
         const o = snap.val();
         const key = snap.key;
 
+        // Filtramos: Solo si es para mí y está pendiente
         if (o && String(o.para) === String(window.miIdx) && o.estado === 'pendiente') {
-            const nombreVendedor = (window.nombres && window.nombres[o.de]) ? window.nombres[o.de] : "Jugador " + o.de;
-            const nombreProp = window.mapa[o.propiedad] ? window.mapa[o.propiedad].n : "Propiedad";
             
-            window.abrirModal("¡Oferta de Venta!", `
-                <p>${nombreVendedor} te ofrece <b>${nombreProp}</b> por <b>$${o.precio}</b></p>
-                <button class="btn-sidebar" style="background:#27ae60;" onclick="window.confirmarCompra('${key}')">Aceptar</button>
-                <button class="btn-sidebar" style="background:#e74c3c;" onclick="window.cerrarModal()">Rechazar</button>
-            `);
+            const nombreVendedor = (window.nombres && window.nombres[o.de]) ? window.nombres[o.de] : "Jugador " + o.de;
+            const nombreProp = window.mapa[o.propiedad] ? window.mapa[o.propiedad].n : "Propiedad #" + o.propiedad;
+            
+            // CSS integrado en el HTML para asegurar estilo
+            const htmlContenido = `
+                <div style="text-align: center; padding: 20px; font-family: sans-serif;">
+                    <h3 style="color: #ff80bf; margin-top:0;">¡Nueva Oferta!</h3>
+                    <p style="font-size: 16px;">
+                        <b>${nombreVendedor}</b> te ofrece:<br>
+                        <span style="font-size: 18px; color: #333;">${nombreProp}</span>
+                        <br>por solo <b>$${o.precio}</b>
+                    </p>
+                    <div style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;">
+                        <button class="btn-sidebar" style="background:#27ae60; color:white; border:none; padding:10px 20px; cursor:pointer;" onclick="window.confirmarCompra('${key}')">Aceptar</button>
+                        <button class="btn-sidebar" style="background:#e74c3c; color:white; border:none; padding:10px 20px; cursor:pointer;" onclick="window.cerrarModal()">Rechazar</button>
+                    </div>
+                </div>
+            `;
+            
+            window.abrirModal("🤝 Intercambio", htmlContenido);
         }
     });
+    console.log("Listener de ofertas activado correctamente.");
 };
 
 window.ejecutarTransaccionCompra = function(vendedorIdx, compradorIdx, pos, precio, ofertaKey) {
@@ -1726,48 +1839,74 @@ window.confirmarPago = async function(ownerIdx, monto) {
     window.cerrarModal();
 };
 
-// 3. Lógica principal de evasión con azar y penalizaciones
 window.procesarEvasion = async function(ownerIdx, monto) {
-    // 1. DESACTIVAR BOTONES (Evita el doble clic)
-    const botones = document.querySelectorAll('.btn-sidebar, .btn-accion');
-    botones.forEach(b => b.disabled = true);
-    botones.forEach(b => b.style.opacity = "0.5");
-
+    // 1. Validar monto
+    const montoNumerico = parseFloat(monto) || 0;
     const esImpuesto = (ownerIdx === 'IMPUESTO');
-    const exito = Math.random() < 0.4;
+    const nombrePropietario = esImpuesto ? "el Pozo de Impuestos" : (window.nombres[ownerIdx] || "Jugador " + ownerIdx);
+    
+    // 2. DESACTIVAR BOTONES
+    const botones = document.querySelectorAll('.btn-sidebar, .btn-accion');
+    botones.forEach(b => { b.disabled = true; b.style.opacity = "0.5"; });
+
+    // 3. Lógica de probabilidades (0.0 a 1.0)
+    // 0.0 - 0.3: Fallo (30%)
+    // 0.3 - 0.6: Parcial (30%)
+    // 0.6 - 1.0: Éxito (40%)
+    const rnd = Math.random();
     
     const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const snap = await get(jugadorRef);
     let j = snap.val();
 
-    if (exito) {
-        window.log(esImpuesto ? `🎉 ¡Éxito! Evadiste el impuesto.` : `🎉 ¡Éxito! Evadiste el alquiler.`);
-    } else {
-        // Calcular multa correctamente
-        const multa = esImpuesto ? monto : (100 + monto);
+    // --- A) ÉXITO TOTAL (No paga nada) ---
+    if (rnd > 0.6) {
+        window.log("¡Éxito! Has evadido totalmente y no pagarás nada.");
+    } 
+    
+    // --- B) EVASIÓN PARCIAL (Paga la mitad) ---
+    else if (rnd > 0.3) {
+        const montoParcial = Math.floor(montoNumerico / 2);
+        window.log("¡Evasión parcial! Has engañado al sistema y solo pagarás la mitad: $" + montoParcial + " a " + nombrePropietario + ".");
         
-        // Manejo de intentos fallidos
+        if (esImpuesto) {
+            await update(jugadorRef, { dinero: increment(-montoParcial) });
+            await update(ref(db, 'salas/' + window.sala), { pozoImpuestos: increment(montoParcial) });
+        } else {
+            window.pagarAlquiler(ownerIdx, montoParcial); 
+        }
+    } 
+    
+    // --- C) FALLO (Paga monto inicial + $100) ---
+    else {
+        const multa = montoNumerico + 100;
+        
+        // Manejo de intentos fallidos y pérdida de estrellas
         let intentos = (j.intentosFallidos || 0) + 1;
         let updates = { intentosFallidos: intentos };
         
         if (intentos >= 5) {
             updates.intentosFallidos = 0;
             updates.estrellas = Math.max(0, (j.estrellas || 0) - 1);
-            window.log(`⚠️ Has perdido 1 estrella por evasión recurrente.`);
+            window.log("¡Castigo extra! Has perdido 1 estrella por evasión recurrente.");
         }
         await update(jugadorRef, updates);
         
-        window.log(`❌ ¡Falló la evasión! Pagas $${multa}.`);
+        window.log("¡Falló la evasión! Como castigo pagarás el monto inicial ($" + montoNumerico + ") + $100 de multa. Total pagado: $" + multa + " a " + nombrePropietario + ".");
         
         // PAGO REAL
         if (esImpuesto) {
             await update(jugadorRef, { dinero: increment(-multa) });
             await update(ref(db, 'salas/' + window.sala), { pozoImpuestos: increment(multa) });
         } else {
-            // AQUÍ ESTABA EL ERROR: ownerIdx ahora tiene el valor correcto
             window.pagarAlquiler(ownerIdx, multa); 
         }
     }
+    
+    // Restaurar botones
+    botones.forEach(b => { b.disabled = false; b.style.opacity = "1"; });
+    
+    // Cerrar modal
     window.cerrarModal();
 };
 
@@ -1807,7 +1946,7 @@ window.mejorar = function(pos) {
             // Mensaje requisitos con CSS
             window.abrirModal("Acción no permitida", `
                 <div style="text-align: center; padding: 10px;">
-                    <p>Necesitas el set completo (monopolio) y dinero suficiente para mejorar.</p>
+                    <p>Necesitas poseer todas las propiedades del mismo color y dinero suficiente para mejorar.</p>
                     <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>
                 </div>
             `);
@@ -1822,34 +1961,53 @@ window.hipotecar = function(pos) {
     Promise.all([get(pRef), get(jRef)]).then(([snapP, snapJ]) => {
         const p = snapP.val();
         const j = snapJ.val();
-        const valorHipoteca = Math.floor(window.mapa[pos].p * 0.5);
+        const valorPropiedad = window.mapa[pos].p;
+        const valorHipoteca = Math.floor(valorPropiedad * 0.5);
 
         if (!p.hipotecada) {
+            // Acción de Hipotecar
             update(pRef, { hipotecada: true });
             update(jRef, { dinero: j.dinero + valorHipoteca });
+            
+            window.abrirModal("Banco Hipotecario", `
+                <div style="text-align:center; padding:15px;">
+                    <img src="https://cdn-icons-png.flaticon.com/512/2933/2933116.png" style="width:60px; margin-bottom:10px;">
+                    <p>El banco ha tomado la propiedad en garantía.</p>
+                    <p style="font-size:1.2em; font-weight:bold; color:#e74c3c;">Has recibido: $${valorHipoteca}</p>
+                    <button class="btn-sidebar" style="margin-top:20px;" onclick="window.cerrarModal()">Aceptar</button>
+                </div>
+            `);
         } else {
+            // Acción de Liberar
             const costoLiberar = Math.floor(valorHipoteca * 1.1);
             if (j.dinero >= costoLiberar) {
                 update(pRef, { hipotecada: false });
                 update(jRef, { dinero: j.dinero - costoLiberar });
+                
+                window.abrirModal("🏦 Banco Hipotecario", `
+                    <div style="text-align:center; padding:15px;">
+                        <p>Has pagado la deuda y liberado tu propiedad.</p>
+                        <p style="font-size:1.2em; font-weight:bold; color:#2ecc71;">Costo: $${costoLiberar}</p>
+                        <button class="btn-sidebar" style="margin-top:20px;" onclick="window.cerrarModal()">Aceptar</button>
+                    </div>
+                `);
             } else {
-                alert("No tienes dinero para liberar la hipoteca.");
+                alert("No tienes suficiente dinero para saldar la hipoteca.");
                 return;
             }
         }
-        window.cerrarModal();
     });
 };
 
 window.cartasEvento = [
-    { txt: "¡Inversión exitosa! Tus acciones subieron, cobras $250.", v: 250 },
+    { txt: "¡Inversión exitosa! Tus acciones subieron, cobras $450.", v: 450 },
     { txt: "¡Multa por estacionamiento prohibido! Pagas $100.", v: -100 },
     { txt: "¡Bono de productividad! La empresa te premia con $200.", v: 200 },
-    { txt: "¡Gastos médicos inesperados! Pagas $250 por una consulta.", v: -250 },
+    { txt: "¡Gastos médicos inesperados! Pagas $400 por la consulta.", v: -400 },
     { txt: "¡Encontraste dinero en tu abrigo viejo! Recibes $50.", v: 50 },
-    { txt: "¡Reparación de alcantarillado! Debes pagar $150 al municipio.", v: -150 },
-    { txt: "¡Premio de lotería local! Has ganado $300.", v: 300 },
-    { txt: "¡Donación benéfica obligatoria! Pagas $100 por el bien común.", v: -100 }
+    { txt: "¡Reparación de alcantarillado! Debes pagar $350 al municipio.", v: -350 },
+    { txt: "¡Te sacaste la lotería! Has ganado $300.", v: 300 },
+    { txt: "¡Donación benéfica a los niños de la iglesia! Pagas $400 por el bien común.", v: -400 }
 ];
 
 window.obtenerCarta = function() {
@@ -1884,30 +2042,25 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
                 const trans = [8, 24, 26, 27];
                 const count = trans.filter(i => data.propiedades && data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
                 const alquiler = { 1: 100, 2: 150, 3: 250, 4: 300 }[count] || 100;
-                
-                // AQUÍ ESTABA EL ERROR: Llamar a verPropiedad Y alquiler causaba conflicto.
-                // Priorizamos la interacción de alquiler:
                 window.interaccionAlquiler(prop.owner, alquiler);
             }
         } else {
             window.verPropiedad(posInt, false);
         }
-        return; // Detenemos aquí
+        return;
     }
 
     // --- 2. PROPIEDAD NORMAL ---
     if (p && p.p > 0) {
         if (prop && prop.owner && prop.owner !== window.miIdx) {
-            // Es de otro: ALQUILER
-            window.interaccionAlquiler(prop.owner, p.a); // Asegúrate de que p.a sea el alquiler
+            window.interaccionAlquiler(prop.owner, p.a);
         } else {
-            // Es libre o propia: VER
             window.verPropiedad(posInt, puedeComprar);
         }
         return;
     }
 
-    // --- 3. EVENTOS (Arca, Carcel, Impuestos, Parada) ---
+    // --- 3. EVENTOS ---
     let contenido = "";
     let titulo = "";
 
@@ -1921,14 +2074,10 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         const snapJ = await get(jugadorRef);
         let j = snapJ.val();
         let visitas = (j.visitasCarcel || 0) + 1;
-        let updates = { enCarcel: 1, visitasCarcel: visitas };
-        if (visitas >= 10) {
-            updates.visitasCarcel = 0;
-            updates.estrellas = Math.max(0, (j.estrellas || 0) - 1);
-        }
-        await update(jugadorRef, updates);
+        // Al caer aquí, el jugador entra en estado de cárcel
+        await update(jugadorRef, { enCarcel: 1, visitasCarcel: visitas, pos: 10 });
         window.mostrarOpcionesCarcel();
-        return;
+        return; // No pasamos turno automáticamente, mostramos opciones
     }
     else if (p.n === "IMPUESTOS") {
         const monto = Math.floor(Math.random() * 300) + 50;
@@ -1936,8 +2085,8 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         contenido = `
             <h2>Impuestos</h2>
             <p>Debes pagar: <b>$${monto}</b></p>
-            <button class="btn-sidebar" style="background:#ff80bf; color:white;" onclick="window.pagarImpuesto(${monto})">Pagar</button>
-            <button class="btn-sidebar" style="background:#ffccd5;" onclick="window.procesarEvasion('IMPUESTO', ${monto})">Evadir (40% éxito)</button>
+            <button class="btn-sidebar" style="background:#ff80bf; color:white; width:100%; margin-bottom:5px;" onclick="window.pagarImpuesto(${monto}); window.cerrarModal();">Pagar</button>
+            <button class="btn-sidebar" style="background:#ffccd5; width:100%;" onclick="window.procesarEvasion('IMPUESTO', ${monto}); window.cerrarModal();">Evadir (40% éxito)</button>
         `;
     }
     else if (p.n === "PARADA") {
@@ -1953,31 +2102,40 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
 
 window.mostrarOpcionesCarcel = function() {
     window.abrirModal("Cárcel", `
-        <p>¿Qué deseas hacer?</p>
-        <button class="btn-accion" onclick="window.intentarHackeo()">Intentar Hackeo (50%)</button>
-        <button class="btn-accion" onclick="window.pagarFianza()">Pagar Fianza ($200)</button>
-        <button class="btn-accion" style="background:#4a4a4a;" onclick="window.quedarseEnCarcel()">Cumplir Condena</button>
+        <div style="text-align:center;">
+            <p>Has sido encarcelado. ¿Qué deseas hacer?</p>
+            <button class="btn-accion" style="display:block; width:100%; margin-bottom:10px;" onclick="window.intentarHackeo()">Intentar Hackeo (50%)</button>
+            <button class="btn-accion" style="display:block; width:100%; margin-bottom:10px;" onclick="window.pagarFianza()">Pagar Fianza ($200)</button>
+            <button class="btn-accion" style="display:block; width:100%; background:#4a4a4a;" onclick="window.quedarseEnCarcel()">Cumplir Condena</button>
+        </div>
     `);
 };
 
 window.intentarHackeo = async function() {
     const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const snap = await get(jugadorRef);
+    const j = snap.val();
+
     if (Math.random() < 0.5) {
         window.log("¡HACKEO EXITOSO!");
         await update(jugadorRef, { enCarcel: 0 });
+        window.abrirModal("Éxito", "¡Hackeo exitoso! Has salido de la cárcel.");
     } else {
         window.log("¡FALLASTE!");
-        const snap = await get(jugadorRef);
-        await update(jugadorRef, { enCarcel: (snap.val().enCarcel || 0) + 1 });
+        // Penalización: turno extra adicional bloqueado
+        const pen = (j.turnosExtraBloqueados || 0) + 1;
+        await update(jugadorRef, { enCarcel: 1, turnosExtraBloqueados: pen });
+        window.abrirModal("¡Fallaste!", `El sistema detectó el intento. Tienes una penalización de ${pen} turno(s) extra bloqueado.`);
         if (typeof window.pasarTurno === 'function') window.pasarTurno();
     }
-    window.cerrarModal();
+    // No cerramos el modal si falló para que lean el mensaje, si no, se cierra al terminar
 };
 
 window.pagarFianza = function() {
     update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { enCarcel: 0, dinero: increment(-200) });
     window.log("Fianza pagada.");
     window.cerrarModal();
+    // Al pagar fianza NO pierde turno, por eso no llamamos a pasarTurno()
 };
 
 window.quedarseEnCarcel = async function() {
@@ -1992,14 +2150,11 @@ window.quedarseEnCarcel = async function() {
     if (cumplidas >= 10) {
         updates.cumplidasCarcel = 0;
         updates.estrellas = (j.estrellas || 5) + 1;
-        
         mensajeExtra = `<p style="color: #ff59aa;"><b>¡Felicidades!</b> Has ganado 1 estrella por buen comportamiento.</p>`;
-        window.log(`⭐ ${window.miIdx} ganó 1 estrella por buen comportamiento.`);
     }
 
     await update(jugadorRef, updates);
     
-    // Mostramos la ventana CSS
     window.abrirModal("Cárcel", `
         <div style="text-align: center; padding: 10px;">
             <p>Has decidido cumplir tu condena.</p>
@@ -2010,7 +2165,8 @@ window.quedarseEnCarcel = async function() {
 
     window.log("Cumpliendo condena...");
     
-    // Mantenemos tu lógica de paso de turno
+    // Aquí es donde el visitante podría actuar (lógica futura)
+    // Se pasa turno porque decidió quedarse
     if (typeof window.pasarTurno === 'function') window.pasarTurno();
 };
 
@@ -2177,13 +2333,23 @@ window.completarMisionVisitante = function(tipo) {
 
 window.pintarCasilla = function(posicion, ownerId) {
     const celda = document.getElementById(`cell-${posicion}`);
-    // Verificamos que los arrays globales existan antes de acceder
+    
+    // Verificamos que los datos necesarios existan
     if (celda && Array.isArray(window.nombres) && Array.isArray(window.colores)) {
         const idx = window.nombres.indexOf(ownerId);
-        const color = (idx !== -1 && window.colores[idx]) ? window.colores[idx] : "#ccc";
+        const color = (idx !== -1 && window.colores[idx]) ? window.colores[idx] : null;
         
-        celda.style.backgroundColor = color;
-        celda.style.border = `2px solid ${color}`;
+        if (color) {
+            // Usamos box-shadow con 'inset' para pintar solo el interior (la parte blanca)
+            // Esto mantiene los bordes y estructura original de la casilla intactos
+            celda.style.boxShadow = `inset 0 0 0 100px ${color}80`; // 80 al final es opacidad al 50%
+            celda.style.backgroundColor = color; 
+        } else {
+            // Limpiar si no hay dueño
+            celda.style.boxShadow = "none";
+            celda.style.backgroundColor = "transparent";
+        }
+        
     } else {
         console.warn("Faltan los datos de nombres/colores para pintar la casilla.");
     }
