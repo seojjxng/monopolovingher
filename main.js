@@ -366,7 +366,7 @@ window.validarYConectar = function() {
     
     if (!id) {
         window.abrirModal("Error", `
-            <div class="modal-content">
+            <div class="abrirModal">
                 <p>Por favor, ingresa un <b>ID de sala</b> válido.</p>
                 <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Aceptar</button>
             </div>
@@ -1098,7 +1098,7 @@ window.verificarBancarrota = function(jugadorIdx, saldo) {
 window.abrirBanco = async function() {
     if (typeof window.sala === 'undefined' || window.miIdx === -1 || !db) {
         window.abrirModal("Error", `
-            <div class="modal-content">
+            <div class="abrirModal">
                 <p>Debes estar unido a una sala para acceder a los servicios bancarios.</p>
                 <button class="btn-accion" style="width:100%" onclick="window.cerrarModal()">Aceptar</button>
             </div>
@@ -1341,6 +1341,11 @@ window.comprar = function(pos) {
                 nivel: 0, 
                 hipotecada: false 
             });
+
+            // --- AÑADE ESTO PARA PINTAR AL COMPRAR ---
+            window.pintarCasilla(pos, window.miIdx);
+            // ------------------------------------------
+
             window.log("Has comprado " + window.mapa[pos].n);
             window.cerrarModal();
         } else {
@@ -1659,20 +1664,9 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     const p = window.mapa[posInt];
     const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
 
-    // FUNCIÓN PARA PINTAR CASILLA (Persistencia visual)
-    const pintarCasilla = (posicion, ownerIdx) => {
-        const celda = document.getElementById(`cell-${posicion}`);
-        if (celda) {
-            const idx = window.nombres.indexOf(ownerIdx);
-            const color = (idx !== -1) ? window.colores[idx] : "#ccc";
-            celda.style.backgroundColor = color;
-            celda.style.border = `2px solid ${color}`;
-        }
-    };
-
     // Si ya tiene dueño, siempre intentar pintar
     if (prop && prop.owner) {
-        pintarCasilla(posInt, prop.owner);
+        window.pintarCasilla(posInt, prop.owner);
     }
 
     // 1. CASO TRANSPORTE
@@ -1776,7 +1770,7 @@ window.abrirModalMisiones = function() {
     html += `<span class="btn-cerrar-x" onclick="window.cerrarModal()">&times;</span>`;
     
     if (esVisitante) {
-        html += `<h2 style="color: #ff59aa; margin-top: 0;">✨ Misiones del Paseo</h2>`;
+        html += `<h2 style="color: #ff59aa; margin-top: 0;">Misiones del Paseo</h2>`;
         const misiones = [
             { id: 'benefactor', titulo: 'El Benefactor', desc: 'Regala $100 a un jugador.', tipo: 'angel', color: '#ff59aa' },
             { id: 'consejero', titulo: 'El Consejero', desc: 'Paga fianza de 3 jugadores.', tipo: 'angel', color: '#ff59aa' },
@@ -1885,6 +1879,21 @@ window.completarMisionVisitante = function(tipo) {
             console.log("Reputación actualizada a: " + nuevaRep);
         });
     });
+};
+
+window.pintarCasilla = function(posicion, ownerId) {
+    const celda = document.getElementById(`cell-${posicion}`);
+    if (celda) {
+        // En tu código usas window.nombres.indexOf(ownerId)
+        // Asegúrate de que ownerId sea 'v1', 'v2' o el ID que guardes en 'owner'
+        const idx = window.nombres.indexOf(ownerId);
+        
+        // Si no encuentras el índice (quizás el ID no está en nombres), usa un color por defecto
+        const color = (idx !== -1 && window.colores[idx]) ? window.colores[idx] : "#ccc";
+        
+        celda.style.backgroundColor = color;
+        celda.style.border = `2px solid ${color}`;
+    }
 };
 
 document.addEventListener('DOMContentLoaded', () => {
