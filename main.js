@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, child, get, set, runTransaction, update, onValue, push, onDisconnect, off } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, child, get, set, runTransaction, update, onValue, push, onDisconnect, off, increment } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { firebaseConfig } from './firebase-config.js'; 
 
 if (typeof window.db === 'undefined') {
@@ -931,81 +931,50 @@ window.solicitarPrestamo = function(monto) {
     });
 };
 
-// --- Puente para que el botón HTML funcione ---
-window.abrirverSaldos = function() {
-    window.verSaldos();
-};
-
 // --- Función lógica de Saldos ---
 window.verSaldos = function() {
-    // 1. Verificación básica de sala y DB
-    if (!window.sala || typeof db === 'undefined' || !db) {
-        console.warn("No se puede ver saldos: Sala no definida o DB no inicializada.");
-        return;
-    }
+    if (!window.sala || typeof db === 'undefined') return;
     
-    // 2. Referencia directa a la ruta de jugadores
     const jugadoresRef = ref(db, 'salas/' + window.sala + '/jugadores');
 
     get(jugadoresRef).then((snap) => {
-        // Contenedor con scroll para que no ocupe toda la pantalla
-        let txt = `<div style="max-height: 300px; overflow-y: auto; padding: 5px;">
+        let txt = `<div style="max-height: 300px; overflow-y: auto;">
                    <ul style='list-style:none; padding:0; margin:0;'>`;
         
         snap.forEach(c => {
             let j = c.val();
-            let key = c.key; // "Dog", "Horse", "Hat", "Car" o "v1", "v2"...
-            
-            // Lógica corregida: 
-            // Si empieza con 'v' es visitante, si no, usamos el nombre directamente (key)
-            let nombre = key.startsWith('v') 
-                ? "Citizen " + key.replace('v','') 
-                : key; // Usamos la key directamente (ej. "Dog")
-            
-            // Mostramos el dinero. Si es undefined, ponemos 1500 por defecto.
+            let nombre = c.key.startsWith('v') ? "Citizen " + c.key.replace('v','') : c.key;
             let dinero = (j.dinero !== undefined) ? j.dinero : 1500;
             
-            txt += `<li style="margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 5px;">
-                        <b>${nombre}</b>: <span style="color: #27ae60;">$${dinero}</span>
+            txt += `<li style="margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 5px; display: flex; justify-content: space-between;">
+                        <span>${nombre}</span> <span>$${dinero}</span>
                     </li>`;
         });
         
-        txt += "</ul></div>";
+        txt += `</ul><button style="margin-top:15px; width:100%;" onclick="window.cerrarModal()">Cerrar</button></div>`;
         
-        // Abrimos el modal
-        window.abrirModal("Saldos de los jugadores", txt);
-    }).catch((error) => {
-        console.error("Error al cargar saldos:", error);
+        window.abrirModal("Saldos de jugadores", txt);
     });
 };
 
 window.abrirPagar = function() {
-    // 1. Verificación de Sala
-    if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') {
-        const iconoRosaCSS = `
-            <div style="display:inline-block; width: 28px; height: 24px; background: #ff80bf; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); position: relative; vertical-align: middle; margin-right: 10px;">
-                <div style="width: 3px; height: 9px; background: white; position: absolute; top: 6px; left: 12.5px; border-radius: 1px;"></div>
-                <div style="width: 3px; height: 3px; background: white; position: absolute; bottom: 4px; left: 12.5px; border-radius: 1px;"></div>
-            </div>`;
-        window.abrirModal(iconoRosaCSS + "Atención", "<p>Debes estar unido a una sala para acceder a los servicios bancarios.</p>");
-        return;
-    }
+    if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') return;
 
-    // 2. Consulta de Estado en Firebase
     get(child(ref(db), 'salas/' + window.sala + '/jugadores/' + window.miIdx)).then((snap) => {
         const j = snap.val();
+        let contenido = "";
         
         if (j && j.tienePrestamo) {
-            window.abrirModal("💳 Pagar", `
+            contenido = `
                 <p>Saldo pendiente: <b>$${j.montoPrestamo}</b></p>
-                <button class="btn-sidebar" style="width:100%; background:#27ae60; margin-top: 10px;" onclick="window.pagarPrestamo()">Liquidar Préstamo ahora</button>
-            `);
+                <button style="width:100%; margin-top: 10px;" onclick="window.pagarPrestamo()">Liquidar Préstamo</button>
+                <button style="width:100%; margin-top: 5px;" onclick="window.cerrarModal()">Cancelar</button>`;
         } else {
-            window.abrirModal("💳 Pagar", "<p>No tienes deudas pendientes.</p>");
+            contenido = `<p>No tienes deudas pendientes.</p>
+                         <button style="width:100%;" onclick="window.cerrarModal()">Aceptar</button>`;
         }
-    }).catch((error) => {
-        console.error("Error al consultar deuda:", error);
-        window.abrirModal("Error", "No se pudo conectar al servidor.");
+        
+        window.abrirModal("Gestión Bancaria", contenido);
     });
 };
 
@@ -1089,9 +1058,9 @@ window.comprar = function(pos) {
     });
 };
 
-window.verPropiedad = function(pos) {
-    const p = mapa[pos];
-    if (p.p === 0) return;
+window.verPropiedad = function(pos, permitirCompra = false) {
+    const p = window.mapa[pos];
+    if (!p || p.p === 0) return;
 
     const indicesTransporte = [8, 24, 26, 27];
     const esTransporte = indicesTransporte.includes(pos);
@@ -1103,7 +1072,6 @@ window.verPropiedad = function(pos) {
         27: 'https://www.svgrepo.com/show/480860/train-station-mark.svg'
     };
 
-    // Filtro CSS para convertir colores negros a #ff80bf
     const filtroRosa = "invert(75%) sepia(21%) saturate(1828%) hue-rotate(293deg) brightness(105%) contrast(101%)";
 
     get(ref(db, 'salas/' + window.sala)).then((snap) => {
@@ -1150,14 +1118,19 @@ window.verPropiedad = function(pos) {
                     </ul>
                     <hr>`;
 
+        // LÓGICA DE BOTONES CON ESTILOS CSS
         if (!prop) {
-            contenido += `<button class="btn-accion" style="background:#ff80bf" onclick="window.comprar(${pos})">Comprar Propiedad</button>`;
+            if (permitirCompra) {
+                contenido += `<button class="btn-accion" style="background:#ff80bf; width:100%; margin-top:10px;" onclick="window.comprar(${pos})">Comprar Propiedad</button>`;
+            } else {
+                contenido += `<p style="color:gray; font-size:0.8em;">Debes estar en la casilla para comprar.</p>`;
+            }
         } else if (esDuenio) {
-            contenido += `<button class="btn-accion" style="background:#2ecc71" onclick="window.mejorar(${pos})">Mejorar (+$50)</button>
-                          <button class="btn-accion" style="background:#95a5a6" onclick="window.hipotecar(${pos})">${estaHipotecada ? "Liberar" : "Hipotecar"}</button>`;
+            contenido += `<button class="btn-accion" style="background:#2ecc71; width:100%; margin-top:5px;" onclick="window.mejorar(${pos})">Mejorar (+$50)</button>
+                          <button class="btn-accion" style="background:#95a5a6; width:100%; margin-top:5px;" onclick="window.hipotecar(${pos})">${estaHipotecada ? "Liberar" : "Hipotecar"}</button>`;
         } else if (!estaHipotecada) {
             contenido += `<p>Dueño: <b>${window.nombres[prop.owner]}</b></p>
-                          <button class="btn-accion" style="background:#e67e22" onclick="window.pagarAlquiler(${prop.owner}, ${alquiler})">Pagar Alquiler</button>`;
+                          <button class="btn-accion" style="background:#e67e22; width:100%; margin-top:5px;" onclick="window.pagarAlquiler(${prop.owner}, ${alquiler})">Pagar Alquiler</button>`;
         } else {
             contenido += `<p>Propiedad hipotecada por <b>${window.nombres[prop.owner]}</b>. No paga alquiler.</p>`;
         }
@@ -1354,74 +1327,96 @@ window.hipotecar = function(pos) {
     });
 };
 
-// Asegúrate de tener importados: { ref, update, get, increment } from "firebase/database";
+window.cartasEvento = [
+    { txt: "¡Inversión exitosa! Tus acciones subieron, cobras $250.", v: 250 },
+    { txt: "¡Multa por estacionamiento prohibido! Pagas $100.", v: -100 },
+    { txt: "¡Bono de productividad! La empresa te premia con $200.", v: 200 },
+    { txt: "¡Gastos médicos inesperados! Pagas $250 por una consulta.", v: -250 },
+    { txt: "¡Encontraste dinero en tu abrigo viejo! Recibes $50.", v: 50 },
+    { txt: "¡Reparación de alcantarillado! Debes pagar $150 al municipio.", v: -150 },
+    { txt: "¡Premio de lotería local! Has ganado $300.", v: 300 },
+    { txt: "¡Donación benéfica obligatoria! Pagas $100 por el bien común.", v: -100 }
+];
+
+window.obtenerCarta = function() {
+    return window.cartasEvento[Math.floor(Math.random() * window.cartasEvento.length)];
+};
 
 window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
-    // 1. Asegurar que pos sea un número entero
     const posInt = parseInt(pos);
-    console.log("DEBUG: Procesando posición:", posInt);
-
-    // 2. Validación estricta
-    if (typeof window.mapa === 'undefined') {
-        console.error("CRÍTICO: window.mapa no está definido.");
-        return;
-    }
-    if (window.mapa[posInt] === undefined) {
-        console.error("ERROR: La posición " + posInt + " no existe en el objeto mapa.");
-        return;
-    }
-
     const salaRef = ref(db, 'salas/' + window.sala);
     const snap = await get(salaRef);
     const data = snap.val();
     if (!data) return;
 
+    // Lógica de compra: Solo permitir si es llegada por movimiento Y es el turno del jugador
+    const esTurnoActual = (data.turno === window.miIdx);
+    const puedeComprar = esLlegadaPorMovimiento && esTurnoActual;
+
     const prop = data.propiedades ? data.propiedades[posInt] : null;
     const p = window.mapa[posInt];
+    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
 
-    // 3. CASO FERROCARRILES (Transporte)
+    // 1. CASO TRANSPORTE
     let g = (typeof window.obtenerGrupo === 'function') ? window.obtenerGrupo(posInt) : null;
-    if (g && g.color === "#f5f5dc") {
-        if (!prop) {
-            window.verPropiedad(posInt, esLlegadaPorMovimiento);
-        } else if (prop.owner !== window.miIdx) {
+    if (g && g.color === "rgb(231, 62, 141)") {
+        if (!prop) window.verPropiedad(posInt, puedeComprar); 
+        else if (prop.owner !== window.miIdx) {
             const esAliado = (data.jugadores[window.miIdx] && prop.equipo === data.jugadores[window.miIdx].equipo);
-            if (esAliado) {
-                window.log("¡Es propiedad de tu aliado, estás a salvo!");
-                window.verPropiedad(posInt, false);
-            } else {
+            if (esAliado) window.verPropiedad(posInt, false);
+            else {
                 const trans = [8, 24, 26, 27];
                 const count = trans.filter(i => data.propiedades && data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
                 const alquiler = { 1: 100, 2: 150, 3: 250, 4: 300 }[count] || 100;
                 window.pagarAlquiler(prop.owner, alquiler);
-                window.log(window.nombres[window.miIdx] + " pagó $" + alquiler + " de transporte.");
                 window.verPropiedad(posInt, false);
             }
-        } else {
-            window.verPropiedad(posInt, false);
-        }
+        } else window.verPropiedad(posInt, false);
         return;
     }
 
-    // 4. CASO PROPIEDAD NORMAL
+    // 2. CASO PROPIEDAD NORMAL
     if (p && p.p > 0) {
         const tieneDuenio = prop && prop.owner !== undefined && prop.owner !== window.miIdx;
-        const esAliado = (data.jugadores[window.miIdx] && prop && prop.equipo === data.jugadores[window.miIdx].equipo);
-        
-        if (tieneDuenio && !esAliado) {
-            window.verPropiedad(posInt, false);
-        } else if (tieneDuenio && esAliado) {
-            window.log("¡Propiedad de tu aliado, a salvo!");
-            window.verPropiedad(posInt, false);
-        } else {
-            // Si está libre o es tuya, permitimos compra solo si llegó por dado
-            window.verPropiedad(posInt, esLlegadaPorMovimiento && !prop);
-        }
+        if (tieneDuenio) window.verPropiedad(posInt, false);
+        else window.verPropiedad(posInt, puedeComprar);
+        return;
+    }
+
+    // --- EVENTOS ESPECIALES ---
+    let contenido = "";
+    let titulo = "";
+
+    if (p.n === "ARCA COMUNAL" || p.n === "?") {
+        const carta = window.obtenerCarta();
+        titulo = (p.n === "ARCA COMUNAL") ? "Arca Comunal" : "Suerte (?)";
+        update(jugadorRef, { dinero: increment(carta.v) });
+        contenido = `<h2>${titulo}</h2><p>${carta.txt}</p>`;
     } 
-    // 5. CASO CÁRCEL
     else if (posInt === 10) {
-        window.log("¡Has caído en la CÁRCEL!");
-        update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { enCarcel: 1 });
+        const motivos = ["Has sido arrestado.", "¡Evadiste impuestos!", "Alteración del orden."];
+        titulo = "Cárcel";
+        update(jugadorRef, { enCarcel: 1 });
+        contenido = `<h2>Estás Arrestado</h2><p>${motivos[Math.floor(Math.random() * motivos.length)]}</p>`;
+    }
+    else if (p.n === "IMPUESTOS") {
+        const monto = Math.floor(Math.random() * 300) + 50;
+        update(jugadorRef, { dinero: increment(-monto) });
+        update(salaRef, { pozoImpuestos: increment(monto) });
+        titulo = "Impuestos";
+        contenido = `<h2>Impuestos</h2><p>Pagas: $${monto}</p>`;
+    }
+    else if (p.n === "PARADA") {
+        const pozo = data.pozoImpuestos || 0;
+        update(jugadorRef, { dinero: increment(pozo) });
+        update(salaRef, { pozoImpuestos: 0 });
+        titulo = "Parada Gratuita";
+        contenido = `<h2>Parada</h2><p>Recolectaste $${pozo}.</p>`;
+    }
+
+    if (contenido !== "") {
+        // AQUÍ HE AÑADIDO class="btn-accion" PARA QUE USE TU CSS
+        window.abrirModal(titulo, contenido + `<button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button>`);
     }
 };
 
