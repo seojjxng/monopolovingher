@@ -111,7 +111,7 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
     margin: 5px 0 15px 0; 
     width: 100%;
     flex-shrink: 0;
-    
+    position: relative;
     /* Scroll oculto pero funcional */
     scrollbar-width: none;       /* Firefox */
     -ms-overflow-style: none;    /* IE y Edge */
