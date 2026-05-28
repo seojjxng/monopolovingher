@@ -345,15 +345,19 @@ window.validarYConectar = function() {
     get(ref(db, 'salas/' + id)).then((snapshot) => {
         if (snapshot.exists()) {
             window.abrirModal("Sala encontrada", `
-                <p>La sala <b>${id}</b> está activa.</p>
-                <button class="btn-sidebar" onclick="window.modalSeleccionRol('${id}', false)">Unirse como Jugador</button>
-                <button class="btn-sidebar" onclick="window.unirseComoVisitante('${id}', false)">Entrar como Visitante</button>
+                <div class="modal-content">
+                    <p>La sala <b>${id}</b> está activa.</p>
+                    <button class="btn-sidebar" style="width: 100%;" onclick="window.modalSeleccionRol('${id}', false)">Unirse como Jugador</button>
+                    <button class="btn-sidebar" style="width: 100%; margin-top: 10px;" onclick="window.unirseComoVisitante('${id}', false)">Entrar como Visitante</button>
+                </div>
             `);
         } else {
             window.abrirModal("Sala nueva", `
-                <p>La sala <b>${id}</b> no existe. Sé el primero en crearla.</p>
-                <button class="btn-sidebar" onclick="window.modalSeleccionRol('${id}', true)">Crear como Jugador</button>
-                <button class="btn-sidebar" onclick="window.unirseComoVisitante('${id}', true)">Crear como Visitante</button>
+                <div class="modal-content">
+                    <p>La sala <b>${id}</b> no existe. Sé el primero en crearla.</p>
+                    <button class="btn-sidebar" style="width: 100%;" onclick="window.modalSeleccionRol('${id}', true)">Crear como Jugador</button>
+                    <button class="btn-sidebar" style="width: 100%; margin-top: 10px;" onclick="window.unirseComoVisitante('${id}', true)">Crear como Visitante</button>
+                </div>
             `);
         }
     });
@@ -439,49 +443,56 @@ window.iniciarPartida = function() {
 };
 
 // --- 4. Unión de Visitante (Automática) ---
-window.unirseComoVisitante = async function(salaId, esCreacion) {
+window.unirseComoVisitante = async function(salaId, esCreacion, nombreVisitante = "Citizen") {
     window.sala = salaId;
+    window.esVisitante = true;
     
+    // --- LÓGICA DE CREACIÓN O UNIÓN ---
     if (esCreacion) {
         const nuevoRol = 'v1';
         const roomData = {
             estado: "esperando",
-            creador: nuevoRol, // Visitante es el creador
+            creador: nuevoRol,
             jugadores: { 
-                [nuevoRol]: { nombre: "Citizen 1", activo: true, pos: 0 } 
+                [nuevoRol]: { nombre: nombreVisitante, activo: true, pos: 0 } 
             }
         };
         await set(ref(db, 'salas/' + salaId), roomData);
-        
         window.miIdx = nuevoRol;
         window.creadorSala = nuevoRol;
-        window.esVisitante = true;
-        window.cerrarModal();
-        window.anunciarEnChat(salaId, "Un visitante ha creado la sala.");
-        window.actualizarBotonesPoderes();
-        window.abrirModal("Éxito", `<p>Sala creada como <b>Visitante</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
-        window.sincronizar();
-        
     } else {
         const dbRef = ref(db, 'salas/' + salaId + '/jugadores');
-        runTransaction(dbRef, (jugadores) => {
+        // Usamos una transacción para asignar el ID v2, v3, etc.
+        const res = await runTransaction(dbRef, (jugadores) => {
             if (!jugadores) jugadores = {};
             const visitantes = Object.keys(jugadores).filter(k => k.startsWith('v')).length;
             const nuevoRol = 'v' + (visitantes + 1);
-            jugadores[nuevoRol] = { nombre: "Citizen " + (visitantes + 1), activo: true, pos: 0 };
+            jugadores[nuevoRol] = { nombre: nombreVisitante + " " + (visitantes + 1), activo: true, pos: 0 };
             window.miIdx = nuevoRol;
             return jugadores;
-        }).then((res) => {
-            if (res.committed) {
-                window.esVisitante = true;
-                window.cerrarModal();
-                window.anunciarEnChat(salaId, "Un visitante (Citizen) se ha unido.");
-                window.actualizarBotonesPoderes();
-                window.abrirModal("Éxito", `<p>Entraste como <b>Visitante</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
-                window.sincronizar();
-            }
         });
+        if (!res.committed) return; // Si falló la transacción
     }
+
+    // --- INICIALIZACIÓN DE DATOS Y REPUTACIÓN ---
+    // Guardamos los datos iniciales del visitante en su nodo dedicado
+    const visitanteRef = ref(db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
+    await set(visitanteRef, {
+        nombre: nombreVisitante,
+        reputacion: 0,        // Comienza en 0 como pediste
+        misionesCompletadas: 0
+    });
+
+    // --- FINALIZACIÓN Y UI ---
+    window.cerrarModal();
+    window.anunciarEnChat(salaId, "Un visitante se ha unido a la partida.");
+    window.actualizarBotonesPoderes();
+    
+    // Renderizamos las estrellas iniciales (0)
+    window.renderEstrellas(0);
+    
+    window.abrirModal("Éxito", `<p>Entraste como <b>Visitante</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
+    window.sincronizar();
 };
 
 // --- 5. Anuncio en Chat y Desconexión (Crítico) ---
@@ -938,22 +949,28 @@ window.verSaldos = function() {
     const jugadoresRef = ref(db, 'salas/' + window.sala + '/jugadores');
 
     get(jugadoresRef).then((snap) => {
-        let txt = `<div style="max-height: 300px; overflow-y: auto;">
-                   <ul style='list-style:none; padding:0; margin:0;'>`;
+        // Usamos .modal-content para el estilo rosa y el .btn-cerrar-x
+        let txt = `<div class="abrirModal">
+                     <h2 style="color: #ff59aa; margin-top: 0;">Saldos</h2>
+                     <div style="max-height: 300px; overflow-y: auto; text-align: left;">
+                       <ul style='list-style:none; padding:0; margin:10px 0;'>`;
         
         snap.forEach(c => {
             let j = c.val();
             let nombre = c.key.startsWith('v') ? "Citizen " + c.key.replace('v','') : c.key;
             let dinero = (j.dinero !== undefined) ? j.dinero : 1500;
             
-            txt += `<li style="margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                        <span>${nombre}</span> <span>$${dinero}</span>
+            txt += `<li style="margin-bottom: 8px; border-bottom: 1px solid #ffdde2; padding-bottom: 5px; display: flex; justify-content: space-between;">
+                        <span style="font-weight:bold; color:#555;">${nombre}</span> 
+                        <span style="color:#ff59aa;">$${dinero}</span>
                     </li>`;
         });
         
-        txt += `</ul><button style="margin-top:15px; width:100%;" onclick="window.cerrarModal()">Cerrar</button></div>`;
+        txt += `</ul></div>
+                <button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Cerrar</button>
+                </div>`;
         
-        window.abrirModal("Saldos de jugadores", txt);
+        window.abrirModal("Saldos", txt);
     });
 };
 
@@ -1074,6 +1091,16 @@ window.verPropiedad = function(pos, permitirCompra = false) {
 
     const filtroRosa = "invert(75%) sepia(21%) saturate(1828%) hue-rotate(293deg) brightness(105%) contrast(101%)";
 
+    // Función auxiliar para mostrar errores estilizados
+    window.mostrarError = function(mensaje) {
+        const contenido = `
+            <div class="carta-monopoly">
+                <p style="text-align:center; margin:20px 0;">${mensaje}</p>
+                <button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Entendido</button>
+            </div>`;
+        window.abrirModal("Aviso", contenido);
+    };
+
     get(ref(db, 'salas/' + window.sala)).then((snap) => {
         const data = snap.val();
         const climaIdx = data.climaIdx || 0;
@@ -1118,7 +1145,6 @@ window.verPropiedad = function(pos, permitirCompra = false) {
                     </ul>
                     <hr>`;
 
-        // LÓGICA DE BOTONES CON ESTILOS CSS
         if (!prop) {
             if (permitirCompra) {
                 contenido += `<button class="btn-accion" style="background:#ff80bf; width:100%; margin-top:10px;" onclick="window.comprar(${pos})">Comprar Propiedad</button>`;
@@ -1283,7 +1309,7 @@ window.mejorar = function(pos) {
     Promise.all([get(tRef), get(jRef)]).then(([snapT, snapJ]) => {
         const todas = snapT.val();
         const j = snapJ.val();
-        const costo = 50; // Costo definido por ti
+        const costo = 50; 
 
         if (window.verificarMonopolio(pos, todas) && j.dinero >= costo) {
             const nivelActual = (todas[pos].nivel || 0);
@@ -1293,10 +1319,12 @@ window.mejorar = function(pos) {
                 window.cerrarModal();
                 window.log("Propiedad mejorada al nivel " + (nivelActual + 1));
             } else {
-                alert("Ya tienes un hotel.");
+                // Ventana emergente para el límite de hoteles
+                window.mostrarError("¡Ya tienes un hotel (nivel máximo)!");
             }
         } else {
-            alert("Necesitas el set completo (monopolio) y dinero para mejorar.");
+            // Ventana emergente con el diseño CSS solicitado
+            window.mostrarError("Necesitas el set completo (monopolio) y dinero para mejorar.");
         }
     });
 };
@@ -1359,7 +1387,7 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
 
     // 1. CASO TRANSPORTE
     let g = (typeof window.obtenerGrupo === 'function') ? window.obtenerGrupo(posInt) : null;
-    if (g && g.color === "rgb(231, 62, 141)") {
+    if (g && g.color === "#d24285") {
         if (!prop) window.verPropiedad(posInt, puedeComprar); 
         else if (prop.owner !== window.miIdx) {
             const esAliado = (data.jugadores[window.miIdx] && prop.equipo === data.jugadores[window.miIdx].equipo);
@@ -1394,10 +1422,12 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         contenido = `<h2>${titulo}</h2><p>${carta.txt}</p>`;
     } 
     else if (posInt === 10) {
-        const motivos = ["Has sido arrestado.", "¡Evadiste impuestos!", "Alteración del orden."];
+        // LÓGICA DE CÁRCEL INTEGRADA
         titulo = "Cárcel";
-        update(jugadorRef, { enCarcel: 1 });
-        contenido = `<h2>Estás Arrestado</h2><p>${motivos[Math.floor(Math.random() * motivos.length)]}</p>`;
+        await update(jugadorRef, { enCarcel: 1 });
+        // En lugar de abrir un modal genérico, llamamos a la terminal de hacker
+        window.mostrarOpcionesCarcel();
+        return; // Terminamos aquí para que no abra el modal de abajo
     }
     else if (p.n === "IMPUESTOS") {
         const monto = Math.floor(Math.random() * 300) + 50;
@@ -1415,9 +1445,20 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     }
 
     if (contenido !== "") {
-        // AQUÍ HE AÑADIDO class="btn-accion" PARA QUE USE TU CSS
         window.abrirModal(titulo, contenido + `<button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button>`);
     }
+};
+
+window.mostrarOpcionesCarcel = function() {
+    const contenido = `
+        <div class="modal-content" style="background: #1a1a1a; color: #00ff00; border: 2px solid #00ff00; font-family: monospace; text-align: center;">
+            <h2 style="margin-top: 0;">TERMINAL DE SEGURIDAD</h2>
+            <p style="font-size: 0.9em;">Estás arrestado. Elige tu método de salida:</p>
+            <button class="btn-accion" style="width:100%; background: #004400; color: #00ff00;" onclick="window.intentarHackeo()">> INTENTAR HACKEO</button>
+            <button class="btn-accion" style="width:100%; margin-top:10px;" onclick="window.pagarFianza()">PAGAR FIANZA ($200)</button>
+            <button class="btn-accion" style="width:100%; margin-top:10px; background: #440000;" onclick="window.quedarseEnCarcel()">ESPERAR TURNO</button>
+        </div>`;
+    window.abrirModal("Cárcel", contenido);
 };
 
 window.intentarHackeo = async function() {
@@ -1453,7 +1494,125 @@ window.quedarseEnCarcel = function() {
     if (typeof window.pasarTurno === 'function') window.pasarTurno();
 };
 
+window.abrirModalMisiones = function() {
+    const esVisitante = window.esVisitante;
+    let html = `<div class="abrirModal">`;
+    html += `<span class="btn-cerrar-x" onclick="window.cerrarModal()">&times;</span>`;
+    
+    if (esVisitante) {
+        html += `<h2 style="color: #ff59aa; margin-top: 0;">✨ Misiones del Paseo</h2>`;
+        const misiones = [
+            { id: 'benefactor', titulo: 'El Benefactor', desc: 'Regala $100 a un jugador.', tipo: 'angel', color: '#ff59aa' },
+            { id: 'consejero', titulo: 'El Consejero', desc: 'Paga fianza de 3 jugadores.', tipo: 'angel', color: '#ff59aa' },
+            { id: 'saboteador', titulo: 'El Saboteador', desc: 'Haz perder un turno a un jugador.', tipo: 'gargola', color: '#4a4a4a' }
+        ];
+        
+        misiones.forEach(m => {
+            html += `
+            <div style="background: #fff; padding: 10px; margin: 10px 0; border-radius: 10px; border: 1px solid ${m.color}; text-align: left;">
+                <div style="font-weight: bold; color: ${m.color};">${m.titulo}</div>
+                <div style="font-size: 0.9em; margin: 5px 0;">${m.desc}</div>
+                <button class="btn-accion" style="width:100%; background:${m.color};" onclick="window.completarMisionVisitante('${m.tipo}')">Completar</button>
+            </div>`;
+        });
+    } else {
+        html += `<h2 style="color: #ff59aa; margin-top: 0;">🏆 Objetivos del Jugador</h2>`;
+        const misiones = [
+            { titulo: 'Inversor', desc: 'Poseer 3 propiedades.', rec: 200 },
+            { titulo: 'Coleccionista', desc: 'Completar un set.', rec: 300 },
+            { titulo: 'Caja Fuerte', desc: 'Acumular $2,000.', rec: 650 }
+        ];
+
+        misiones.forEach(m => {
+            html += `
+            <div style="background: #fff; padding: 10px; margin: 10px 0; border-radius: 10px; border: 1px solid #ff80bf; text-align: left;">
+                <div style="font-weight: bold; color: #ff59aa;">${m.titulo}</div>
+                <div style="font-size: 0.9em; margin: 5px 0;">${m.desc}</div>
+                <div style="font-size: 0.85em; font-weight: bold; color: #ff59aa;">Premio: $${m.rec}</div>
+            </div>`;
+        });
+    }
+    
+    html += `</div>`;
+    window.abrirModal(esVisitante ? "Misiones" : "Logros", html);
+};
+
+    window.renderEstrellas = function(valor) {
+    // Busca el contenedor específico en el DOM
+    const contenedor = document.getElementById('contenedor-estrellas');
+    if (!contenedor) return;
+
+    const estrellas = contenedor.querySelectorAll('.estrella');
+    estrellas.forEach((star, index) => {
+        // index empieza en 0, valor empieza en 1
+        if (index < valor) {
+            star.classList.add('activa');
+        } else {
+            star.classList.remove('activa');
+        }
+    });
+};
+
+window.obtenerTituloReputacion = function(reputacion) {
+    if (reputacion === 0) return "Principiante en Sombras";
+    if (reputacion <= 1) return "Novato Urbano";
+    if (reputacion <= 2) return "Estrella Naciente";
+    if (reputacion <= 3) return "Ciudadano Distinguido";
+    if (reputacion <= 4) return "Icono de la Ciudad";
+    return "Leyenda de Naeun Town";
+};
+
+window.mostrarAvisoReputacion = (repActual) => {
+    const tituloNivel = window.obtenerTituloReputacion(repActual);
+    
+    const contenido = `
+        <div class="abrirModal">
+            <h2 style="color: #ff59aa; margin-top: 0;">Tu Nivel: ${tituloNivel}</h2>
+            <div style="font-size: 3em; margin: 10px 0; color: #ff59aa; text-shadow: 0 0 5px #ffccd5;">★</div>
+            <p style="font-size: 0.9em; color: #555; margin-bottom: 20px;">
+                Reputación actual: ${repActual}/5. 
+                Sigue completando misiones para alcanzar el siguiente rango.
+            </p>
+            <button class="btn-accion" style="width:100%;" onclick="window.cerrarModal(); window.abrirModalMisiones();">
+                Ver mis misiones
+            </button>
+        </div>`;
+    
+    window.abrirModal("Reputación", contenido);
+};
+
+window.completarMisionVisitante = function(tipo) {
+    // 1. Definir la ruta dependiendo de si es visitante o jugador
+    const rol = window.esVisitante ? 'visitantes' : 'jugadores';
+    const refPath = `salas/${window.sala}/${rol}/${window.miIdx}`;
+    const userRef = ref(db, refPath);
+    
+    // 2. Obtener datos actuales para calcular el cambio
+    get(userRef).then((snap) => {
+        const datos = snap.val();
+        let repActual = datos.reputacion || 3;
+        
+        // Ángel suma, Gárgola resta (limitado entre 0 y 5)
+        const cambio = (tipo === 'angel') ? 1 : -1;
+        const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
+        
+        // 3. Actualizar Firebase
+        update(userRef, { 
+            reputacion: nuevaRep,
+            misionesCompletadas: increment(1)
+        }).then(() => {
+            // 4. Actualizar la interfaz visual
+            window.renderEstrellas(nuevaRep);
+            window.cerrarModal();
+            
+            // Opcional: mostrar un pequeño aviso de éxito
+            console.log("Reputación actualizada a: " + nuevaRep);
+        });
+    });
+};
+
 document.addEventListener('DOMContentLoaded', () => {
+    // 1. Inicialización del Chat
     const chatInput = document.getElementById('chat-msg');
     if (chatInput) {
         chatInput.addEventListener('keypress', (e) => {
@@ -1464,9 +1623,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // 2. Configuración del Dado (Patrón de seguridad)
     (function configurarDado() {
         const dice = document.getElementById('dice');
         if (dice) {
+            // El uso de cloneNode es un truco para eliminar eventos antiguos
             const nuevoDice = dice.cloneNode(true);
             dice.parentNode.replaceChild(nuevoDice, dice);
             
@@ -1475,40 +1636,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (typeof window.tirarDado === 'function') window.tirarDado();
             };
         } else {
+            // Reintenta si el elemento aún no ha aparecido en el DOM
             setTimeout(configurarDado, 1000);
         }
     })();
-});
 
-window.abrirModalMisiones = function() {
-    const misiones = [
-        { id: 'inversorInicial', titulo: 'Inversor Inicial', desc: 'Poseer al menos 3 propiedades.', rec: 200 },
-        { id: 'coleccionista', titulo: 'El coleccionista', desc: 'Completar cualquier set de color.', rec: 300 },
-        { id: 'negociador', titulo: 'El negociador', desc: 'Realizar tu primer intercambio exitoso.', rec: 400 },
-        { id: 'cajafuerte', titulo: 'Caja fuerte', desc: 'Acumular $2,000 en efectivo.', rec: 650 },
-        { id: 'renovador', titulo: 'Renovador', desc: 'Construir un total de 5 casas.', rec: 500 },
-        { id: 'monopolioTotal', titulo: 'Monopolio total', desc: 'Ser dueño de los 3 sets más caros.', rec: 1500 },
-        { id: 'intocable', titulo: 'El intocable', desc: 'Otros jugadores caen 5 veces en tus propiedades.', rec: 400 }
-    ];
-
-    let html = `<div style="text-align: left; max-height: 400px; overflow-y: auto;">`;
-    misiones.forEach(m => {
-        html += `
-            <div style="background: #f9f9f9; border-left: 5px solid #ff80bf; padding: 10px; margin-bottom: 10px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <div style="font-weight: bold; color: #333; font-size: 1.1em;">${m.titulo}</div>
-                <div style="font-size: 0.9em; color: #666; margin: 5px 0;">${m.desc}</div>
-                <div style="font-size: 0.85em; color: #ff80bf; font-weight: bold;">Recompensa: $${m.rec}</div>
-            </div>`;
-    });
-    html += `</div><button class="btn-sidebar" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>`;
-
-    window.abrirModal("🏆 Misiones Disponibles", html);
-};
-
-window.mostrarAvisoReputacion = () => {
-    window.abrirModal("Reputación", "<p>Tu nivel en Naeun Town es: <b>Estrella Naciente</b></p>");
-};
-
-document.addEventListener('DOMContentLoaded', () => {
-    window.generarTablero();
+    // 3. Generación del Tablero
+    // Asegúrate de que esto se ejecute después de los elementos básicos
+    if (typeof window.generarTablero === 'function') {
+        window.generarTablero();
+    }
 });
