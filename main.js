@@ -407,22 +407,22 @@ window.modalSeleccionRol = function(salaId, esCreacion) {
 };
 
 // --- 3. Lógica de Unión/Creación de Jugador (Fichas) ---
-// --- 3. Lógica de Unión/Creación de Jugador (Fichas) ---
 window.procesarUnion = async function(salaId, rol, esCreacion) {
     window.sala = salaId;
     
-    // Objeto base con los campos de reputación e intentos
+    // Objeto base: dinero inicial en 0
     const datosJugador = { 
         nombre: rol, 
-        dinero: 1500, 
+        dinero: 0, 
         pos: 0, 
         activo: true, 
         intentosFallidos: 0, 
-        estrellas: 5 
+        estrellas: 0,
+        visitasCarcel: 0,
+        cumplidasCarcel: 0
     };
     
     if (esCreacion) {
-        // Inicialización completa de la sala como creador
         const roomData = {
             estado: "esperando",
             creador: rol,
@@ -437,15 +437,14 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         window.esVisitante = false;
         window.cerrarModal();
         window.anunciarEnChat(salaId, rol + " ha creado la sala.");
-        window.abrirModal("Éxito", `<p>Sala creada como <b>${rol}</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
+        window.abrirModal("Éxito", `<p>Sala creada como <b>${rol}</b></p><button class="btn-sidebar" onclick="window.iniciarPartida()">Comenzar Partida</button>`);
         window.sincronizar();
         
     } else {
-        // Unión a sala existente mediante transacción
         const dbRef = ref(db, 'salas/' + salaId + '/jugadores');
         runTransaction(dbRef, (jugadores) => {
             if (!jugadores) jugadores = {};
-            if (jugadores[rol]) return; // Ya ocupado
+            if (jugadores[rol]) return; 
             
             jugadores[rol] = datosJugador;
             return jugadores;
@@ -455,7 +454,7 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
                 window.esVisitante = false;
                 window.cerrarModal();
                 window.anunciarEnChat(salaId, rol + " se ha unido.");
-                window.abrirModal("Éxito", `<p>Entraste como <b>${rol}</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
+                window.abrirModal("Éxito", `<p>Entraste como <b>${rol}</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Esperando inicio...</button>`);
                 window.sincronizar();
             } else {
                 alert("El rol " + rol + " ya está ocupado o hubo un error.");
@@ -475,11 +474,22 @@ window.iniciarPartida = function() {
         // Elegimos al azar al primer jugador
         const jugadorInicial = jugadoresIds[Math.floor(Math.random() * jugadoresIds.length)];
 
-        update(salaRef, { 
+        // Preparamos los cambios: actualizamos el estado, el turno y el dinero de todos
+        let actualizaciones = { 
             estado: "jugando", 
             turno: jugadorInicial 
-        }).then(() => {
+        };
+
+        // Recorremos los jugadores para asignarles los $1500
+        jugadoresIds.forEach(id => {
+            actualizaciones['jugadores/' + id + '/dinero'] = 1500;
+        });
+
+        // Aplicamos todos los cambios a la base de datos de una sola vez
+        update(salaRef, actualizaciones).then(() => {
             window.log("¡La partida ha comenzado! Turno de: " + (s.jugadores[jugadorInicial].nombre || jugadorInicial));
+            window.anunciarEnChat(window.sala, "¡La partida ha comenzado! Se han repartido $1500 a cada jugador.");
+            window.sincronizar(); // Refresca la interfaz para todos
         });
     });
 };
@@ -927,14 +937,28 @@ window.pasarTurno = function() {
         const listaJugadores = Object.keys(s.jugadores);
         const turnoActual = s.turno;
         
-        // Buscamos quién es el actual
-        const idxActual = listaJugadores.indexOf(turnoActual);
+        // Buscamos el índice actual
+        let idxActual = listaJugadores.indexOf(turnoActual);
         
-        // Calculamos el siguiente (Si es el último, volvemos al 0)
-        const siguienteIdx = (idxActual === -1 || idxActual >= listaJugadores.length - 1) 
-            ? 0 
-            : idxActual + 1;
-            
+        // Intentamos encontrar el siguiente jugador que NO esté en la cárcel
+        let siguienteIdx = idxActual;
+        let encontrado = false;
+        
+        // Probamos hasta dar una vuelta completa a la lista
+        for (let i = 1; i <= listaJugadores.length; i++) {
+            siguienteIdx = (idxActual + i) % listaJugadores.length;
+            const idCandidato = listaJugadores[siguienteIdx];
+            const jugadorCandidato = s.jugadores[idCandidato];
+
+            // Si el jugador no está en la cárcel, le damos el turno
+            if (!jugadorCandidato.enCarcel) {
+                encontrado = true;
+                break;
+            } else {
+                window.log("Saltando turno de " + idCandidato + " (en la cárcel).");
+            }
+        }
+        
         const siguienteId = listaJugadores[siguienteIdx];
         
         update(salaRef, { 
@@ -1226,34 +1250,32 @@ window.verSaldos = function() {
                      <div style="max-height: 300px; overflow-y: auto; text-align: left;">
                        <ul style='list-style:none; padding:0; margin:10px 0;'>`;
         
-        snap.forEach(c => {
-            let j = c.val();
-            let key = c.key.toString();
-            
-            // FILTRO ESTRICTO: 
-            // Un visitante es SOLAMENTE si la clave empieza por 'v' minúscula.
-            // Si tu clave es "v1", "v2", etc., esto funcionará.
-            let esVisitante = key.startsWith('v') && key.length > 1; 
-            
-            let nombre = esVisitante ? "Citizen " + key.replace('v','') : key;
-            
-            // LÓGICA DE SALDO:
-            // Aseguramos que si es ciudadano (no visitante), el saldo inicial sea 1000
-            let saldoInicial = esVisitante ? 2000 : 1000;
-            
-            // Si j.dinero no existe, asignamos el inicial, SI NO, usamos el que tiene en BD
-            let dinero = (j.dinero !== undefined && j.dinero !== null) ? j.dinero : saldoInicial;
-            
-            txt += `<li style="margin-bottom: 8px; border-bottom: 1px solid #ffdde2; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                        <span style="font-weight:bold; color:#555;">${nombre} ${esVisitante ? '<i class="fas fa-shield-alt" style="color:#6c5ce7"></i>' : ''}</span> 
-                        <span style="color:#ff59aa;">$${dinero}</span>
-                    </li>`;
-        });
+        if (!snap.exists()) {
+            txt += `<li style="text-align:center; color:#999;">No hay jugadores.</li>`;
+        } else {
+            snap.forEach(c => {
+                let j = c.val();
+                let key = c.key.toString();
+                let esVisitante = key.startsWith('v') && key.length > 1;
+                
+                // AQUÍ FORZAMOS: Si el dinero es 1000 o 1500, lo ponemos a 0 en la BD
+                let dinero = j.dinero;
+                if (dinero === 1000 || dinero === 1500) {
+                    dinero = 0;
+                    // Actualizamos en la base de datos para que no vuelva a pasar
+                    update(ref(db, 'salas/' + window.sala + '/jugadores/' + key), { dinero: 0 });
+                }
+                
+                let nombre = esVisitante ? "Citizen " + key.replace('v','') : key;
+                
+                txt += `<li style="margin-bottom: 8px; border-bottom: 1px solid #ffdde2; padding-bottom: 5px; display: flex; justify-content: space-between;">
+                            <span style="font-weight:bold; color:#555;">${nombre}</span> 
+                            <span style="color:#ff59aa;">$${dinero}</span>
+                        </li>`;
+            });
+        }
         
-        txt += `</ul></div>
-                <button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Cerrar</button>
-                </div>`;
-        
+        txt += `</ul></div><button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Cerrar</button></div>`;
         window.abrirModal("🏦 Saldos", txt);
     });
 };
@@ -1323,6 +1345,38 @@ window.pagarPrestamo = function() {
 
 window.obtenerGrupo = function(pos) {
     return grupos.find(g => g.indices.includes(pos));
+};
+
+window.verificarParColor = async function(pos, todasLasPropiedades) {
+    const grupo = window.obtenerGrupo(pos);
+    if (!grupo) return;
+
+    // Filtramos cuántas propiedades del grupo tiene el jugador actual
+    const propiasDelGrupo = grupo.indices.filter(idx => 
+        todasLasPropiedades[idx] && todasLasPropiedades[idx].owner === window.miIdx
+    );
+
+    // Si tiene exactamente 2, le damos la estrella
+    if (propiasDelGrupo.length === 2) {
+        const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+        const snap = await get(jugadorRef);
+        let j = snap.val();
+
+        // Evitamos dar la estrella si ya la tiene registrada
+        if (!j.bonoParColor) {
+            const nuevasEstrellas = (j.estrellas || 0) + 1;
+            
+            await update(jugadorRef, { 
+                estrellas: nuevasEstrellas,
+                bonoParColor: true 
+            });
+
+            window.log("⭐ ¡Has adquirido un par de color y ganado una estrella!");
+
+            // Llamamos a tu función de aviso de reputación que ya usa el modal CSS
+            window.mostrarAvisoReputacion(nuevasEstrellas);
+        }
+    }
 };
 
 // Verifica si el jugador (o su equipo) posee todas las propiedades del color
@@ -1615,39 +1669,42 @@ window.confirmarPago = async function(ownerIdx, monto) {
 };
 
 // 3. Lógica principal de evasión con azar y penalizaciones
-window.procesarEvasion = async function(ownerIdx, monto) {
-    const exito = Math.random() < 0.4; // 40% de éxito
+window.procesarEvasion = async function(tipo, monto) {
+    const exito = Math.random() < 0.4;
     const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const snap = await get(jugadorRef);
     let j = snap.val();
 
     if (exito) {
-        // Cálculo del éxito (reducción aleatoria)
-        const azar = Math.random();
-        let montoFinal = (azar < 0.3) ? monto * 0.9 : (azar < 0.6) ? monto * 0.95 : 0;
-        
-        window.log(`🎉 ¡Éxito! ${window.miIdx} evadió el pago exitosamente.`);
-        window.pagarAlquiler(ownerIdx, montoFinal);
+        window.log(`🎉 ¡Éxito! Evadiste el pago de ${tipo}.`);
+        if(tipo !== 'IMPUESTO') window.pagarAlquiler(ownerIdx, 0); 
     } else {
-        // Fallo: Se paga multa + alquiler original
-        const multa = 100 + monto;
-        
-        // Manejo de intentos fallidos y reputación
+        const multa = (tipo === 'IMPUESTO') ? monto : (100 + monto);
         let intentos = (j.intentosFallidos || 0) + 1;
         let updates = { intentosFallidos: intentos };
         
-        // Penalización: al llegar a 10 fallos, se descuenta 1 estrella
-        if (intentos >= 10) {
+        // Penalización: al llegar a 5 fallos, se descuenta 1 estrella
+        if (intentos >= 5) {
             updates.intentosFallidos = 0;
-            updates.estrellas = (j.estrellas || 5) - 1;
-            window.log(`⚠️ ${window.miIdx} perdió 1 estrella por evasión recurrente.`);
+            updates.estrellas = Math.max(0, (j.estrellas || 0) - 1);
+            window.log(`⚠️ Has perdido 1 estrella por evasión recurrente.`);
         }
-        
         await update(jugadorRef, updates);
-        window.log(`❌ ¡Falló la evasión! ${window.miIdx} paga una multa de $100.`);
-        window.pagarAlquiler(ownerIdx, multa);
+        
+        window.log(`❌ ¡Falló la evasión! Pagas $${multa}.`);
+        if(tipo === 'IMPUESTO') {
+            update(jugadorRef, { dinero: increment(-multa) });
+            update(ref(db, 'salas/' + window.sala), { pozoImpuestos: increment(multa) });
+        } else {
+            window.pagarAlquiler(ownerIdx, multa);
+        }
     }
-    // Cerramos el modal tras procesar la acción
+    window.cerrarModal();
+};
+
+window.pagarImpuesto = async function(monto) {
+    await update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { dinero: increment(-monto) });
+    await update(ref(db, 'salas/' + window.sala), { pozoImpuestos: increment(monto) });
     window.cerrarModal();
 };
 
@@ -1669,12 +1726,22 @@ window.mejorar = function(pos) {
                 window.cerrarModal();
                 window.log("Propiedad mejorada al nivel " + (nivelActual + 1));
             } else {
-                // Ventana emergente para el límite de hoteles
-                window.mostrarError("¡Ya tienes un hotel (nivel máximo)!");
+                // Mensaje límite hotel con CSS
+                window.abrirModal("Límite alcanzado", `
+                    <div style="text-align: center; padding: 10px;">
+                        <p>¡Ya tienes un hotel (nivel máximo)!</p>
+                        <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>
+                    </div>
+                `);
             }
         } else {
-            // Ventana emergente con el diseño CSS solicitado
-            window.mostrarError("Necesitas el set completo (monopolio) y dinero para mejorar.");
+            // Mensaje requisitos con CSS
+            window.abrirModal("Acción no permitida", `
+                <div style="text-align: center; padding: 10px;">
+                    <p>Necesitas el set completo (monopolio) y dinero suficiente para mejorar.</p>
+                    <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>
+                </div>
+            `);
         }
     });
 };
@@ -1727,20 +1794,15 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     const data = snap.val();
     if (!data) return;
 
-    // Lógica de compra
     const esTurnoActual = (data.turno === window.miIdx);
     const puedeComprar = esLlegadaPorMovimiento && esTurnoActual;
-
     const prop = data.propiedades ? data.propiedades[posInt] : null;
     const p = window.mapa[posInt];
     const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
 
-    // Si ya tiene dueño, siempre intentar pintar
-    if (prop && prop.owner) {
-        window.pintarCasilla(posInt, prop.owner);
-    }
+    if (prop && prop.owner) window.pintarCasilla(posInt, prop.owner);
 
-    // 1. CASO TRANSPORTE
+    // ... (Tu lógica de Transporte y Propiedad Normal se mantiene igual) ...
     let g = (typeof window.obtenerGrupo === 'function') ? window.obtenerGrupo(posInt) : null;
     if (g && g.color === "#d24285") {
         if (!prop) window.verPropiedad(posInt, puedeComprar); 
@@ -1752,14 +1814,12 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
                 const count = trans.filter(i => data.propiedades && data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
                 const alquiler = { 1: 100, 2: 150, 3: 250, 4: 300 }[count] || 100;
                 window.interaccionAlquiler(prop.owner, alquiler);
-                
                 window.verPropiedad(posInt, false);
             }
         } else window.verPropiedad(posInt, false);
         return;
     }
 
-    // 2. CASO PROPIEDAD NORMAL
     if (p && p.p > 0) {
         const tieneDuenio = prop && prop.owner !== undefined && prop.owner !== window.miIdx;
         if (tieneDuenio) window.verPropiedad(posInt, false);
@@ -1767,7 +1827,6 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         return;
     }
 
-    // --- EVENTOS ESPECIALES ---
     let contenido = "";
     let titulo = "";
 
@@ -1778,17 +1837,27 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         contenido = `<h2>${titulo}</h2><p>${carta.txt}</p>`;
     } 
     else if (posInt === 10) {
-        titulo = "Cárcel";
-        await update(jugadorRef, { enCarcel: 1 });
+        const snapJ = await get(jugadorRef);
+        let j = snapJ.val();
+        let visitas = (j.visitasCarcel || 0) + 1;
+        let updates = { enCarcel: 1, visitasCarcel: visitas };
+        if (visitas >= 10) {
+            updates.visitasCarcel = 0;
+            updates.estrellas = (j.estrellas || 0) - 1;
+        }
+        await update(jugadorRef, updates);
         window.mostrarOpcionesCarcel();
         return;
     }
     else if (p.n === "IMPUESTOS") {
         const monto = Math.floor(Math.random() * 300) + 50;
-        update(jugadorRef, { dinero: increment(-monto) });
-        update(salaRef, { pozoImpuestos: increment(monto) });
         titulo = "Impuestos";
-        contenido = `<h2>Impuestos</h2><p>Pagas: $${monto}</p>`;
+        contenido = `
+            <h2>Impuestos</h2>
+            <p>Debes pagar: <b>$${monto}</b></p>
+            <button class="btn-accion" onclick="window.pagarImpuesto(${monto})">Pagar</button>
+            <button class="btn-accion" style="background:#ff59aa;" onclick="window.procesarEvasion('IMPUESTO', ${monto})">Evadir (40% éxito)</button>
+        `;
     }
     else if (p.n === "PARADA") {
         const pozo = data.pozoImpuestos || 0;
@@ -1798,42 +1867,116 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         contenido = `<h2>Parada</h2><p>Recolectaste $${pozo}.</p>`;
     }
 
-    if (contenido !== "") {
-        window.abrirModal(titulo, contenido + `<button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button>`);
-    }
+    if (contenido !== "") window.abrirModal(titulo, contenido);
+};
+
+window.mostrarOpcionesCarcel = function() {
+    window.abrirModal("Cárcel", `
+        <p>¿Qué deseas hacer?</p>
+        <button class="btn-accion" onclick="window.intentarHackeo()">Intentar Hackeo (50%)</button>
+        <button class="btn-accion" onclick="window.pagarFianza()">Pagar Fianza ($200)</button>
+        <button class="btn-accion" style="background:#4a4a4a;" onclick="window.quedarseEnCarcel()">Cumplir Condena</button>
+    `);
 };
 
 window.intentarHackeo = async function() {
-    if (!window.sala || window.miIdx === undefined) return;
     const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    
     if (Math.random() < 0.5) {
         window.log("¡HACKEO EXITOSO!");
         await update(jugadorRef, { enCarcel: 0 });
     } else {
         window.log("¡FALLASTE!");
         const snap = await get(jugadorRef);
-        const j = snap.val();
-        await update(jugadorRef, { enCarcel: (j.enCarcel || 0) + 1 });
+        await update(jugadorRef, { enCarcel: (snap.val().enCarcel || 0) + 1 });
         if (typeof window.pasarTurno === 'function') window.pasarTurno();
     }
-    document.getElementById('modal').style.display = 'none';
+    window.cerrarModal();
 };
 
 window.pagarFianza = function() {
-    if (!window.sala || window.miIdx === undefined) return;
-    update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), {
-        enCarcel: 0,
-        dinero: increment(-200)
-    });
+    update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { enCarcel: 0, dinero: increment(-200) });
     window.log("Fianza pagada.");
-    document.getElementById('modal').style.display = 'none';
+    window.cerrarModal();
 };
 
-window.quedarseEnCarcel = function() {
+window.quedarseEnCarcel = async function() {
+    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const snap = await get(jugadorRef);
+    let j = snap.val();
+    let cumplidas = (j.cumplidasCarcel || 0) + 1;
+
+    let updates = { cumplidasCarcel: cumplidas };
+    let mensajeExtra = "";
+
+    if (cumplidas >= 10) {
+        updates.cumplidasCarcel = 0;
+        updates.estrellas = (j.estrellas || 5) + 1;
+        
+        mensajeExtra = `<p style="color: #ff59aa;"><b>¡Felicidades!</b> Has ganado 1 estrella por buen comportamiento.</p>`;
+        window.log(`⭐ ${window.miIdx} ganó 1 estrella por buen comportamiento.`);
+    }
+
+    await update(jugadorRef, updates);
+    
+    // Mostramos la ventana CSS
+    window.abrirModal("Cárcel", `
+        <div style="text-align: center; padding: 10px;">
+            <p>Has decidido cumplir tu condena.</p>
+            ${mensajeExtra}
+            <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>
+        </div>
+    `);
+
     window.log("Cumpliendo condena...");
-    document.getElementById('modal').style.display = 'none';
+    
+    // Mantenemos tu lógica de paso de turno
     if (typeof window.pasarTurno === 'function') window.pasarTurno();
+};
+
+// Función para otorgar recompensa de misión incluyendo estrellas
+window.otorgarRecompensaMision = async function(mision) {
+    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const snap = await get(jugadorRef);
+    let j = snap.val();
+    
+    // 1. Preparamos el objeto de actualizaciones
+    let updates = { 
+        dinero: increment(mision.rec) 
+    };
+
+    let ganoEstrella = false;
+    const estrellasActuales = j.estrellas || 0;
+
+    // 2. Lógica de estrella (solo si es menor a 5)
+    if (estrellasActuales < 5) {
+        updates.estrellas = estrellasActuales + 1;
+        ganoEstrella = true;
+    }
+
+    // 3. Aplicamos los cambios en Firebase
+    await update(jugadorRef, updates);
+    
+    // 4. Actualizamos la interfaz visual de las estrellas al instante
+    if (typeof window.renderEstrellas === 'function') {
+        const nuevoValor = ganoEstrella ? updates.estrellas : estrellasActuales;
+        window.renderEstrellas(nuevoValor);
+    }
+    
+    window.log(`Misión completada: ${mision.titulo}. Recompensa: $${mision.rec}`);
+
+    // 5. Solo si ganó estrella y NO es el máximo, lanzamos el aviso CSS
+    if (ganoEstrella) {
+        window.mostrarAvisoReputacion(updates.estrellas);
+    } else {
+        // Si no ganó estrella (ya es nivel 5), solo avisamos del dinero
+        window.abrirModal("Misión Completada", `
+            <div style="text-align: center;">
+                <h2>${mision.titulo}</h2>
+                <p>¡Has recibido <b>$${mision.rec}</b>!</p>
+                <button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button>
+            </div>
+        `);
+    }
 };
 
 window.abrirModalMisiones = function() {
@@ -1908,19 +2051,17 @@ window.mostrarAvisoReputacion = (repActual) => {
     const tituloNivel = window.obtenerTituloReputacion(repActual);
     
     const contenido = `
-        <div class="abrirModal">
-            <h2 style="color: #ff59aa; margin-top: 0;">Tu Nivel: ${tituloNivel}</h2>
-            <div style="font-size: 3em; margin: 10px 0; color: #ff59aa; text-shadow: 0 0 5px #ffccd5;">★</div>
-            <p style="font-size: 0.9em; color: #555; margin-bottom: 20px;">
-                Reputación actual: ${repActual}/5. 
-                Sigue completando misiones para alcanzar el siguiente rango.
-            </p>
-            <button class="btn-accion" style="width:100%;" onclick="window.cerrarModal(); window.abrirModalMisiones();">
-                Ver mis misiones
-            </button>
+        <div style="text-align: center;">
+            <h2 style="color: #ff59aa;">¡Ascenso de Rango!</h2>
+            <p>Ahora eres: <b>${tituloNivel}</b></p>
+            <div style="font-size: 3em; margin: 10px 0; color: #ff59aa;">★</div>
+            <p>Has alcanzado un nuevo nivel de reputación en Naeun Town.</p>
+            <button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Continuar</button>
         </div>`;
     
-    window.abrirModal("Reputación", contenido);
+    // Al usar solo abrirModal, sobrescribes cualquier contenido previo
+    // sin añadir listeners extra al DOM
+    window.abrirModal("¡Felicidades!", contenido);
 };
 
 window.completarMisionVisitante = function(tipo) {
