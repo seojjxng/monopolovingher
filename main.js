@@ -27,6 +27,38 @@ window.checkDb = function() {
     return true;
 };
 
+
+window.bgMusic = new Audio('https://dl.dropbox.com/scl/fi/hk4mo9t0v12r63c6nznon/.mp3?rlkey=a6zljcoh6spn484f3soqmi59g&st=8ntfk49p&dl=1'); 
+window.bgMusic.loop = true;
+window.bgMusic.volume = 0.3;
+
+window.mostrarDedicatoria = function() {
+    const dedicatoria = document.createElement('div');
+    dedicatoria.id = 'dedicatoria-modal';
+    dedicatoria.style.cssText = "display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 240, 243, 0.8); z-index: 10000; justify-content: center; align-items: center;";
+    
+    dedicatoria.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 20px; border: 2px solid #ff80bf; text-align: center; width: 300px; color: #c71585; position: relative;">
+            <span onclick="window.cerrarDedicatoria()" 
+                  style="cursor: pointer; position: absolute; top: 10px; right: 15px; font-size: 24px; font-weight: bold;">
+                  &times;
+            </span>
+            <p style="margin: 20px 0 10px 0;">"A Naeun, mi musa; porque todas mis mejores ideas nacen pensando en ella."</p>
+            <p><b>- Seojun</b></p>
+        </div>`;
+    
+    document.body.appendChild(dedicatoria);
+};
+
+// Nueva función de cierre que también activa la música
+window.cerrarDedicatoria = function() {
+    const modal = document.getElementById('dedicatoria-modal');
+    if (modal) modal.style.display = 'none';
+    
+    // Aquí forzamos el play después de que el usuario hizo clic en la 'x'
+    window.bgMusic.play().catch(e => console.log("Aún bloqueado por el navegador"));
+};
+
 window.log = function(mensaje) {
     console.log("LOG:", mensaje);
     
@@ -35,20 +67,18 @@ window.log = function(mensaje) {
         window.enviarMensaje("Sistema", mensaje, true);
     }
     
-    // 2. FORZAR VISUALIZACIÓN EN EL GAME LOG (Por si 'enviarMensaje' no refresca el DOM)
+    // 2. FORZAR VISUALIZACIÓN EN EL GAME LOG
     const logContainer = document.getElementById('game-log');
     if (logContainer) {
         const nuevoMensaje = document.createElement('div');
         nuevoMensaje.style.cssText = "font-size: 0.85em; margin: 2px 0; color: #d63384; font-weight: bold;";
         nuevoMensaje.innerText = `> ${mensaje}`;
         
-        // Lo insertamos después del header si existe, o al principio
-        const header = document.getElementById('clima-header');
-        if (header && header.nextSibling) {
-            logContainer.insertBefore(nuevoMensaje, header.nextSibling);
-        } else {
-            logContainer.prepend(nuevoMensaje);
-        }
+        // CORRECCIÓN: Usamos appendChild para que se añada al final (debajo de todo)
+        logContainer.appendChild(nuevoMensaje);
+        
+        // Auto-scroll para que el usuario vea el mensaje nuevo al final
+        logContainer.scrollTop = logContainer.scrollHeight;
     }
 };
 
@@ -122,12 +152,12 @@ window.sincronizar = function() {
 
     console.log("Sincronizando sala:", window.sala);
 
-    // 2. Limpieza de listeners previos
+    // 2. LIMPIEZA TOTAL DE LISTENERS (El patrón más seguro contra Memory Leaks)
     if (window.chatListener) { off(window.chatListener); window.chatListener = null; }
     if (window.estadoListener) { off(window.estadoListener); window.estadoListener = null; }
     if (window.climaListener) { off(window.climaListener); window.climaListener = null; }
 
-    // 3. Referencias directas
+    // 3. REFERENCIAS
     const salaRef = ref(window.db, 'salas/' + window.sala);
     const chatRef = ref(window.db, 'salas/' + window.sala + '/chat');
     const climaRef = ref(window.db, 'salas/' + window.sala + '/climaIdx');
@@ -154,16 +184,23 @@ window.sincronizar = function() {
         chatLog.scrollTop = chatLog.scrollHeight;
     });
 
-    // 5. ESTADO LISTENER (Aquí está la lógica integrada del Creador y el Turno)
+    // 5. ESTADO LISTENER (Sincronización maestra)
     window.estadoListener = onValue(salaRef, (snap) => {
         const s = snap.val();
         if (!s) return;
 
-        // --- LÓGICA DE CREADOR ---
-        window.creadorSala = s.creador; // Sincronizamos quién es el creador
+        // VITAL: Guardamos el estado global
+        window.salaData = s;
+
+        // Pintamos el tablero
+        if (typeof window.pintarTodasLasCasillas === 'function') {
+            window.pintarTodasLasCasillas(s);
+        }
+
+        // Lógica de Creador y UI
+        window.creadorSala = s.creador;
         const btnIniciar = document.getElementById('btn-iniciar-partida');
         if (btnIniciar) {
-            // Solo se muestra si YO soy el creador y la sala espera
             btnIniciar.style.display = (window.miIdx === window.creadorSala && s.estado === "esperando") ? 'block' : 'none';
         }
 
@@ -178,16 +215,14 @@ window.sincronizar = function() {
             elDinero.innerText = s.jugadores[window.miIdx].dinero || 0;
         }
 
-        // --- ACTUALIZACIÓN DE TURNO ---
-        // Llamamos a la función que actualiza tu div "turno-display"
+        // Actualización Turno
         if (typeof window.actualizarTurnoUI === 'function') {
             window.actualizarTurnoUI(s);
         }
 
-        // Botón Lanzar Dado (Lógica habilitar/deshabilitar)
+        // Botón Lanzar Dado
         const btnDado = document.querySelector('img[alt="Lanzar dado"]') || document.getElementById('dice');
         if (btnDado) {
-            // Permitir lanzar si está jugando y es su turno
             const esMiTurno = (s.estado === "jugando" && s.turno === window.miIdx);
             btnDado.style.pointerEvents = esMiTurno ? 'auto' : 'none';
             btnDado.style.opacity = esMiTurno ? '1' : '0.5';
@@ -407,91 +442,119 @@ window.modalSeleccionRol = function(salaId, esCreacion) {
 };
 
 // --- 3. Lógica de Unión/Creación de Jugador (Fichas) ---
+// A. Función para cuando alguien entra o crea la sala
 window.procesarUnion = async function(salaId, rol, esCreacion) {
     window.sala = salaId;
+    const botonIniciar = document.getElementById('btn-iniciar-partida');
     
-    // Objeto base: dinero inicial en 0
     const datosJugador = { 
-        nombre: rol, 
-        dinero: 0, 
-        pos: 0, 
-        activo: true, 
-        intentosFallidos: 0, 
-        estrellas: 0,
-        visitasCarcel: 0,
-        cumplidasCarcel: 0
+        nombre: rol, dinero: 0, pos: 0, activo: true, intentosFallidos: 0, 
+        estrellas: 0, visitasCarcel: 0, cumplidasCarcel: 0
     };
     
     if (esCreacion) {
-        const roomData = {
-            estado: "esperando",
-            creador: rol,
-            jugadores: { 
-                [rol]: datosJugador 
-            }
-        };
+        const roomData = { estado: "esperando", creador: rol, jugadores: { [rol]: datosJugador } };
         await set(ref(db, 'salas/' + salaId), roomData);
         
-        window.miIdx = rol;
-        window.creadorSala = rol;
-        window.esVisitante = false;
+        window.miIdx = rol; window.creadorSala = rol; window.esVisitante = false;
+        
+        // El creador sí ve el botón
+        if (botonIniciar) botonIniciar.style.display = 'flex';
+        
         window.cerrarModal();
         window.anunciarEnChat(salaId, rol + " ha creado la sala.");
-        window.abrirModal("Éxito", `<p>Sala creada como <b>${rol}</b></p><button class="btn-sidebar" onclick="window.iniciarPartida()">Comenzar Partida</button>`);
+        window.abrirModal("Éxito", `<p>Sala creada como <b>${rol}</b></p>`);
         window.sincronizar();
-        
     } else {
         const dbRef = ref(db, 'salas/' + salaId + '/jugadores');
         runTransaction(dbRef, (jugadores) => {
             if (!jugadores) jugadores = {};
             if (jugadores[rol]) return; 
-            
             jugadores[rol] = datosJugador;
             return jugadores;
         }).then((res) => {
             if (res.committed) {
-                window.miIdx = rol;
-                window.esVisitante = false;
+                window.miIdx = rol; window.esVisitante = false;
+                // El jugador que entra NO ve el botón, se queda en 'none'
                 window.cerrarModal();
                 window.anunciarEnChat(salaId, rol + " se ha unido.");
-                window.abrirModal("Éxito", `<p>Entraste como <b>${rol}</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Esperando inicio...</button>`);
                 window.sincronizar();
-            } else {
-                alert("El rol " + rol + " ya está ocupado o hubo un error.");
             }
         });
     }
 };
 
+// B. Función para iniciar la partida y repartir dinero
 window.iniciarPartida = function() {
+    if (!window.sala) return;
+    
     const salaRef = ref(db, 'salas/' + window.sala);
     
     get(salaRef).then((snap) => {
         const s = snap.val();
-        if (!s || !s.jugadores) return;
+        if (!s || !s.jugadores) {
+            console.error("No se encontraron jugadores para iniciar.");
+            return;
+        }
 
-        const jugadoresIds = Object.keys(s.jugadores);
-        // Elegimos al azar al primer jugador
+        // Validación: No permitir reiniciar si ya está jugando
+        if (s.estado === "jugando") {
+            window.log("La partida ya está en curso.");
+            return;
+        }
+
+        // --- CORRECCIÓN: FILTRAR JUGADORES VÁLIDOS ---
+        const fichasValidas = ["Dog", "Horse", "Hat", "Car"]; 
+        
+        // Filtramos para que solo entren al sorteo quienes coinciden con una ficha
+        const jugadoresIds = Object.keys(s.jugadores).filter(id => fichasValidas.includes(id));
+
+        if (jugadoresIds.length === 0) {
+            window.log("Error: No hay jugadores con ficha válida para empezar.");
+            return;
+        }
+
+        // Elegimos al azar solo entre los jugadores válidos
         const jugadorInicial = jugadoresIds[Math.floor(Math.random() * jugadoresIds.length)];
 
-        // Preparamos los cambios: actualizamos el estado, el turno y el dinero de todos
         let actualizaciones = { 
             estado: "jugando", 
             turno: jugadorInicial 
         };
 
-        // Recorremos los jugadores para asignarles los $1500
-        jugadoresIds.forEach(id => {
+        // Asignamos el dinero a todos los jugadores detectados
+        Object.keys(s.jugadores).forEach(id => {
             actualizaciones['jugadores/' + id + '/dinero'] = 1500;
         });
 
-        // Aplicamos todos los cambios a la base de datos de una sola vez
-        update(salaRef, actualizaciones).then(() => {
-            window.log("¡La partida ha comenzado! Turno de: " + (s.jugadores[jugadorInicial].nombre || jugadorInicial));
-            window.anunciarEnChat(window.sala, "¡La partida ha comenzado! Se han repartido $1500 a cada jugador.");
-            window.sincronizar(); // Refresca la interfaz para todos
+        update(salaRef, actualizaciones)
+        .then(() => {
+            // Confirmación visual
+            const nombreTurno = s.jugadores[jugadorInicial].nombre || jugadorInicial;
+            window.log("¡La partida ha comenzado! Turno de: " + nombreTurno);
+            window.log("Se han repartido $1500 a cada jugador.");
+            
+            // Forzamos sincronización local
+            window.sincronizar();
+        })
+        .catch((error) => {
+            console.error("Error al actualizar la base de datos:", error);
+            window.log("Error al iniciar partida: " + error.message);
         });
+
+    }).catch((error) => {
+        console.error("Error al leer la sala:", error);
     });
+};
+
+window.mostrarAviso2v2 = function() {
+    window.abrirModal("Aviso", `
+        <div style="text-align: center; padding: 20px;">
+            <p>El modo <b>2v2</b> está actualmente en proceso de desarrollo.</p>
+            <p>¡Muy pronto estará disponible!</p>
+            <button class="btn-sidebar" style="margin-top: 20px;" onclick="window.cerrarModal()">Entendido</button>
+        </div>
+    `);
 };
 
 // --- 4. Unión de Visitante (Automática) ---
@@ -594,24 +657,6 @@ window.actualizarBotonesPoderes = function() {
     }
 };
 
-// --- 2. SELECCIÓN DE JUGADOR (FILTRO: SOLO JUGADORES, NO VISITANTES) ---
-window.abrirMenuProteccion = async function() {
-    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
-    let html = `<div class="modal-content"><p>Protege a un jugador (los visitantes no pueden ser protegidos):</p>`;
-    
-    snap.forEach(c => {
-        // FILTRO: Solo mostrar si no empieza con 'v' (visitante)
-        if (!c.key.startsWith('v')) {
-            html += `<button class="btn-accion" style="margin-bottom:5px; width:100%" onclick="window.activarEscudo('${c.key}'); window.cerrarModal()">
-                        <i class="fas fa-user-shield"></i> ${c.key}
-                     </button>`;
-        }
-    });
-    
-    html += `<button class="btn-cerrar" style="width:100%" onclick="window.cerrarModal()">Cancelar</button></div>`;
-    window.abrirModal("🛡️ Proteger Ciudadano", html);
-};
-
 // --- 3. LÓGICA DE ESCUDO CON NOTIFICACIÓN EN LOG ---
 window.activarEscudo = async function(jugadorIdx) {
     const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + jugadorIdx);
@@ -630,20 +675,50 @@ window.activarEscudo = async function(jugadorIdx) {
 };
 
 // --- 4. SELECCIÓN DE OBJETIVO PARA SABOTAJE (EVITA VISITANTES) ---
-window.seleccionarObjetivoSabotaje = async function(porcentaje, costo) {
+// --- FUNCIÓN DE FILTRADO REUTILIZABLE ---
+// Centralizamos aquí la lógica de quién es un jugador válido para proteger o sabotear
+window.esJugadorValido = function(id, datosJugador) {
+    // PRIORIDAD 1: Verificar el campo 'tipo' si existe en Firebase
+    if (datosJugador && datosJugador.tipo === 'jugador') return true;
+    
+    // PRIORIDAD 2: Respaldo (Backwards compatibility) con el prefijo 'v'
+    return !id.startsWith('v');
+};
+
+// --- MENÚ PROTECCIÓN CORREGIDO ---
+window.abrirMenuProteccion = async function() {
     const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
-    let html = `<div class="modal-content"><p>Elige a quién sabotear (${porcentaje*100}%):</p>`;
+    let html = `<div class="modal-content"><p>Protege a un jugador (los visitantes no pueden ser protegidos):</p>`;
     
     snap.forEach(c => {
-        if (!c.key.startsWith('v')) {
-            html += `<button class="btn-accion" style="margin-bottom:5px; width:100%" 
+        const datos = c.val();
+        if (window.esJugadorValido(c.key, datos)) {
+            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" onclick="window.activarEscudo('${c.key}'); window.cerrarModal()">
+                        <i class="fas fa-user-shield"></i> ${c.key}
+                     </button>`;
+        }
+    });
+    
+    html += `<button class="btn-sidebar" style="width:100%; background:#95a5a6;" onclick="window.cerrarModal()">Cancelar</button></div>`;
+    window.abrirModal("🛡️ Proteger Ciudadano", html);
+};
+
+// --- MENÚ SABOTAJE CORREGIDO ---
+window.seleccionarObjetivoSabotaje = async function(porcentaje, costo) {
+    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
+    let html = `<div class="modal-content"><p>Elige a quién sabotear (${porcentaje*100}% de éxito):</p>`;
+    
+    snap.forEach(c => {
+        const datos = c.val();
+        if (window.esJugadorValido(c.key, datos)) {
+            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" 
                         onclick="window.ejecutarSabotaje('${c.key}', ${porcentaje}, ${costo}); window.cerrarModal()">
                         <i class="fas fa-skull"></i> ${c.key}
                      </button>`;
         }
     });
     
-    html += `<button class="btn-cerrar" style="width:100%" onclick="window.cerrarModal()">Cancelar</button></div>`;
+    html += `<button class="btn-sidebar" style="width:100%; background:#95a5a6;" onclick="window.cerrarModal()">Cancelar</button></div>`;
     window.abrirModal("💥 Sabotaje", html);
 };
 
@@ -1437,6 +1512,12 @@ window.verPropiedad = function(pos, permitirCompra = false) {
     const p = window.mapa[pos];
     if (!p || p.p === 0) return;
 
+    // Usamos los datos ya cargados en memoria para mayor velocidad
+    const data = window.salaData || {}; 
+    const prop = data.propiedades ? data.propiedades[pos] : null;
+    const clima = window.climas[data.climaIdx || 0];
+    const mult = clima.mult;
+
     const indicesTransporte = [8, 24, 26, 27];
     const esTransporte = indicesTransporte.includes(pos);
     
@@ -1446,88 +1527,65 @@ window.verPropiedad = function(pos, permitirCompra = false) {
         26: 'https://www.svgrepo.com/show/490281/plane.svg',
         27: 'https://www.svgrepo.com/show/480860/train-station-mark.svg'
     };
-
     const filtroRosa = "invert(75%) sepia(21%) saturate(1828%) hue-rotate(293deg) brightness(105%) contrast(101%)";
 
-    // Función auxiliar para mostrar errores estilizados
-    window.mostrarError = function(mensaje) {
-        const contenido = `
-            <div class="carta-monopoly">
-                <p style="text-align:center; margin:20px 0;">${mensaje}</p>
-                <button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Entendido</button>
-            </div>`;
-        window.abrirModal("Aviso", contenido);
-    };
+    let alquiler;
+    let listaAlquileres = "";
 
-    get(ref(db, 'salas/' + window.sala)).then((snap) => {
-        const data = snap.val();
-        const climaIdx = data.climaIdx || 0;
-        const prop = data.propiedades ? data.propiedades[pos] : null;
-        const clima = window.climas[climaIdx];
-        const mult = clima.mult;
+    if (esTransporte) {
+        const dueño = prop ? prop.owner : null;
+        const cantidad = dueño !== null ? indicesTransporte.filter(idx => data.propiedades[idx]?.owner === dueño).length : 0;
+        const tabla = { 0: 0, 1: 250, 2: 350, 3: 350, 4: 450 };
+        alquiler = Math.floor(tabla[cantidad] * mult);
+        listaAlquileres = `<li>1 poseído: $250</li><li>2 poseídos: $350</li><li>3 poseídos: $350</li><li>4 poseídos: $450</li>`;
+    } else {
+        const niveles = [0.1, 0.15, 0.2, 0.3, 0.4, 0.5];
+        const nivel = prop ? (prop.nivel || 0) : 0;
+        alquiler = Math.floor((p.p * niveles[nivel]) * mult);
+        listaAlquileres = niveles.map((n, i) => `<li style="margin: 3px 0;">Nivel ${i + 1}: $${Math.floor(p.p * n * mult)}</li>`).join('');
+    }
 
-        let alquiler;
-        let listaAlquileres = "";
+    const esDuenio = prop && prop.owner === window.miIdx;
+    const estaHipotecada = prop && prop.hipotecada;
+    const colorClima = mult < 1 ? '#e74c3c' : '#ff80bf';
 
-        if (esTransporte) {
-            const dueño = prop ? prop.owner : null;
-            const cantidad = dueño !== null ? indicesTransporte.filter(idx => data.propiedades[idx]?.owner === dueño).length : 0;
-            const tabla = { 0: 0, 1: 250, 2: 350, 3: 350, 4: 450 };
-            alquiler = Math.floor(tabla[cantidad] * mult);
-            listaAlquileres = `<li>1 poseído: $250</li><li>2 poseídos: $350</li><li>3 poseídos: $350</li><li>4 poseídos: $450</li>`;
-        } else {
-            const niveles = [0.1, 0.15, 0.2, 0.3, 0.4, 0.5];
-            const nivel = prop ? (prop.nivel || 0) : 0;
-            alquiler = Math.floor((p.p * niveles[nivel]) * mult);
-            listaAlquileres = niveles.map((n, i) => `<li style="margin: 3px 0;">Nivel ${i + 1}: $${Math.floor(p.p * n * mult)}</li>`).join('');
-        }
+    let contenido = `
+        <div class="card-property">
+            <div class="card-header" style="background:#ff80bf; color:white; padding:10px; border-radius:5px 5px 0 0; text-align:center; font-weight:bold;">${p.n}</div>
+            <div class="card-body" style="padding:15px;">
+                ${esTransporte ? `<div style="text-align:center; margin:15px 0;"><img src="${iconos[pos]}" style="width:80px; filter: ${filtroRosa};"></div>` : ''}
+                <p>Valor de compra: <b>$${p.p}</b></p>
+                <div style="color: ${colorClima}; font-size: 1.2em; font-weight: bold; margin: 10px 0;">
+                    Alquiler actual: $${estaHipotecada ? 0 : alquiler}
+                </div>
+                <p style="font-size: 0.8em; color: #666;">Clima: ${clima.n}</p>
+                <hr>
+                <p><b>Detalle de alquileres:</b></p>
+                <ul style="text-align: left; font-size: 0.9em; padding-left: 20px;">${listaAlquileres}</ul>
+                <hr>`;
 
-        const esDuenio = prop && prop.owner === window.miIdx;
-        const estaHipotecada = prop && prop.hipotecada;
-        const colorClima = mult < 1 ? '#e74c3c' : '#ff80bf';
+    if (!prop) {
+        contenido += permitirCompra ? 
+            `<button class="btn-sidebar" style="background:#ff80bf; color:white;" onclick="window.comprar(${pos}); window.cerrarModal();">Comprar Propiedad</button>` : 
+            `<p style="color:gray; font-size:0.8em;">Debes estar en la casilla para comprar.</p>`;
+    } else if (esDuenio) {
+        contenido += `
+            <button class="btn-sidebar" style="background:#2ecc71; color:white; margin-bottom:5px;" onclick="window.mejorar(${pos}); window.cerrarModal();">Mejorar (+$50)</button>
+            <button class="btn-sidebar" style="background:#95a5a6; color:white;" onclick="window.hipotecar(${pos}); window.cerrarModal();">${estaHipotecada ? "Liberar" : "Hipotecar"}</button>`;
+    } else if (!estaHipotecada) {
+        // AQUÍ SE CORRIGIÓ: Llama a la interacción, no al pago directo
+        contenido += `
+            <p>Dueño: <b>${window.nombres[prop.owner]}</b></p>
+            <button class="btn-sidebar" style="background:#e67e22; color:white;" onclick="window.interaccionAlquiler('${prop.owner}', ${alquiler}); window.cerrarModal();">Pagar Alquiler</button>`;
+    } else {
+        contenido += `<p>Propiedad hipotecada por <b>${window.nombres[prop.owner]}</b>. No paga alquiler.</p>`;
+    }
 
-        let contenido = `
-            <div class="card-property">
-                <div class="card-header">${p.n}</div>
-                <div class="card-body">
-                    ${esTransporte ? `<div style="text-align:center; margin:15px 0;"><img src="${iconos[pos]}" style="width:100px; height:auto; filter: ${filtroRosa};"></div>` : ''}
-                    <p>Valor de compra: <b>$${p.p}</b></p>
-                    <div class="alquiler-destacado" style="color: ${colorClima}; font-size: 1.2em; font-weight: bold;">
-                        Alquiler actual: $${estaHipotecada ? 0 : alquiler}
-                    </div>
-                    <p style="font-size: 0.85em;">Clima: ${clima.n}${mult < 1 ? ' (Descuento aplicado)' : ''}</p>
-                    <hr>
-                    <p><b>Detalle de alquileres:</b></p>
-                    <ul style="text-align: left; font-size: 0.9em; padding-left: 20px;">
-                        ${listaAlquileres}
-                    </ul>
-                    <hr>`;
-
-        if (!prop) {
-            if (permitirCompra) {
-                contenido += `<button class="btn-accion" style="background:#ff80bf; width:100%; margin-top:10px;" onclick="window.comprar(${pos})">Comprar Propiedad</button>`;
-            } else {
-                contenido += `<p style="color:gray; font-size:0.8em;">Debes estar en la casilla para comprar.</p>`;
-            }
-        } else if (esDuenio) {
-            contenido += `<button class="btn-accion" style="background:#2ecc71; width:100%; margin-top:5px;" onclick="window.mejorar(${pos})">Mejorar (+$50)</button>
-                          <button class="btn-accion" style="background:#95a5a6; width:100%; margin-top:5px;" onclick="window.hipotecar(${pos})">${estaHipotecada ? "Liberar" : "Hipotecar"}</button>`;
-        } else if (!estaHipotecada) {
-            contenido += `<p>Dueño: <b>${window.nombres[prop.owner]}</b></p>
-                          <button class="btn-accion" style="background:#e67e22; width:100%; margin-top:5px;" onclick="window.pagarAlquiler(${prop.owner}, ${alquiler})">Pagar Alquiler</button>`;
-        } else {
-            contenido += `<p>Propiedad hipotecada por <b>${window.nombres[prop.owner]}</b>. No paga alquiler.</p>`;
-        }
-
-        contenido += `</div></div>`;
-        window.abrirModal("Tarjeta de Propiedad", contenido);
-    });
+    contenido += `</div></div>`;
+    window.abrirModal("Tarjeta de Propiedad", contenido);
 };
 
 window.abrirIntercambio = function() {
-    let modal = document.getElementById('modal');
-    if (!modal) return;
-
     get(ref(db, 'salas/' + window.sala)).then((snap) => {
         let data = snap.val();
         if (!data || !data.propiedades) {
@@ -1558,7 +1616,7 @@ window.abrirIntercambio = function() {
                 <label><b>Valor de venta:</b></label>
                 <input type="number" id="input-valor" class="input-field" min="100" max="999" value="250">
                 
-                <button class="btn-sidebar" style="background:#ff80bf; color:white; margin-top:10px;" onclick="window.ejecutarIntercambio()">Confirmar Oferta</button>
+                <button class="btn-sidebar" style="background:#ff80bf; color:white;" onclick="window.ejecutarIntercambio()">Confirmar Oferta</button>
                 <button class="btn-sidebar" style="background:#ffccd5;" onclick="window.cerrarModal()">Cancelar</button>
             </div>
         `;
@@ -1669,21 +1727,29 @@ window.confirmarPago = async function(ownerIdx, monto) {
 };
 
 // 3. Lógica principal de evasión con azar y penalizaciones
-window.procesarEvasion = async function(tipo, monto) {
+window.procesarEvasion = async function(ownerIdx, monto) {
+    // 1. DESACTIVAR BOTONES (Evita el doble clic)
+    const botones = document.querySelectorAll('.btn-sidebar, .btn-accion');
+    botones.forEach(b => b.disabled = true);
+    botones.forEach(b => b.style.opacity = "0.5");
+
+    const esImpuesto = (ownerIdx === 'IMPUESTO');
     const exito = Math.random() < 0.4;
+    
     const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const snap = await get(jugadorRef);
     let j = snap.val();
 
     if (exito) {
-        window.log(`🎉 ¡Éxito! Evadiste el pago de ${tipo}.`);
-        if(tipo !== 'IMPUESTO') window.pagarAlquiler(ownerIdx, 0); 
+        window.log(esImpuesto ? `🎉 ¡Éxito! Evadiste el impuesto.` : `🎉 ¡Éxito! Evadiste el alquiler.`);
     } else {
-        const multa = (tipo === 'IMPUESTO') ? monto : (100 + monto);
+        // Calcular multa correctamente
+        const multa = esImpuesto ? monto : (100 + monto);
+        
+        // Manejo de intentos fallidos
         let intentos = (j.intentosFallidos || 0) + 1;
         let updates = { intentosFallidos: intentos };
         
-        // Penalización: al llegar a 5 fallos, se descuenta 1 estrella
         if (intentos >= 5) {
             updates.intentosFallidos = 0;
             updates.estrellas = Math.max(0, (j.estrellas || 0) - 1);
@@ -1692,11 +1758,14 @@ window.procesarEvasion = async function(tipo, monto) {
         await update(jugadorRef, updates);
         
         window.log(`❌ ¡Falló la evasión! Pagas $${multa}.`);
-        if(tipo === 'IMPUESTO') {
-            update(jugadorRef, { dinero: increment(-multa) });
-            update(ref(db, 'salas/' + window.sala), { pozoImpuestos: increment(multa) });
+        
+        // PAGO REAL
+        if (esImpuesto) {
+            await update(jugadorRef, { dinero: increment(-multa) });
+            await update(ref(db, 'salas/' + window.sala), { pozoImpuestos: increment(multa) });
         } else {
-            window.pagarAlquiler(ownerIdx, multa);
+            // AQUÍ ESTABA EL ERROR: ownerIdx ahora tiene el valor correcto
+            window.pagarAlquiler(ownerIdx, multa); 
         }
     }
     window.cerrarModal();
@@ -1802,31 +1871,43 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
 
     if (prop && prop.owner) window.pintarCasilla(posInt, prop.owner);
 
-    // ... (Tu lógica de Transporte y Propiedad Normal se mantiene igual) ...
+    // --- 1. LÓGICA DE TRANSPORTE (Grupo Rosa #d24285) ---
     let g = (typeof window.obtenerGrupo === 'function') ? window.obtenerGrupo(posInt) : null;
     if (g && g.color === "#d24285") {
-        if (!prop) window.verPropiedad(posInt, puedeComprar); 
-        else if (prop.owner !== window.miIdx) {
+        if (!prop) {
+            window.verPropiedad(posInt, puedeComprar);
+        } else if (prop.owner !== window.miIdx) {
             const esAliado = (data.jugadores[window.miIdx] && prop.equipo === data.jugadores[window.miIdx].equipo);
-            if (esAliado) window.verPropiedad(posInt, false);
-            else {
+            if (esAliado) {
+                window.verPropiedad(posInt, false);
+            } else {
                 const trans = [8, 24, 26, 27];
                 const count = trans.filter(i => data.propiedades && data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
                 const alquiler = { 1: 100, 2: 150, 3: 250, 4: 300 }[count] || 100;
+                
+                // AQUÍ ESTABA EL ERROR: Llamar a verPropiedad Y alquiler causaba conflicto.
+                // Priorizamos la interacción de alquiler:
                 window.interaccionAlquiler(prop.owner, alquiler);
-                window.verPropiedad(posInt, false);
             }
-        } else window.verPropiedad(posInt, false);
-        return;
+        } else {
+            window.verPropiedad(posInt, false);
+        }
+        return; // Detenemos aquí
     }
 
+    // --- 2. PROPIEDAD NORMAL ---
     if (p && p.p > 0) {
-        const tieneDuenio = prop && prop.owner !== undefined && prop.owner !== window.miIdx;
-        if (tieneDuenio) window.verPropiedad(posInt, false);
-        else window.verPropiedad(posInt, puedeComprar);
+        if (prop && prop.owner && prop.owner !== window.miIdx) {
+            // Es de otro: ALQUILER
+            window.interaccionAlquiler(prop.owner, p.a); // Asegúrate de que p.a sea el alquiler
+        } else {
+            // Es libre o propia: VER
+            window.verPropiedad(posInt, puedeComprar);
+        }
         return;
     }
 
+    // --- 3. EVENTOS (Arca, Carcel, Impuestos, Parada) ---
     let contenido = "";
     let titulo = "";
 
@@ -1843,7 +1924,7 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         let updates = { enCarcel: 1, visitasCarcel: visitas };
         if (visitas >= 10) {
             updates.visitasCarcel = 0;
-            updates.estrellas = (j.estrellas || 0) - 1;
+            updates.estrellas = Math.max(0, (j.estrellas || 0) - 1);
         }
         await update(jugadorRef, updates);
         window.mostrarOpcionesCarcel();
@@ -1855,8 +1936,8 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         contenido = `
             <h2>Impuestos</h2>
             <p>Debes pagar: <b>$${monto}</b></p>
-            <button class="btn-accion" onclick="window.pagarImpuesto(${monto})">Pagar</button>
-            <button class="btn-accion" style="background:#ff59aa;" onclick="window.procesarEvasion('IMPUESTO', ${monto})">Evadir (40% éxito)</button>
+            <button class="btn-sidebar" style="background:#ff80bf; color:white;" onclick="window.pagarImpuesto(${monto})">Pagar</button>
+            <button class="btn-sidebar" style="background:#ffccd5;" onclick="window.procesarEvasion('IMPUESTO', ${monto})">Evadir (40% éxito)</button>
         `;
     }
     else if (p.n === "PARADA") {
@@ -2096,16 +2177,15 @@ window.completarMisionVisitante = function(tipo) {
 
 window.pintarCasilla = function(posicion, ownerId) {
     const celda = document.getElementById(`cell-${posicion}`);
-    if (celda) {
-        // En tu código usas window.nombres.indexOf(ownerId)
-        // Asegúrate de que ownerId sea 'v1', 'v2' o el ID que guardes en 'owner'
+    // Verificamos que los arrays globales existan antes de acceder
+    if (celda && Array.isArray(window.nombres) && Array.isArray(window.colores)) {
         const idx = window.nombres.indexOf(ownerId);
-        
-        // Si no encuentras el índice (quizás el ID no está en nombres), usa un color por defecto
         const color = (idx !== -1 && window.colores[idx]) ? window.colores[idx] : "#ccc";
         
         celda.style.backgroundColor = color;
         celda.style.border = `2px solid ${color}`;
+    } else {
+        console.warn("Faltan los datos de nombres/colores para pintar la casilla.");
     }
 };
 
@@ -2121,7 +2201,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 2. Configuración del Dado (Patrón de seguridad)
+    // 2. Activación de Música (Primera interacción)
+    // Se vincula al primer clic del usuario para evitar bloqueos del navegador
+    document.addEventListener('click', () => {
+        if (typeof window.iniciarMusica === 'function') {
+            window.iniciarMusica();
+        }
+    }, { once: true });
+
+    // 3. Mostrar Dedicatoria
+    if (typeof window.mostrarDedicatoria === 'function') {
+        window.mostrarDedicatoria();
+    }
+
+    // 4. Configuración del Dado (Patrón de seguridad)
     (function configurarDado() {
         const dice = document.getElementById('dice');
         if (dice) {
@@ -2139,8 +2232,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     })();
 
-    // 3. Generación del Tablero
-    // Asegúrate de que esto se ejecute después de los elementos básicos
+    // 5. Generación del Tablero
     if (typeof window.generarTablero === 'function') {
         window.generarTablero();
     }
