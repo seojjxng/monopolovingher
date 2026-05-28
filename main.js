@@ -278,24 +278,32 @@ window.climas = Object.freeze([
 window.iniciarCicloClima = function() {
     if (window.climaInterval) clearInterval(window.climaInterval);
     
-    window.climaInterval = setInterval(() => {
+    window.climaInterval = setInterval(async () => {
+        const salaSnap = await get(ref(db, 'salas/' + window.sala));
+        const salaData = salaSnap.val();
+        if (!salaData) return;
+
+        const hayVisitantes = salaData.visitantes && Object.keys(salaData.visitantes).length > 0;
+        if (hayVisitantes) return; 
+
         const controlRef = ref(db, 'salas/' + window.sala + '/controladorClima');
-        get(controlRef).then(snap => {
-            const ctrl = snap.val();
-            const ahora = Date.now();
+        const snap = await get(controlRef);
+        const ctrl = snap.val();
+        const ahora = Date.now();
+        
+        if (!ctrl || (ahora - (ctrl.timestamp || 0) > 300000)) {
+            const nuevoIdx = Math.floor(Math.random() * window.climas.length);
+            const nuevoClima = window.climas[nuevoIdx];
             
-            if (!ctrl || (ahora - ctrl.timestamp > 300000)) {
-                const nuevoIdx = Math.floor(Math.random() * window.climas.length);
-                const nuevoClima = window.climas[nuevoIdx];
-                
-                update(ref(db, 'salas/' + window.sala), { climaIdx: nuevoIdx });
-                push(ref(db, 'salas/' + window.sala + '/chat'), {
-                    n: "Sistema",
-                    m: `El clima ha cambiado automáticamente a ${nuevoClima.n}. Alquileres ajustados a ${nuevoClima.mult * 100}%.`,
-                    t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                });
-            }
-        });
+            await update(ref(db, 'salas/' + window.sala), { climaIdx: nuevoIdx });
+            
+            // Registro del Sistema
+            push(ref(db, 'salas/' + window.sala + '/chat'), {
+                n: "Sistema",
+                m: `¡El clima ha cambiado a ${nuevoClima.n}!`,
+                t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            });
+        }
     }, 600000); 
 };
 
@@ -336,11 +344,19 @@ function getGridRow(i) {
 }
 
 // Lógica de Sala, Tablero y otras funciones...
-// --- 1. Flujo de Inicio: Detecta si crear o unirse ---
 window.validarYConectar = function() {
     const idInput = document.getElementById('sala-id');
     const id = idInput ? idInput.value.trim() : "";
-    if (!id) return alert("¡Error! Ingresa un ID de sala.");
+    
+    if (!id) {
+        window.abrirModal("Error", `
+            <div class="modal-content">
+                <p>Por favor, ingresa un <b>ID de sala</b> válido.</p>
+                <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Aceptar</button>
+            </div>
+        `);
+        return;
+    }
 
     get(ref(db, 'salas/' + id)).then((snapshot) => {
         if (snapshot.exists()) {
@@ -353,7 +369,7 @@ window.validarYConectar = function() {
             `);
         } else {
             window.abrirModal("Sala nueva", `
-                <div class="modal-content">
+                <div class="abrirModal">
                     <p>La sala <b>${id}</b> no existe. Sé el primero en crearla.</p>
                     <button class="btn-sidebar" style="width: 100%;" onclick="window.modalSeleccionRol('${id}', true)">Crear como Jugador</button>
                     <button class="btn-sidebar" style="width: 100%; margin-top: 10px;" onclick="window.unirseComoVisitante('${id}', true)">Crear como Visitante</button>
@@ -527,31 +543,72 @@ window.actualizarBotonesPoderes = function() {
 };
 
 window.abrirControlClima = function() {
-    let html = `<div class="clima-container"><p>Selecciona el nuevo clima para Naeun Town:</p>`;
+    let html = `
+    <div style="max-height: 300px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;">
+        <style>.clima-scroll::-webkit-scrollbar { display: none; }</style>
+        <p style="font-size: 0.85em; margin-bottom: 10px;">Elige el clima. Se aplicará un <b>cooldown de 10 min</b>.</p>
+        <div class="clima-scroll">`;
+        
     window.climas.forEach((c, idx) => {
-        html += `<button class="btn-sidebar" style="width:100%; margin:5px 0;" onclick="window.cambiarClima(${idx}); window.cerrarModal();">
+        html += `<button class="btn-sidebar" style="width:100%; margin:5px 0; padding:8px;" 
+                 onclick="window.cambiarClimaConCooldown(${idx})">
                     <b>${c.n}</b>
                  </button>`;
     });
-    html += `</div>`;
-    window.abrirModal("☁️ Panel de Control Climático", html);
+    
+    html += `</div>
+        <button class="btn-cerrar" style="width:100%; margin-top:10px; background:#eee;" onclick="window.cerrarModal()">Cerrar</button>
+    </div>`;
+    
+    window.abrirModal("☁️ Panel de control climático", html);
+};
+
+window.cambiarClimaConCooldown = function(idx) {
+    const ahora = Date.now();
+    const nuevoClima = window.climas[idx];
+
+    // 1. Guardar cooldown
+    update(ref(db, 'salas/' + window.sala + '/controladorClima'), {
+        timestamp: ahora,
+        ultimoUsuario: window.miIdx
+    });
+
+    // 2. Actualizar clima
+    update(ref(db, 'salas/' + window.sala), { climaIdx: idx });
+
+    // 3. Registrar en el log/chat (Mensaje del Ciudadano)
+    push(ref(db, 'salas/' + window.sala + '/chat'), {
+        n: "Sistema",
+        m: `¡El ciudadano ${window.miIdx} ha cambiado el clima a ${nuevoClima.n}!`,
+        t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+
+    // 4. Actualizar display visual
+    const display = document.getElementById('clima-display');
+    if (display) display.innerText = `Clima: ${nuevoClima.n}`;
+
+    window.cerrarModal();
+    window.abrirModal("¡Cambio Exitoso!", `
+        <div style="text-align: center; padding: 10px;">
+            <p>Clima: <b>${nuevoClima.n}</b> aplicado con éxito.</p>
+            <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Aceptar</button>
+        </div>
+    `);
 };
 
 window.tomarControlClima = function() {
     if (!window.esVisitante) return;
     const refControl = ref(db, 'salas/' + window.sala + '/controladorClima');
     
-    runTransaction(refControl, (data) => {
+    get(refControl).then(snap => {
+        const data = snap.val();
         const ahora = Date.now();
-        if (!data || (ahora - data.timestamp > 300000)) { // 5 minutos
-            return { usuario: window.miIdx, timestamp: ahora };
-        }
-        return; 
-    }).then((res) => {
-        if (res.committed) {
+        // Cooldown de 10 minutos (600,000 ms)
+        if (!data || (ahora - data.timestamp > 600000)) {
             window.abrirControlClima();
         } else {
-            window.abrirModal("Acceso Denegado", "<p>Otro visitante ya tiene el control.</p>");
+            const minutosRestantes = Math.ceil((600000 - (ahora - data.timestamp)) / 60000);
+            window.abrirModal("Control Bloqueado", `<p>El clima está bajo cooldown. Intenta de nuevo en ${minutosRestantes} min.</p>`);
         }
     });
 };
@@ -859,87 +916,137 @@ window.pasarTurno = function() {
     }).catch((error) => console.error("Error al pasar el turno:", error));
 };
 
-// --- Lógica del Banco ---
-window.abrirBanco = function() {
-    // 1. Validación de estado: Asegura que la sesión esté activa y 'db' disponible
-    if (typeof window.sala === 'undefined' || window.sala === null || 
-        typeof window.miIdx === 'undefined' || window.miIdx === null || 
-        typeof db === 'undefined' || !db) {
+window.verificarBancarrota = function(jugadorIdx, saldo) {
+    if (saldo < 0) {
+        let nombre = (window.nombres && window.nombres[jugadorIdx]) ? window.nombres[jugadorIdx] : "Jugador";
         
-        const iconoRosaCSS = `
-            <div style="display:inline-block; width: 28px; height: 24px; background: #ff80bf; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); position: relative; vertical-align: middle; margin-right: 10px;">
-                <div style="width: 3px; height: 9px; background: white; position: absolute; top: 6px; left: 12.5px; border-radius: 1px;"></div>
-                <div style="width: 3px; height: 3px; background: white; position: absolute; bottom: 4px; left: 12.5px; border-radius: 1px;"></div>
-            </div>`;
-            
-        window.abrirModal(iconoRosaCSS + "Banco Central", "<p>Debes estar unido a una sala para acceder a los servicios bancarios.</p>");
-        return;
-    }
-    
-    // 2. REFERENCIA DIRECTA usando ref(db, ...)
-    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    
-    // 3. Consulta asíncrona de datos del jugador
-    get(jugadorRef).then((snap) => {
-        const j = snap.val();
-        
-        // Si el jugador no existe en la base de datos, no hacemos nada
-        if (!j) {
-            console.warn("No se encontraron datos del jugador.");
-            return;
-        }
+        // 1. Anuncio en el Game Log (usando push al chat/log de la sala)
+        push(ref(db, 'salas/' + window.sala + '/chat'), {
+            n: "Banco",
+            m: `⚠️ ¡Alerta! ${nombre} ha caído en bancarrota con un saldo de $${saldo}.`,
+            t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        });
 
-        // 4. Lógica de UI basada en el estado del préstamo
-        if (j.tienePrestamo) {
-            // Mostrar opción de liquidar préstamo
-            window.abrirModal("🏦 Banco Central", `
-                <p>Préstamo activo: <b>$${j.montoPrestamo || 0}</b></p>
-                <button class="btn-sidebar" style="width:100%; background:#27ae60; margin-top: 10px; color: white; border: none; padding: 10px; cursor: pointer;" onclick="window.pagarPrestamo()">Liquidar Préstamo</button>
-            `);
-        } else {
-            // Mostrar menú de selección de préstamos nuevos
-            window.abrirModal("🏦 Banco Central", `
-                <p>Selecciona un préstamo:</p>
-                <div style="display:flex; flex-direction:column; gap: 10px; width: 100%;">
-                    <button class="btn-sidebar" onclick="window.solicitarPrestamo(200)">Solicitar $200</button>
-                    <button class="btn-sidebar" onclick="window.solicitarPrestamo(400)">Solicitar $400</button>
-                    <button class="btn-sidebar" onclick="window.solicitarPrestamo(650)">Solicitar $650</button>
-                    <button class="btn-sidebar" onclick="window.solicitarPrestamo(800)">Solicitar $800</button>
-                    <button class="btn-sidebar" onclick="window.solicitarPrestamo(1000)">Solicitar $1000</button>
-                </div>
-            `);
-        }
-    }).catch((error) => {
-        console.error("Error al cargar datos del banco:", error);
-        window.abrirModal("Error", "<p>No se pudo conectar con el banco. Inténtalo de nuevo.</p>");
-    });
+        // 2. Abrir Modal de Bancarrota (Estilo Barbie/Rosa)
+        window.abrirModal("¡Bancarrota!", `
+            <div style="text-align: center; padding: 10px;">
+                <p>Tu saldo es <b>$${saldo}</b>.</p>
+                <p>¡El Banco recomienda solicitar un préstamo urgente para continuar!</p>
+                <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal(); window.abrirBanco();">Ir al Banco</button>
+            </div>
+        `);
+    }
 };
 
-window.solicitarPrestamo = function(monto) {
+// --- Lógica del Banco ---
+// --- BANCO CENTRAL: MENÚ PRINCIPAL ---
+window.abrirBanco = async function() {
+    if (typeof window.sala === 'undefined' || window.miIdx === -1 || !db) {
+        window.abrirModal("Error", `
+            <div class="modal-content">
+                <p>Debes estar unido a una sala para acceder a los servicios bancarios.</p>
+                <button class="btn-accion" style="width:100%" onclick="window.cerrarModal()">Aceptar</button>
+            </div>
+        `);
+        return;
+    }
+
     const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    get(jRef).then((snap) => {
-        const j = snap.val();
-        if (j.tienePrestamo) {
-            window.abrirModal("Error", "Ya tienes un préstamo activo.");
-        } else {
-            update(jRef, { 
-                tienePrestamo: true, 
-                montoPrestamo: monto, 
-                dinero: (j.dinero || 0) + monto 
-            }).then(() => {
-                window.abrirModal("✅ Transacción Exitosa", `
-                    <div style="text-align: center; padding: 20px;">
-                        <div style="font-size: 40px; margin-bottom: 10px;">💰</div>
-                        <p style="font-size: 1.1em; color: #333;">¡Transacción aceptada!</p>
-                        <div style="margin: 15px 0; padding: 10px; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 8px; color: #2e7d32; font-weight: bold;">
-                            El monto de $${monto} está en curso.
-                        </div>
-                        <button class="btn-sidebar" style="width:100%; margin-top:15px; background: #27ae60;" onclick="window.cerrarModal()">Aceptar</button>
-                    </div>
-                `);
-            });
-        }
+    const snap = await get(jRef);
+    const j = snap.val();
+    if (!j) return;
+
+    let contenido = "";
+    if (j.tienePrestamo) {
+        contenido = `
+            <p>Préstamo activo: <b>$${j.montoPrestamo || 0}</b></p>
+            <button class="btn-accion" style="width:100%; margin-top: 10px;" onclick="window.pagarPrestamo()">Liquidar Préstamo</button>
+        `;
+    } else {
+        contenido = `<p>Selecciona un préstamo:</p>`;
+        [200, 400, 650, 800, 1000].forEach(m => {
+            contenido += `<button class="btn-accion" style="width:100%; margin-bottom: 8px;" onclick="window.solicitarPrestamo(${m})">Solicitar $${m}</button>`;
+        });
+    }
+
+    window.abrirModal("🏦 Banco Central", `
+        <div class="abrirModal">
+            ${contenido}
+            <button class="btn-cerrar" style="width:100%; margin-top:10px;" onclick="window.cerrarModal()">Cerrar</button>
+        </div>
+    `);
+};
+
+// --- SOLICITAR PRÉSTAMO ---
+window.solicitarPrestamo = async function(monto) {
+    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const snap = await get(jRef);
+    const j = snap.val();
+
+    if (j.tienePrestamo) {
+        window.abrirModal("Error", `<div class="abrirModal"><p>Ya tienes un préstamo activo.</p><button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button></div>`);
+        return;
+    }
+
+    await update(jRef, { 
+        tienePrestamo: true, 
+        montoPrestamo: monto, 
+        dinero: (j.dinero || 0) + monto 
     });
+
+    window.abrirModal("✅ Éxito", `
+        <div class="abrirModal">
+            <p>Transacción aceptada.</p>
+            <p>Monto recibido: <b>$${monto}</b></p>
+            <button class="btn-accion" style="width:100%; margin-top:10px;" onclick="window.cerrarModal()">Aceptar</button>
+        </div>
+    `);
+};
+
+// --- PAGAR PRÉSTAMO ---
+window.pagarPrestamo = async function() {
+    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const snap = await get(jRef);
+    const j = snap.val();
+
+    if ((j.dinero || 0) < j.montoPrestamo) {
+        window.abrirModal("Error", `<div class="abrirModal"><p>Saldo insuficiente para liquidar.</p><button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button></div>`);
+        return;
+    }
+
+    await update(jRef, { 
+        tienePrestamo: false, 
+        montoPrestamo: 0,
+        dinero: j.dinero - j.montoPrestamo
+    });
+
+    window.abrirModal("🏦 Banco Central", `
+        <div class="abrirModal">
+            <p>Deuda liquidada correctamente.</p>
+            <button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button>
+        </div>
+    `);
+};
+
+// --- LÓGICA DE BANCARROTA ---
+window.verificarBancarrota = function(jugadorIdx, saldo) {
+    if (saldo < 0) {
+        const nombre = (window.nombres && window.nombres[jugadorIdx]) ? window.nombres[jugadorIdx] : "Jugador";
+        
+        push(ref(db, 'salas/' + window.sala + '/chat'), {
+            n: "Banco",
+            m: `⚠️ ¡Alerta! ${nombre} ha caído en bancarrota con un saldo de $${saldo}.`,
+            t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        });
+
+        window.abrirModal("¡Bancarrota!", `
+            <div class="modal-content">
+                <p>Tu saldo es <b>$${saldo}</b>.</p>
+                <p>¡El Banco recomienda solicitar un préstamo urgente!</p>
+                <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal(); window.abrirBanco();">Ir al Banco</button>
+            </div>
+        `);
+    }
 };
 
 // --- Función lógica de Saldos ---
@@ -1377,13 +1484,29 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     const data = snap.val();
     if (!data) return;
 
-    // Lógica de compra: Solo permitir si es llegada por movimiento Y es el turno del jugador
+    // Lógica de compra
     const esTurnoActual = (data.turno === window.miIdx);
     const puedeComprar = esLlegadaPorMovimiento && esTurnoActual;
 
     const prop = data.propiedades ? data.propiedades[posInt] : null;
     const p = window.mapa[posInt];
     const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+
+    // FUNCIÓN PARA PINTAR CASILLA (Persistencia visual)
+    const pintarCasilla = (posicion, ownerIdx) => {
+        const celda = document.getElementById(`cell-${posicion}`);
+        if (celda) {
+            const idx = window.nombres.indexOf(ownerIdx);
+            const color = (idx !== -1) ? window.colores[idx] : "#ccc";
+            celda.style.backgroundColor = color;
+            celda.style.border = `2px solid ${color}`;
+        }
+    };
+
+    // Si ya tiene dueño, siempre intentar pintar
+    if (prop && prop.owner) {
+        pintarCasilla(posInt, prop.owner);
+    }
 
     // 1. CASO TRANSPORTE
     let g = (typeof window.obtenerGrupo === 'function') ? window.obtenerGrupo(posInt) : null;
@@ -1422,12 +1545,10 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         contenido = `<h2>${titulo}</h2><p>${carta.txt}</p>`;
     } 
     else if (posInt === 10) {
-        // LÓGICA DE CÁRCEL INTEGRADA
         titulo = "Cárcel";
         await update(jugadorRef, { enCarcel: 1 });
-        // En lugar de abrir un modal genérico, llamamos a la terminal de hacker
         window.mostrarOpcionesCarcel();
-        return; // Terminamos aquí para que no abra el modal de abajo
+        return;
     }
     else if (p.n === "IMPUESTOS") {
         const monto = Math.floor(Math.random() * 300) + 50;
@@ -1447,18 +1568,6 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     if (contenido !== "") {
         window.abrirModal(titulo, contenido + `<button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button>`);
     }
-};
-
-window.mostrarOpcionesCarcel = function() {
-    const contenido = `
-        <div class="modal-content" style="background: #1a1a1a; color: #00ff00; border: 2px solid #00ff00; font-family: monospace; text-align: center;">
-            <h2 style="margin-top: 0;">TERMINAL DE SEGURIDAD</h2>
-            <p style="font-size: 0.9em;">Estás arrestado. Elige tu método de salida:</p>
-            <button class="btn-accion" style="width:100%; background: #004400; color: #00ff00;" onclick="window.intentarHackeo()">> INTENTAR HACKEO</button>
-            <button class="btn-accion" style="width:100%; margin-top:10px;" onclick="window.pagarFianza()">PAGAR FIANZA ($200)</button>
-            <button class="btn-accion" style="width:100%; margin-top:10px; background: #440000;" onclick="window.quedarseEnCarcel()">ESPERAR TURNO</button>
-        </div>`;
-    window.abrirModal("Cárcel", contenido);
 };
 
 window.intentarHackeo = async function() {
