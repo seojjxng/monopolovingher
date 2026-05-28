@@ -894,6 +894,19 @@ window.lanzarDado3D = function(resultado) {
 };
 
 // --- LÓGICA DE PASAR TURNO (BLINDADA) ---
+window.sortearPrimerTurno = function() {
+    const salaRef = ref(db, 'salas/' + window.sala);
+    get(salaRef).then((snap) => {
+        const s = snap.val();
+        if (!s || !s.jugadores) return;
+
+        const listaJugadores = Object.keys(s.jugadores);
+        const primerJugador = listaJugadores[Math.floor(Math.random() * listaJugadores.length)];
+        
+        update(salaRef, { turno: primerJugador });
+    });
+};
+
 window.pasarTurno = function() {
     const salaRef = ref(db, 'salas/' + window.sala);
     
@@ -901,28 +914,26 @@ window.pasarTurno = function() {
         const s = snap.val();
         if (!s || !s.jugadores) return;
 
-        // FILTRO ESTRICTO: Solo tomamos IDs que NO empiezan con 'v'
-        const jugadoresReales = Object.keys(s.jugadores).filter(k => !String(k).startsWith('v'));
+        const listaJugadores = Object.keys(s.jugadores);
+        const turnoActual = s.turno;
         
-        if (jugadoresReales.length === 0) return; 
-
-        // Si solo hay un jugador real, el turno ES de él, sin más.
-        if (jugadoresReales.length === 1) {
-            update(salaRef, { turno: jugadoresReales[0] });
-            return;
-        }
-
-        // AZAR: Seleccionamos un jugador aleatorio de la lista de REALES
-        const siguienteJugadorId = jugadoresReales[Math.floor(Math.random() * jugadoresReales.length)];
+        // Buscamos quién es el actual
+        const idxActual = listaJugadores.indexOf(turnoActual);
+        
+        // Calculamos el siguiente (Si es el último, volvemos al 0)
+        const siguienteIdx = (idxActual === -1 || idxActual >= listaJugadores.length - 1) 
+            ? 0 
+            : idxActual + 1;
+            
+        const siguienteId = listaJugadores[siguienteIdx];
         
         update(salaRef, { 
-            turno: siguienteJugadorId 
+            turno: siguienteId 
         }).then(() => {
-            const nombreSiguiente = s.jugadores[siguienteJugadorId]?.nombre || ("ID: " + siguienteJugadorId);
-            window.log("Turno de: " + nombreSiguiente);
+            const nombre = s.jugadores[siguienteId]?.nombre || siguienteId;
+            window.log("Turno de: " + nombre);
         });
-        
-    }).catch((error) => console.error("Error al pasar el turno:", error));
+    });
 };
 
 // --- LÓGICA DE UI ACTUALIZADA (CORRECCIÓN DE LECTURA) ---
@@ -953,6 +964,30 @@ window.actualizarTurnoUI = function(s) {
     const nombreJugador = (jugadorInfo && jugadorInfo.nombre) ? jugadorInfo.nombre : ("ID: " + turnoId);
     
     display.innerText = "Turno: " + nombreJugador;
+};
+
+window.depurarTurno = async function() {
+    console.log("--- INICIANDO DEPURACIÓN DE TURNO ---");
+    const salaRef = ref(db, 'salas/' + window.sala);
+    const snap = await get(salaRef);
+    const s = snap.val();
+    
+    if (!s || !s.jugadores) {
+        console.log("Error: No hay datos de jugadores en Firebase.");
+        return;
+    }
+
+    const keys = Object.keys(s.jugadores);
+    console.log("IDs encontrados en jugadores:", keys);
+    
+    const jugadoresReales = keys.filter(k => !String(k).startsWith('v'));
+    console.log("Jugadores reales (filtrados):", jugadoresReales);
+    
+    if (jugadoresReales.length === 0) {
+        console.log("FALLO CRÍTICO: No hay jugadores que NO empiecen con 'v'. Revisa si tus jugadores reales tienen IDs que empiezan con 'v'.");
+    } else {
+        console.log("Todo bien: Se seleccionará uno de estos:", jugadoresReales);
+    }
 };
 
 // --- 3. ACTUALIZAR TOKENS (Renderizado Visual) ---
