@@ -175,6 +175,7 @@ body {
     position: relative; 
     scrollbar-width: none; 
 }
+
 /* Chrome, Safari y Opera */
 #game-log::-webkit-scrollbar, 
 #chat-log::-webkit-scrollbar {
@@ -493,6 +494,26 @@ button { cursor: pointer; }
 }
 .impuestos { border: 3px solid #c0392b; background: #fadbd8; }
 .carcel { border: 3px solid #f1c40f; background: #fef9e7; }
+#contenedor-poderes-dinamico {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    width: 250px;
+    z-index: 1000;
+    background: white;
+    border: 2px solid #ff80bf;
+    border-radius: 15px;
+    padding: 10px;
+    box-shadow: 0 5px 15px #ff80bf;
+    /* Animación de apertura */
+    transition: transform 0.3s ease;
+    transform: translateY(110%); /* Oculto inicialmente abajo */
+}
+
+/* Cuando le añadamos la clase 'visible' con JS */
+#contenedor-poderes-dinamico.visible {
+    transform: translateY(0);
+}
 
 /* Posicionamiento de celdas - MANTENIDO IGUAL */
 /* Fila inferior (Derecha a Izquierda) */
