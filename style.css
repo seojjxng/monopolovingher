@@ -2,12 +2,14 @@
 body { background: #fff0f3; font-family: sans-serif; display: flex; justify-content: center; padding: 20px; color: #c71585; min-height: 100vh; }
 .container {
     display: flex;
-    flex-direction: row;        /* Tablero y sidebar lado a lado */
-    justify-content: center;    /* Centra el conjunto en la pantalla */
-    align-items: flex-start;    /* ESTO EVITA QUE SE ESTIREN VERTICALMENTE */
-    gap: 20px;                  /* Espacio entre las columnas */
-    width: 1000px;              /* Ancho fijo para que no ocupe toda la pantalla */
-    margin: 0 auto;             /* Centrado horizontal */
+    flex-direction: row;        
+    justify-content: center;    
+    align-items: flex-start;    
+    gap: 20px;                  
+    max-width: 1000px;          /* CAMBIO: De width a max-width */
+    width: 100%;                /* NUEVO: Permite que se encoja al 100% del móvil */
+    margin: 0 auto;             
+    padding: 0 10px;            /* NUEVO: Un pequeño margen para que no toque los bordes */
 }
 .main-column {
     display: flex;
@@ -19,6 +21,40 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
     margin: 0 auto;
 }
 /* TABLERO */
+/* Contenedor principal del sidebar */
+.sidebar-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 300px;
+    gap: 15px; /* Unificamos el espacio entre elementos */
+    flex-shrink: 0;
+}
+
+/* El sidebar interno (la columna de juego) */
+.sidebar {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* Botón estilo Sidebar (consistente con los otros botones) */
+.btn-sidebar {
+    padding: 12px;
+    border: 2px solid #ff80bf; 
+    border-radius: 12px;
+    background: #ffccd5;
+    color: #c71585;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-align: center;
+}
+
+.btn-sidebar:hover {
+    background: #ff80bf;
+    color: white;
+}
 .board { 
     display: grid; 
     grid-template-columns: repeat(8, 73px); 
@@ -31,11 +67,8 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
     margin: 0 auto;
     box-sizing: border-box;
     overflow: hidden;
-
-    /* --- ESTA LÍNEA MUEVE SOLO EL CONTENIDO 1PX A LA DERECHA --- */
     transform: translateX(0px);
 }
-.game-column, .sidebar { display: flex; flex-direction: column; gap: 15px; }
 .board-wrapper, .panel { 
 
     background: #fff0f9; padding: 20px; border-radius: 20px; border: 2px solid #ffccd5; 
@@ -58,26 +91,15 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 
 /* Contenedor de botones fuera del tablero */
 
-.actions-bar {
-
-    display: flex;
-
-    gap: 10px;
-
-    justify-content: center;
-
-    padding: 10px;
-
-    background: #fff0f9;
-
-    border: 2px solid #ffccd5;
-
-    border-radius: 20px;
-
-    margin-top: 10px;
-
+.actions-bar { 
+    display: flex; 
+    justify-content: space-between; 
+    gap: 10px; 
+    background: #ffffff; 
+    padding: 10px; 
+    border-radius: 15px; 
+    border: 2px solid #ffccd5; 
 }
-
 /* Panel específico para el modo 2v2 */
 
 .mode-panel {
@@ -141,34 +163,28 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 /* Modales - Centrado y Estandarizado */
 
 #modal {
-
     display: none; 
-
     position: fixed; 
-
     top: 0; left: 0; 
-
     width: 100%; height: 100%; 
-
-    background: rgba(0,0,0,0.7); 
-
-    z-index: 10000; 
-
+    background: rgba(0, 0, 0, 0.7); 
+    z-index: 99999; /* Z-index muy alto para que siempre esté encima */
+    display: flex; /* Flexbox es el secreto del centrado */
     justify-content: center; 
-
     align-items: center; 
-
 }
 
 .modal-content {
-    width: 90%;
-    max-width: 400px;
-    background: #ffe4e9;
-    padding: 30px;
-    border: 3px solid #ff80bf;
+    width: 90%; 
+    max-width: 350px; /* Tamaño perfecto para móvil */
+    background: #fff;
+    padding: 20px;
     border-radius: 20px;
+    border: 3px solid #ff80bf;
+    box-shadow: 0 10px 25px rgba(255, 128, 191, 0.4);
     text-align: center;
     position: relative;
+    box-sizing: border-box;
 }
 .modal-hidden {
     display: none !important; 
@@ -285,25 +301,11 @@ body { background: #fff0f3; font-family: sans-serif; display: flex; justify-cont
 .btn-misiones { background: linear-gradient(135deg, #ff80bf, #ff59aa); color: white; margin-top: 10px; border: none; padding: 8px 16px; border-radius: 20px; font-weight: bold; cursor: pointer; }
 
 /* SIDEBAR, PANEL, ACCIONES (Manteniendo tu estructura estable) */
-.sidebar {
-    width: 300px;
-    height: 100%;
-    min-height: 600px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
 .panel { background: #ffffff; padding: 15px; border-radius: 15px; border: 2px solid #ffccd5; flex-grow: 1; min-height: 400px; display: flex; flex-direction: column; gap: 10px; }
 .scroll-box { flex-grow: 1; background: #fff5f7; border: 1px solid #ffccd5; border-radius: 8px; padding: 8px; overflow-y: auto; font-size: 12px; min-height: 100px; }
 .input-field { padding: 8px; border: 1px solid #ffccd5; border-radius: 8px; width: 100%; }
-.btn-sidebar { padding: 10px; border: none; border-radius: 10px; flex-grow: 0; background: #ffccd5; color: #c71585; font-weight: bold; cursor: pointer; }
 .actions-wrapper { width: 600px; }
-.actions-bar { display: flex; justify-content: space-between; gap: 10px; background: #ffffff; padding: 10px; border-radius: 15px; border: 2px solid #ffccd5; }
-.btn-action { flex: 1; padding: 10px; border: 1px solid #ffccd5; border-radius: 10px; background: #ff80bf; color: #ff59aa; font-weight: bold; cursor: pointer; }
-.modal-hidden { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 182, 193, 0.5); z-index: 1000; align-items: center; justify-content: center; }
-.modal-content { background: #fff; border: 2px solid #ff80bf; border-radius: 10px; width: 300px; padding: 10px; box-shadow: 0 4px 15px rgba(255, 128, 191, 0.3); }
 .modal-header { display: flex; justify-content: space-between; color: #ff59aa; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #ffccd5; padding-bottom: 5px; }
-.modal-body { color: #c71585; font-size: 14px; min-height: 100px; }
 button { cursor: pointer; }
 /* Botón de cerrar tipo Windows */
 .btn-cerrar {
@@ -323,23 +325,14 @@ button { cursor: pointer; }
     min-height: 100px; 
     display: flex; 
     flex-direction: column; 
-    align-items: center; /* Centra horizontalmente */
-    justify-content: center; /* Centra verticalmente */
+    align-items: center; /* Centra horizontalmente el contenido */
+    justify-content: center; /* Centra verticalmente el contenido */
     text-align: center;
     padding: 10px;
 }
 .modal-body ul { 
     list-style-position: inside; /* Mueve los bullets al centro */
     padding-left: 0; 
-}
-/* Asegura que el botón dentro de la nueva barra de envío se vea igual a los otros */
-.actions-bar .btn-action {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: #ffccd5;
-    border: 1px solid #ff80bf;
-    color: #ff59aa;
 }
 .clima-container {
     display: grid;
@@ -369,23 +362,56 @@ button { cursor: pointer; }
     font-family: 'Arial', sans-serif;
     color: #000;
     padding: 0;
-    box-shadow: 5px 5px 15px rgba(0,0,0,0.1);
+    box-shadow: 5px 5px 15px rgba(0,0,0,0.1); /* Recuperamos la sombra */
 }
-
-.card-property { width: 280px; background: #fff; border: 3px solid #000; font-family: 'Arial', sans-serif; color: #000; padding: 0; }
 .card-header { background: #ff80bf; color: white; padding: 15px; text-align: center; font-weight: bold; font-size: 1.4em; text-transform: uppercase; border-bottom: 3px solid #000; }
 .card-body { padding: 15px; text-align: center; }
+/* Clase única para todos los botones de acción del juego */
 .btn-accion {
+    display: flex;
+    justify-content: center;
+    align-items: center;
     width: 100%;
-    padding: 10px;
+    padding: 12px;
     margin-top: 5px;
-    border: none;
-    cursor: pointer;
+    border: 2px solid #ff80bf; 
+    border-radius: 12px;
+    background-color: #ffccd5; 
+    color: #ff59aa;             
     font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s ease, color 0.3s ease; /* Transición limpia */
+    
+    /* Forzamos a quitar cualquier tipo de sombra o brillo */
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* Efecto al pasar el mouse */
+.btn-accion:hover {
+    background-color: #ff80bf;
     color: white;
-    border-radius: 4px;
-    background-color: #ff59aa; /* Color rosa Barbie */
-    transition: background-color 0.3s ease; /* Efecto suave al pasar el mouse */
+    /* Aseguramos que el hover tampoco tenga sombras */
+    box-shadow: none !important;
+}
+
+/* Estilo específico para cuando el botón está deshabilitado por el juego */
+.btn-accion:disabled {
+    background-color: #e0e0e0;
+    border-color: #ccc;
+    color: #888;
+    cursor: not-allowed;
+}
+
+/* El contenedor que mencionaste */
+.actions-bar { 
+    display: flex; 
+    justify-content: space-between; 
+    gap: 10px; 
+    background: #ffffff; 
+    padding: 10px; 
+    border-radius: 15px; 
+    border: 2px solid #ffccd5; 
 }
 .icono-transporte {
     display: flex; 
@@ -403,15 +429,6 @@ button { cursor: pointer; }
     gap: 20px;
     width: 920px; 
     margin: 0 auto;
-}
-
-/* Fuerza el sidebar a mantener su ancho sin estirarse */
-.sidebar-wrapper {
-    display: flex;
-    flex-direction: column;
-    width: 300px;
-    gap: 10px;
-    flex-shrink: 0;
 }
 .carta-monopoly {
     background: #f7f1e3;
