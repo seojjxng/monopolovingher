@@ -127,29 +127,39 @@ body {
     justify-content: space-between; 
 }
 /* IMPORTANTE: En móviles, apilamos todo */
-@media (max-width: 900px) {
-    /* 1. Aseguramos que nada exceda el ancho de la pantalla */
+@media (max-width: 768px) {
+    /* 1. Resetear anchos fijos que rompen el centrado */
     .board, 
     .main-column, 
-    .actions-wrapper {
-        width: 95vw !important; /* Ocupa casi toda la pantalla */
+    .actions-wrapper,
+    .container {
+        width: 95vw !important;
+        max-width: 95vw !important;
         margin-left: auto !important;
         margin-right: auto !important;
-        flex-shrink: 0;
+        flex-shrink: 0 !important;
     }
 
-    /* 2. Ajustamos las celdas para que no se rompan */
+    /* 2. El tablero debe ser cuadrado y centrado */
     .board {
-        height: 95vw !important; /* Mantiene el cuadrado */
+        height: 95vw !important; 
         grid-template-columns: repeat(8, 1fr) !important;
         grid-template-rows: repeat(8, 1fr) !important;
     }
 
-    /* 3. El contenedor padre debe estar centrado */
+    /* 3. Asegurar que el layout principal no se desborde */
     .game-layout {
         width: 100% !important;
         padding: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
         align-items: center !important;
+    }
+    
+    /* 4. Evitar que elementos internos hijos intenten forzar ancho */
+    .board div[id^="cell-"] {
+        width: 100% !important;
+        height: 100% !important;
     }
 }
 /* Contenedores inferiores */
