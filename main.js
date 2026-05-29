@@ -190,26 +190,23 @@ window.sincronizar = function() {
     // 5. ESTADO LISTENER (Sincronización maestra)
     window.estadoListener = onValue(salaRef, (snap) => {
         const s = snap.val();
-        // PROTECCIÓN: Si no hay datos, abortar para evitar errores
-        if (!s || !s.jugadores) return;
+        
+        // --- PROTECCIÓN CRÍTICA ---
+        // Si no hay datos en la sala, abortamos para no causar errores en cascada
+        if (!s) return; 
 
-        // VITAL: Guardamos el estado global
         window.salaData = s;
 
-        // Pintamos el tablero con try-catch para evitar crash si una ficha es undefined
+        // Pintamos el tablero
         if (typeof window.pintarTodasLasCasillas === 'function') {
-            try {
-                window.pintarTodasLasCasillas(s);
-            } catch (err) {
-                console.warn("Retrasando pintado, esperando datos de fichas...", err);
-            }
+            try { window.pintarTodasLasCasillas(s); } catch (err) { console.warn("Esperando datos de fichas..."); }
         }
 
-        // Lógica de Creador y UI
+        // Lógica de Creador y Botón Iniciar
         window.creadorSala = s.creador;
         const btnIniciar = document.getElementById('btn-iniciar-partida');
         if (btnIniciar) {
-            btnIniciar.style.display = (window.miIdx === window.creadorSala && s.estado === "esperando") ? 'block' : 'none';
+            btnIniciar.style.display = (window.miIdx && window.miIdx === window.creadorSala && s.estado === "esperando") ? 'block' : 'none';
         }
 
         if (window.estadoPrevio === "esperando" && s.estado === "jugando") {
@@ -217,10 +214,10 @@ window.sincronizar = function() {
         }
         window.estadoPrevio = s.estado;
 
-        // Dinero
+        // Dinero (Seguridad opcional)
         const elDinero = document.getElementById('dinero-mio');
         if (elDinero && s.jugadores && s.jugadores[window.miIdx]) {
-            elDinero.innerText = s.jugadores[window.miIdx].dinero || 0;
+            elDinero.innerText = s.jugadores[window.miIdx].dinero ?? 0;
         }
 
         // Actualización Turno
@@ -237,8 +234,14 @@ window.sincronizar = function() {
             btnDado.style.cursor = esMiTurno ? 'pointer' : 'default';
         }
 
+        // --- PROTECCIÓN DEFINITIVA DE TOKENS ---
+        // Se valida s.jugadores antes de procesar para evitar "Cannot read properties of undefined"
         if (s.jugadores && typeof window.actualizarTokens === 'function') {
-            window.actualizarTokens(s.jugadores);
+            try {
+                window.actualizarTokens(s.jugadores);
+            } catch (e) {
+                console.error("Error en actualizarTokens:", e);
+            }
         }
     });
 
@@ -248,7 +251,9 @@ window.sincronizar = function() {
         const idx = (val !== null && val !== undefined) ? val : 0;
         
         const elClima = document.getElementById('clima-display');
-        if (elClima && window.climas) elClima.innerText = `Clima: ${window.climas[idx].n}`;
+        if (elClima && window.climas && window.climas[idx]) {
+             elClima.innerText = `Clima: ${window.climas[idx].n}`;
+        }
         
         const gameLog = document.getElementById('game-log');
         if (gameLog) {
@@ -776,14 +781,25 @@ window.ejecutarSabotaje = async function(objetivoIdx, porcentaje, costo) {
 
 // --- 5. UNIFICACIÓN: RESCATE Y FIANZA ---
 window.abrirMenuRescate = async function() {
-    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
+    // 1. Aseguramos que tenemos conexión
+    if (!window.db || !window.sala) return;
+
+    const snap = await get(ref(window.db, 'salas/' + window.sala + '/jugadores'));
     let html = `<div class="modal-content"><p>Selecciona un prisionero para pagar su fianza ($300):</p>`;
     let hayPresos = false;
 
+    // 2. Iteración segura
     snap.forEach(c => {
         const datos = c.val();
-        if (datos.enCarcel > 0) {
+        
+        // --- PROTECCIÓN ---
+        // Usamos (datos.enCarcel ?? 0) para que si es undefined, se trate como 0
+        const enCarcel = datos?.enCarcel ?? 0;
+
+        if (enCarcel > 0) {
             hayPresos = true;
+            // 3. Verificación de seguridad en el onclick
+            // Usamos comillas simples y escapamos datos si es necesario
             html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" 
                         onclick="window.ejecutarRescate('${c.key}', 300); window.cerrarModal()">
                         <i class="fas fa-unlock-alt"></i> Pagar fianza de ${c.key}
@@ -791,10 +807,18 @@ window.abrirMenuRescate = async function() {
         }
     });
 
-    if (!hayPresos) html += `<p style="text-align:center;">Nadie está en la cárcel ahora.</p>`;
+    if (!hayPresos) {
+        html += `<p style="text-align:center;">Nadie está en la cárcel ahora.</p>`;
+    }
     
     html += `<button class="btn-sidebar" style="width:100%; background:#95a5a6; margin-top:10px;" onclick="window.cerrarModal()">Cancelar</button></div>`;
-    window.abrirModal("Rescate / Fianza", html);
+    
+    // 4. Verificamos que abrirModal exista antes de llamar
+    if (typeof window.abrirModal === 'function') {
+        window.abrirModal("Rescate / Fianza", html);
+    } else {
+        console.error("Error: window.abrirModal no está definida.");
+    }
 };
 
 window.ejecutarRescate = async function(idPreso, costo) {
@@ -947,7 +971,8 @@ window.tirarDado = async function() {
     // 2. Verificación básica y de bloqueo
     if (typeof window.miIdx === 'undefined' || window.estaLanzando) return;
     
-    if (typeof db === 'undefined' || !db) {
+    // Usamos window.db por consistencia
+    if (typeof window.db === 'undefined' || !window.db) {
         console.error("Firebase DB no está definida.");
         return;
     }
@@ -957,11 +982,14 @@ window.tirarDado = async function() {
     if (btnDado) btnDado.style.pointerEvents = 'none';
 
     try {
-        const salaRef = ref(db, 'salas/' + window.sala);
+        const salaRef = ref(window.db, 'salas/' + window.sala);
         const snap = await get(salaRef);
         
         if (!snap.exists()) { console.error("Sala perdida"); return; }
         let s = snap.val();
+
+        // Seguridad: Verificar que existen jugadores
+        if (!s.jugadores) { console.error("No hay jugadores en la sala"); window.estaLanzando = false; return; }
 
         // --- LÓGICA DE AUTO-INICIO Y TURNO ---
         if (!s.turno || s.estado !== "jugando") {
@@ -980,11 +1008,14 @@ window.tirarDado = async function() {
             return;
         }
 
-        // --- CORRECCIÓN CÁRCEL ---
-        if (s.jugadores[window.miIdx].enCarcel > 0) {
-            // Ya no pasamos el turno, abrimos el menú para que el usuario elija
+        // --- CORRECCIÓN CÁRCEL (BLINDADA) ---
+        // Usamos (s.jugadores[window.miIdx]?.enCarcel ?? 0) para evitar que falle si es undefined
+        const miJugador = s.jugadores[window.miIdx];
+        if (!miJugador) return; 
+
+        if ((miJugador.enCarcel ?? 0) > 0) {
             window.mostrarOpcionesCarcel();
-            window.estaLanzando = false; // Liberamos el bloqueo
+            window.estaLanzando = false;
             if (btnDado) btnDado.style.pointerEvents = 'auto';
             return;
         }
@@ -997,19 +1028,19 @@ window.tirarDado = async function() {
         window.lanzarDado3D(dado);
         await new Promise(r => setTimeout(r, 700));
 
-        const posAnterior = Number(s.jugadores[window.miIdx].pos || 0);
+        const posAnterior = Number(miJugador.pos || 0);
         const nuevaPos = (posAnterior + dado) % 28;
         
         // --- LÓGICA DE SALIDA ($100 AUTOMÁTICOS) ---
         if (nuevaPos < posAnterior) {
-            await update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), {
+            await update(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), {
                 dinero: increment(100)
             });
             window.log("¡Pasaste por SALIDA y ganaste $100!");
         }
 
         // Actualización de posición
-        const miJugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+        const miJugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
         await update(miJugadorRef, { pos: nuevaPos });
 
         // Lógica de pasar turno
@@ -1022,7 +1053,7 @@ window.tirarDado = async function() {
             }
         }
 
-        // --- MANEJO DE CASILLA (Se habilita compra con 'true') ---
+        // --- MANEJO DE CASILLA ---
         if (typeof window.manejarCasilla === 'function') {
             await window.manejarCasilla(nuevaPos, true);
         }
@@ -1122,63 +1153,87 @@ window.actualizarTurnoUI = function(s) {
     const display = document.getElementById('turno-display');
     if (!display) return;
 
-    if (s.estado !== "jugando") {
+    // 1. Validación de estado y existencia de datos
+    if (!s || s.estado !== "jugando") {
         display.innerText = "Turno: Esperando...";
         return;
     }
 
     let turnoId = s.turno; 
     
-    // CORRECCIÓN: Si el turno actual es un visitante, forzamos mensaje de espera
-    if (turnoId && String(turnoId).startsWith('v')) {
-        display.innerText = "Turno: Esperando jugador...";
-        return;
-    }
-    
+    // 2. Si no hay turno asignado
     if (!turnoId) {
         display.innerText = "Turno: Iniciando...";
         return;
     }
 
-    const jugadorInfo = s.jugadores ? s.jugadores[turnoId] : null;
-    const nombreJugador = (jugadorInfo && jugadorInfo.nombre) ? jugadorInfo.nombre : ("ID: " + turnoId);
+    // 3. Si el turno es un visitante
+    if (String(turnoId).startsWith('v')) {
+        display.innerText = "Turno: Esperando jugador...";
+        return;
+    }
     
-    // INDICADOR VISUAL DE CÁRCEL: Añade el icono si el jugador está encarcelado
-    const estadoCárcel = (jugadorInfo && jugadorInfo.enCarcel === 1) ? " 🔒" : "";
+    // 4. ACCESO SEGURO A DATOS
+    const jugadores = s.jugadores || {};
+    const jugadorInfo = jugadores[turnoId];
+    
+    // 5. Si el jugador no existe en la lista, el turno es inválido
+    if (!jugadorInfo) {
+        display.innerText = "Turno: Error en ID...";
+        return;
+    }
+
+    // 6. Obtención del nombre y estado de cárcel
+    const nombreJugador = jugadorInfo.nombre || ("ID: " + turnoId);
+    
+    // Usamos el operador ?? para garantizar un número, evitando errores de undefined
+    const esPrisionero = (jugadorInfo.enCarcel ?? 0) > 0;
+    const estadoCárcel = esPrisionero ? " 🔒" : "";
     
     display.innerText = "Turno: " + nombreJugador + estadoCárcel;
 };
 
 window.depurarTurno = async function() {
     console.log("--- INICIANDO DEPURACIÓN DE TURNO ---");
-    if (!window.db || !window.sala) {
-        console.log("Error: DB o ID de sala no inicializados.");
+    
+    // 1. Verificar inicialización
+    if (typeof window.db === 'undefined' || !window.db || !window.sala) {
+        console.error("Error: Firebase DB o ID de sala no inicializados.");
         return;
     }
 
-    const salaRef = ref(db, 'salas/' + window.sala);
-    const snap = await get(salaRef);
-    const s = snap.val();
-    
-    if (!s || !s.jugadores) {
-        console.log("Error: No hay datos de jugadores en Firebase.");
-        return;
-    }
+    try {
+        const salaRef = ref(window.db, 'salas/' + window.sala);
+        const snap = await get(salaRef);
+        const s = snap.val();
+        
+        if (!s || !s.jugadores) {
+            console.warn("Aviso: No hay datos de jugadores en Firebase.");
+            return;
+        }
 
-    const keys = Object.keys(s.jugadores);
-    console.log("IDs encontrados en jugadores:", keys);
-    
-    const jugadoresReales = keys.filter(k => !String(k).startsWith('v'));
-    console.log("Jugadores reales (filtrados):", jugadoresReales);
-    
-    if (jugadoresReales.length === 0) {
-        console.log("FALLO CRÍTICO: No hay jugadores que NO empiecen con 'v'.");
-    } else {
-        console.log("Estado actual de cárceles:");
-        jugadoresReales.forEach(id => {
-            console.log(`Jugador ${id}: enCarcel = ${s.jugadores[id].enCarcel || 0}`);
-        });
-        console.log("Todo bien: Se seleccionará uno de estos:", jugadoresReales);
+        console.log("Datos de la sala obtenidos:", s);
+        console.log("Turno actual (ID):", s.turno);
+
+        const keys = Object.keys(s.jugadores);
+        console.log("IDs de jugadores encontrados:", keys);
+        
+        const jugadoresReales = keys.filter(k => !String(k).startsWith('v'));
+        
+        if (jugadoresReales.length === 0) {
+            console.error("FALLO CRÍTICO: No hay jugadores reales (sin 'v') en Firebase.");
+        } else {
+            console.log("Estado detallado de los jugadores:");
+            jugadoresReales.forEach(id => {
+                const j = s.jugadores[id];
+                // Mostramos el valor real de enCarcel, o 0 si no existe
+                const carcel = j.enCarcel ?? "NO DEFINIDO";
+                console.log(`Jugador [${id}]: Nombre: ${j.nombre}, Pos: ${j.pos}, enCarcel: ${carcel}`);
+            });
+            console.log("Depuración finalizada. Revisa los valores de 'enCarcel' arriba.");
+        }
+    } catch (error) {
+        console.error("Error durante la depuración:", error);
     }
 };
 
@@ -1193,16 +1248,24 @@ window.actualizarTokens = function(jugadores) {
         "Car": "https://raw.githubusercontent.com/seojjxng/game-pic/refs/heads/main/mC3Vwc7.png"
     };
 
+    // Limpiamos tokens viejos
     document.querySelectorAll('.token').forEach(t => t.remove());
 
     Object.keys(jugadores).forEach((id) => {
         const jugador = jugadores[id];
+        
+        // --- AQUÍ ESTÁ LA SEGURIDAD ---
+        // Si 'jugador' no existe, nos saltamos esta vuelta del bucle
+        if (!jugador) return; 
+        
         if (String(id).startsWith('v')) return;
 
-        const p = parseInt(jugador.pos) || 0;
-        const celda = document.getElementById('cell-' + p);
+        // Usamos Optional Chaining (?.) por si acaso 'pos' no existe
+        const p = parseInt(jugador.pos) || 0; 
         const nombre = jugador.nombre;
+        const celda = document.getElementById('cell-' + p);
 
+        // Verificamos que todo exista antes de crear nada
         if (celda && nombre && tokensMap[nombre]) {
             celda.style.position = 'relative';
 
@@ -1211,25 +1274,20 @@ window.actualizarTokens = function(jugadores) {
             token.id = 'token-' + id;
             token.src = tokensMap[nombre];
 
-            // Ajustes para que quepan perfectamente
+            // Ajustes de estilo
             token.style.position = 'absolute';
             token.style.top = '50%';
             token.style.left = '50%';
             token.style.transform = 'translate(-50%, -50%)';
-            
-            // Reducido a 25px para que sobre espacio en la celda de 70px
             token.style.width = '50px';
             token.style.height = '50px';
-            
-            // "contain" hace que la imagen completa se vea sin recortar
             token.style.objectFit = 'contain'; 
-            
             token.style.zIndex = '9999';
             token.style.pointerEvents = 'none';
             token.style.border = 'none'; 
             token.style.borderRadius = '0'; 
             token.style.boxShadow = 'none';
-            token.style.backgroundColor = 'transparent'; // Por si la imagen tiene fondo oscuro
+            token.style.backgroundColor = 'transparent';
 
             celda.appendChild(token);
         }
@@ -2016,7 +2074,7 @@ window.obtenerCarta = function() {
 
 window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     const posInt = parseInt(pos);
-    const salaRef = ref(db, 'salas/' + window.sala);
+    const salaRef = ref(window.db, 'salas/' + window.sala);
     const snap = await get(salaRef);
     const data = snap.val();
     if (!data) return;
@@ -2025,7 +2083,7 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     const puedeComprar = esLlegadaPorMovimiento && esTurnoActual;
     const prop = data.propiedades ? data.propiedades[posInt] : null;
     const p = window.mapa[posInt];
-    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const jugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
 
     if (prop && prop.owner) window.pintarCasilla(posInt, prop.owner);
 
@@ -2067,17 +2125,25 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     if (p.n === "ARCA COMUNAL" || p.n === "?") {
         const carta = window.obtenerCarta();
         titulo = (p.n === "ARCA COMUNAL") ? "Arca Comunal" : "Suerte (?)";
-        update(jugadorRef, { dinero: increment(carta.v) });
+        await update(jugadorRef, { dinero: increment(carta.v) });
         contenido = `<h2>${titulo}</h2><p>${carta.txt}</p>`;
     } 
-    else if (posInt === 10) {
+    else if (posInt === 9) {
+        // --- PRUEBA: DETECCIÓN EN CASILLA 9 ---
+        console.log("¡Detectado aterrizaje en casilla 9 (DEBUG CÁRCEL)!");
         const snapJ = await get(jugadorRef);
         let j = snapJ.val();
-        let visitas = (j.visitasCarcel || 0) + 1;
-        // Al caer aquí, el jugador entra en estado de cárcel
-        await update(jugadorRef, { enCarcel: 1, visitasCarcel: visitas, pos: 10 });
+        let visitas = (j?.visitasCarcel || 0) + 1;
+        
+        await update(jugadorRef, { 
+            enCarcel: 1, 
+            visitasCarcel: visitas, 
+            pos: 9 
+        });
+        
+        console.log("Jugador enviado a la cárcel desde casilla 9.");
         window.mostrarOpcionesCarcel();
-        return; // No pasamos turno automáticamente, mostramos opciones
+        return; 
     }
     else if (p.n === "IMPUESTOS") {
         const monto = Math.floor(Math.random() * 300) + 50;
@@ -2091,8 +2157,8 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     }
     else if (p.n === "PARADA") {
         const pozo = data.pozoImpuestos || 0;
-        update(jugadorRef, { dinero: increment(pozo) });
-        update(salaRef, { pozoImpuestos: 0 });
+        await update(jugadorRef, { dinero: increment(pozo) });
+        await update(salaRef, { pozoImpuestos: 0 });
         titulo = "Parada Gratuita";
         contenido = `<h2>Parada</h2><p>Recolectaste $${pozo}.</p>`;
     }
