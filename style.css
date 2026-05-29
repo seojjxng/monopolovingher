@@ -4,13 +4,13 @@ body {
     font-family: sans-serif; 
     display: flex; 
     flex-direction: column; 
-    /* Cambiamos align-items para que el centrado sea por margen */
     align-items: center; 
     min-height: 100vh; 
-    padding: 20px; 
+    padding: 20px 0; /* Cambiamos el padding horizontal a 0 aquí */
     color: #c71585; 
-    /* IMPORTANTE: Esto evita que el contenido se desborde en móviles */
     width: 100%;
+    overflow-x: hidden; /* IMPORTANTE: Esto mata el scroll horizontal */
+    box-sizing: border-box;
 }
 .container {
     display: flex;
@@ -108,11 +108,12 @@ body {
     display: flex;
     flex-direction: row;
     justify-content: center;
-    align-items: stretch; 
+    align-items: flex-start; /* Mejor que stretch para que no se deforme */
     gap: 20px;
     width: 100%;
     max-width: 950px;
-    margin: 0 auto; /* Esto es lo que centra el bloque en la pantalla */
+    padding: 0 10px; /* Aquí ponemos el espacio necesario */
+    box-sizing: border-box;
 }
 
 /* LA COLUMNA PRINCIPAL */
