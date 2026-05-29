@@ -485,18 +485,23 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
     window.sala = salaId;
     const botonIniciar = document.getElementById('btn-iniciar-partida');
     
-    // Mapeo para asignar un ID de pieza único a cada rol
+    // Mapeo para asignar un ID de pieza único
     const pieceMap = { "Dog": 0, "Horse": 1, "Hat": 2, "Car": 3 };
+    
+    // DETERMINAR SALDO INICIAL
+    // Si el rol empieza con 'v', es visitante (2000), si no, es jugador normal (1500)
+    const esVisitante = rol.toString().startsWith('v');
+    const dineroInicial = esVisitante ? 2000 : 1500;
     
     const datosJugador = { 
         nombre: rol, 
         pieceNum_: pieceMap[rol] ?? 0, 
-        dinero: 0, 
+        dinero: dineroInicial, // <--- AQUÍ ESTÁ EL CAMBIO
         pos: 0, 
         activo: true, 
         intentosFallidos: 0, 
         estrellas: 0, 
-        tipoReputacion: 'neutral', // 'angel' o 'gargola'
+        tipoReputacion: 'neutral', 
         misionesCompletadas: 0,
         accionesIncorrectas: 0,
         visitasCarcel: 0, 
@@ -514,7 +519,7 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         
         window.miIdx = rol; 
         window.creadorSala = rol; 
-        window.esVisitante = false;
+        window.esVisitante = esVisitante;
         
         if (botonIniciar) botonIniciar.style.display = 'flex';
         
@@ -522,7 +527,6 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         window.anunciarEnChat(salaId, rol + " ha creado la sala.");
         window.abrirModal("Éxito", `<p>Sala creada como <b>${rol}</b></p>`);
         
-        // Sincronizar y activar escucha
         window.sincronizar();
         window.escucharOfertas(); 
         
@@ -537,11 +541,10 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         }).then((res) => {
             if (res.committed) {
                 window.miIdx = rol; 
-                window.esVisitante = false;
+                window.esVisitante = esVisitante;
                 window.cerrarModal();
                 window.anunciarEnChat(salaId, rol + " se ha unido.");
                 
-                // Sincronizar y activar escucha
                 window.sincronizar();
                 window.escucharOfertas(); 
             } else {
@@ -1411,7 +1414,7 @@ window.solicitarPrestamo = async function(monto) {
 window.pagarPrestamo = async function() {
     // 1. Verificación de seguridad inicial
     if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') {
-        window.abrirModal("⚠️ Error", "<p>Debes estar en una sala para realizar pagos.</p>");
+        window.abrirModal("Error", "<p>Debes estar en una sala para realizar pagos.</p>");
         return;
     }
 
@@ -1425,33 +1428,44 @@ window.pagarPrestamo = async function() {
         return;
     }
 
+    // Verificamos que tenga préstamo
     if (!j.tienePrestamo || j.montoPrestamo <= 0) {
-        window.abrirModal("🏦 Banco Central", "<p>No tienes deudas pendientes.</p><button class='btn-accion' onclick='window.cerrarModal()'>Aceptar</button>");
+        window.abrirModal("Banco Central", "<p>No tienes deudas pendientes.</p><button class='btn-accion' onclick='window.cerrarModal()'>Aceptar</button>");
         return;
     }
 
-    // 3. Verificación de saldo
-    if ((j.dinero || 0) < j.montoPrestamo) {
-        window.abrirModal("Error", `<p>Saldo insuficiente para liquidar la deuda de $${j.montoPrestamo}.</p><button class='btn-accion' onclick='window.cerrarModal()'>Aceptar</button>`);
+    // 3. Verificación de saldo usando el valor actual de 'dinero' en la DB
+    const saldoActual = (j.dinero || 0);
+    if (saldoActual < j.montoPrestamo) {
+        window.abrirModal("Error", `<p>Saldo insuficiente. Tu saldo actual es de <b>$${saldoActual}</b> y la deuda es de <b>$${j.montoPrestamo}</b>.</p><button class='btn-accion' onclick='window.cerrarModal()'>Aceptar</button>`);
         return;
     }
 
     // 4. Aplicar cambios de forma atómica
     try {
+        const estrellasActuales = (j.estrellas || 0);
+        const nuevasEstrellas = estrellasActuales + 1;
+
+        // Usamos increment para que el saldo inicial de 1500/2000 se respete perfectamente
         await update(jRef, { 
             tienePrestamo: false, 
             montoPrestamo: 0,
-            dinero: increment(-j.montoPrestamo), // Resta segura
-            estrellas: increment(1)             // Recompensa por responsabilidad
+            dinero: increment(-j.montoPrestamo), 
+            estrellas: nuevasEstrellas
         });
+
+        // 5. Refrescar la interfaz inmediatamente
+        if (typeof window.renderEstrellas === 'function') {
+            window.renderEstrellas(nuevasEstrellas);
+        }
 
         window.log("¡Deuda liquidada! Has ganado 1 estrella de reputación.");
 
-        window.abrirModal("🏦 Banco Central", `
-            <div class="abrirModal">
+        window.abrirModal("Banco Central", `
+            <div class="modal-body">
                 <p>Deuda liquidada correctamente.</p>
                 <p>Has recibido <b>+1 estrella</b> de reputación por tu responsabilidad financiera.</p>
-                <button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button>
+                <button class="btn-accion" style="margin-top:15px;" onclick="window.cerrarModal()">Aceptar</button>
             </div>
         `);
     } catch (error) {
@@ -1488,7 +1502,7 @@ window.verSaldos = function() {
     const jugadoresRef = ref(db, 'salas/' + window.sala + '/jugadores');
 
     get(jugadoresRef).then((snap) => {
-        let txt = `<div class="abrirModal">
+        let txt = `<div class="modal-body">
                      <h2 style="color: #ff59aa; margin-top: 0; text-align: center;">Saldos</h2>
                      <div style="max-height: 300px; overflow-y: auto; text-align: left;">
                        <ul style='list-style:none; padding:0; margin:10px 0;'>`;
@@ -1501,13 +1515,8 @@ window.verSaldos = function() {
                 let key = c.key.toString();
                 let esVisitante = key.startsWith('v') && key.length > 1;
                 
-                // AQUÍ FORZAMOS: Si el dinero es 1000 o 1500, lo ponemos a 0 en la BD
-                let dinero = j.dinero;
-                if (dinero === 1000 || dinero === 1500) {
-                    dinero = 0;
-                    // Actualizamos en la base de datos para que no vuelva a pasar
-                    update(ref(db, 'salas/' + window.sala + '/jugadores/' + key), { dinero: 0 });
-                }
+                // Mantenemos el dinero real, sin modificaciones ni reseteos
+                let dinero = j.dinero || 0;
                 
                 let nombre = esVisitante ? "Citizen " + key.replace('v','') : key;
                 
@@ -1533,8 +1542,7 @@ window.abrirPagar = function() {
         if (j && j.tienePrestamo) {
             contenido = `
                 <p>Saldo pendiente: <b>$${j.montoPrestamo}</b></p>
-                <button class="btn-accion" style="width:100%; margin-top: 10px;" onclick="window.pagarPrestamo()">Liquidar Préstamo</button>
-                <button class="btn-accion" style="width:100%; margin-top: 5px; background: #ff59aa;" onclick="window.cerrarModal()">Cancelar</button>`;
+                <button class="btn-accion" style="width:100%; margin-top: 10px;" onclick="window.pagarPrestamo()">Liquidar Préstamo</button>`;
         } else {
             contenido = `
                 <p>No tienes deudas pendientes.</p>
@@ -2452,20 +2460,19 @@ window.abrirModalMisiones = function() {
     window.abrirModal(esVisitante ? "Misiones" : "Logros", html);
 };
 
-    window.renderEstrellas = function(valor) {
-    // Busca el contenedor específico en el DOM
-    const contenedor = document.getElementById('contenedor-estrellas');
-    if (!contenedor) return;
-
-    const estrellas = contenedor.querySelectorAll('.estrella');
-    estrellas.forEach((star, index) => {
-        // index empieza en 0, valor empieza en 1
-        if (index < valor) {
-            star.classList.add('activa');
-        } else {
-            star.classList.remove('activa');
+   window.renderEstrellas = function(cantidad) {
+    // Recorremos del 1 al 5 buscando los IDs exactos de tu HTML
+    for (let i = 1; i <= 5; i++) {
+        const star = document.getElementById('star-' + i);
+        if (star) {
+            // Si el índice es menor o igual a la cantidad recibida, se activa
+            if (i <= cantidad) {
+                star.classList.add('activa');
+            } else {
+                star.classList.remove('activa');
+            }
         }
-    });
+    }
 };
 
 window.obtenerReputacionData = function(reputacion) {
