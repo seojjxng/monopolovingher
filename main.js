@@ -27,6 +27,9 @@ window.checkDb = function() {
     return true;
 };
 
+if (typeof window.initCheatSystem === 'function') {
+    window.initCheatSystem();
+}
 
 window.bgMusic = new Audio('https://dl.dropbox.com/scl/fi/hk4mo9t0v12r63c6nznon/.mp3?rlkey=a6zljcoh6spn484f3soqmi59g&st=8ntfk49p&dl=1'); 
 window.bgMusic.loop = true;
@@ -2376,25 +2379,83 @@ window.completarMisionVisitante = function(tipo) {
     // 2. Obtener datos actuales para calcular el cambio
     get(userRef).then((snap) => {
         const datos = snap.val();
+        if (!datos) return;
+
         let repActual = datos.reputacion || 3;
         
         // Ángel suma, Gárgola resta (limitado entre 0 y 5)
         const cambio = (tipo === 'angel') ? 1 : -1;
         const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
         
+        // Definir recompensa según tipo
+        const recompensa = (tipo === 'angel') ? 200 : 150;
+        
         // 3. Actualizar Firebase
         update(userRef, { 
             reputacion: nuevaRep,
+            dinero: increment(recompensa),
             misionesCompletadas: increment(1)
         }).then(() => {
             // 4. Actualizar la interfaz visual
             window.renderEstrellas(nuevaRep);
             window.cerrarModal();
             
-            // Opcional: mostrar un pequeño aviso de éxito
-            console.log("Reputación actualizada a: " + nuevaRep);
+            // 5. Mostrar aviso de éxito visual
+            const nombreMision = (tipo === 'angel') ? "Misión de Benefactor" : "Misión de Saboteador";
+            if (typeof window.mostrarExitoMision === 'function') {
+                window.mostrarExitoMision(nombreMision, recompensa);
+            }
+            
+            console.log("Misión completada. Reputación: " + nuevaRep);
         });
     });
+};
+
+window.initCheatSystem = function() {
+    const chatInput = document.getElementById('chat-input');
+    if (!chatInput) return;
+
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const valor = chatInput.value.trim();
+            
+            // Usamos un prefijo sin barra para evitar conflictos con el motor de JS
+            // Escribe: "rep 5" en vez de "/rep 5"
+            if (valor.startsWith('rep ')) {
+                e.preventDefault();
+                const partes = valor.split(' ');
+                const num = parseInt(partes[1]);
+                if (!isNaN(num)) {
+                    window.renderEstrellas(num);
+                    window.mostrarAvisoReputacion(num);
+                }
+                chatInput.value = "";
+            }
+            
+            // Escribe: "misiones" en vez de "/misiones"
+            if (valor === 'misiones') {
+                e.preventDefault();
+                window.abrirModalMisiones();
+                chatInput.value = "";
+            }
+        }
+    });
+};
+
+window.mostrarExitoMision = function(nombreMision, recompensa) {
+    const html = `
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 4em; margin-bottom: 10px;">🎉</div>
+            <h2 style="color: #ff59aa; margin-top: 0;">¡Misión Completada!</h2>
+            <p>Has terminado: <b>${nombreMision}</b></p>
+            <div style="background: #fff5f7; border: 2px dashed #ff80bf; padding: 15px; border-radius: 10px; margin: 15px 0;">
+                <div style="font-size: 0.9em; color: #666;">RECOMPENSA RECIBIDA:</div>
+                <div style="font-size: 1.5em; font-weight: bold; color: #ff59aa;">+$${recompensa}</div>
+            </div>
+            <button class="btn-accion" style="width:100%; background: #ff59aa;" onclick="window.cerrarModal()">¡A por la siguiente!</button>
+        </div>`;
+    
+    window.abrirModal("Logro desbloqueado", html);
 };
 
 window.pintarCasilla = function(posicion, ownerId) {
