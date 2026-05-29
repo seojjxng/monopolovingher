@@ -128,20 +128,28 @@ body {
 }
 /* IMPORTANTE: En móviles, apilamos todo */
 @media (max-width: 900px) {
-    .game-layout {
-        flex-direction: column;
-        align-items: center; /* Solo un align-items, esto centra todo */
-        width: 100%;
-        padding: 0;
+    /* 1. Aseguramos que nada exceda el ancho de la pantalla */
+    .board, 
+    .main-column, 
+    .actions-wrapper {
+        width: 95vw !important; /* Ocupa casi toda la pantalla */
+        margin-left: auto !important;
+        margin-right: auto !important;
+        flex-shrink: 0;
     }
 
+    /* 2. Ajustamos las celdas para que no se rompan */
     .board {
-        /* Hacemos que el tablero se adapte al ancho del móvil */
-        width: 90vw !important; 
-        height: 90vw !important;
-        /* Redimensionamos las celdas automáticamente */
+        height: 95vw !important; /* Mantiene el cuadrado */
         grid-template-columns: repeat(8, 1fr) !important;
         grid-template-rows: repeat(8, 1fr) !important;
+    }
+
+    /* 3. El contenedor padre debe estar centrado */
+    .game-layout {
+        width: 100% !important;
+        padding: 0 !important;
+        align-items: center !important;
     }
 }
 /* Contenedores inferiores */
