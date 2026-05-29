@@ -485,12 +485,12 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
     window.sala = salaId;
     const botonIniciar = document.getElementById('btn-iniciar-partida');
     
-    // Mapeo para asignar un ID de pieza único a cada rol y evitar el error de 'pieceNum_'
+    // Mapeo para asignar un ID de pieza único a cada rol
     const pieceMap = { "Dog": 0, "Horse": 1, "Hat": 2, "Car": 3 };
     
     const datosJugador = { 
         nombre: rol, 
-        pieceNum_: pieceMap[rol] ?? 0, // Evita el error de lectura undefined
+        pieceNum_: pieceMap[rol] ?? 0, 
         dinero: 0, 
         pos: 0, 
         activo: true, 
@@ -498,7 +498,7 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         estrellas: 0, 
         visitasCarcel: 0, 
         cumplidasCarcel: 0,
-        enCarcel: 0 // Asegura que esta propiedad exista siempre
+        enCarcel: 0 
     };
     
     if (esCreacion) {
@@ -518,12 +518,15 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         window.cerrarModal();
         window.anunciarEnChat(salaId, rol + " ha creado la sala.");
         window.abrirModal("Éxito", `<p>Sala creada como <b>${rol}</b></p>`);
+        
+        // Sincronizar y activar escucha
         window.sincronizar();
+        window.escucharOfertas(); 
+        
     } else {
         const dbRef = ref(db, 'salas/' + salaId + '/jugadores');
         runTransaction(dbRef, (jugadores) => {
             if (!jugadores) jugadores = {};
-            // Si el rol ya está ocupado, abortamos
             if (jugadores[rol]) return undefined; 
             
             jugadores[rol] = datosJugador;
@@ -534,9 +537,11 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
                 window.esVisitante = false;
                 window.cerrarModal();
                 window.anunciarEnChat(salaId, rol + " se ha unido.");
+                
+                // Sincronizar y activar escucha
                 window.sincronizar();
+                window.escucharOfertas(); 
             } else {
-                // El rol fue ocupado mientras el usuario elegía
                 window.mostrarErrorOcupado(rol);
             }
         });
@@ -1110,87 +1115,79 @@ window.sortearPrimerTurno = function() {
     });
 };
 
-window.pasarTurno = function() {
+window.pasarTurno = async function() {
     const salaRef = ref(db, 'salas/' + window.sala);
-    
-    get(salaRef).then((snap) => {
-        const s = snap.val();
-        if (!s || !s.jugadores) return;
+    const snap = await get(salaRef);
+    const s = snap.val();
+    if (!s || !s.jugadores) return;
 
-        const listaJugadores = Object.keys(s.jugadores);
-        const idxActual = listaJugadores.indexOf(s.turno);
-        
-        let siguienteIdx = -1;
-        
-        // Buscamos el siguiente jugador libre
-        for (let i = 1; i <= listaJugadores.length; i++) {
-            let intentoIdx = (idxActual + i) % listaJugadores.length;
-            let idCandidato = listaJugadores[intentoIdx];
+    const listaJugadores = Object.keys(s.jugadores).filter(id => !id.startsWith('v'));
+    const idxActual = listaJugadores.indexOf(s.turno);
+    
+    // Función recursiva para encontrar el siguiente jugador válido
+    const buscarSiguiente = async (indice) => {
+        let siguienteIdx = (indice + 1) % listaJugadores.length;
+        let siguienteId = listaJugadores[siguienteIdx];
+        let jugadorSiguiente = s.jugadores[siguienteId];
+
+        // Si el jugador está en la cárcel, reducimos su condena
+        if (jugadorSiguiente.enCarcel > 0) {
+            let nuevoContador = jugadorSiguiente.enCarcel - 1;
             
-            // Verificamos si existe el jugador y no está en la cárcel
-            // NOTA: Usamos !jugador.enCarcel (asumiendo que 1 es cárcel, 0 o undefined es libre)
-            if (s.jugadores[idCandidato] && !s.jugadores[idCandidato].enCarcel) {
-                siguienteIdx = intentoIdx;
-                break;
+            // Actualizamos su contador en Firebase
+            await update(ref(db, `salas/${window.sala}/jugadores/${siguienteId}`), {
+                enCarcel: nuevoContador
+            });
+
+            if (nuevoContador > 0) {
+                window.log(jugadorSiguiente.nombre + " sigue en la cárcel. Le quedan " + nuevoContador + " turnos.");
+                // Si aún le quedan turnos, volvemos a llamar a la función para buscar al siguiente
+                return await buscarSiguiente(siguienteIdx);
+            } else {
+                window.log(jugadorSiguiente.nombre + " ha cumplido su condena y sale de la cárcel.");
+                return siguienteId; // Ya es libre, este es el turno
             }
         }
-        
-        // Si no encontramos a nadie libre (todos en cárcel), 
-        // forzamos al menos el siguiente de la lista para no romper el juego
-        if (siguienteIdx === -1) {
-            siguienteIdx = (idxActual + 1) % listaJugadores.length;
-            window.log("¡Todos están en la cárcel! El tiempo avanza...");
-        }
-        
-        const siguienteId = listaJugadores[siguienteIdx];
-        
-        update(salaRef, { turno: siguienteId }).then(() => {
-            const nombre = s.jugadores[siguienteId]?.nombre || siguienteId;
-            window.log("Turno de: " + nombre);
-        });
-    });
+        return siguienteId; // Es libre, este es el turno
+    };
+
+    const siguienteId = await buscarSiguiente(idxActual);
+    
+    // Finalizamos el cambio de turno
+    await update(salaRef, { turno: siguienteId });
+    window.log("Turno de: " + (s.jugadores[siguienteId]?.nombre || siguienteId));
 };
 
-// --- LÓGICA DE UI ACTUALIZADA (CORRECCIÓN DE LECTURA) ---
+// --- LÓGICA DE UI ACTUALIZADA ---
 window.actualizarTurnoUI = function(s) {
     const display = document.getElementById('turno-display');
     if (!display) return;
 
-    // 1. Validación de estado y existencia de datos
     if (!s || s.estado !== "jugando") {
         display.innerText = "Turno: Esperando...";
         return;
     }
 
-    let turnoId = s.turno; 
-    
-    // 2. Si no hay turno asignado
+    let turnoId = s.turno;
     if (!turnoId) {
         display.innerText = "Turno: Iniciando...";
         return;
     }
 
-    // 3. Si el turno es un visitante
     if (String(turnoId).startsWith('v')) {
         display.innerText = "Turno: Esperando jugador...";
         return;
     }
     
-    // 4. ACCESO SEGURO A DATOS
-    const jugadores = s.jugadores || {};
-    const jugadorInfo = jugadores[turnoId];
-    
-    // 5. Si el jugador no existe en la lista, el turno es inválido
+    const jugadorInfo = s.jugadores ? s.jugadores[turnoId] : null;
     if (!jugadorInfo) {
         display.innerText = "Turno: Error en ID...";
         return;
     }
 
-    // 6. Obtención del nombre y estado de cárcel
     const nombreJugador = jugadorInfo.nombre || ("ID: " + turnoId);
-    
-    // Usamos el operador ?? para garantizar un número, evitando errores de undefined
-    const esPrisionero = (jugadorInfo.enCarcel ?? 0) > 0;
+    // Ahora enCarcel es un número, si es > 0 está preso
+    const esPrisionero = (jugadorInfo.enCarcel || 0) > 0;
     const estadoCárcel = esPrisionero ? " 🔒" : "";
     
     display.innerText = "Turno: " + nombreJugador + estadoCárcel;
@@ -1198,43 +1195,21 @@ window.actualizarTurnoUI = function(s) {
 
 window.depurarTurno = async function() {
     console.log("--- INICIANDO DEPURACIÓN DE TURNO ---");
-    
-    // 1. Verificar inicialización
-    if (typeof window.db === 'undefined' || !window.db || !window.sala) {
-        console.error("Error: Firebase DB o ID de sala no inicializados.");
-        return;
-    }
+    if (typeof window.db === 'undefined' || !window.db || !window.sala) return;
 
     try {
         const salaRef = ref(window.db, 'salas/' + window.sala);
         const snap = await get(salaRef);
         const s = snap.val();
         
-        if (!s || !s.jugadores) {
-            console.warn("Aviso: No hay datos de jugadores en Firebase.");
-            return;
-        }
+        if (!s || !s.jugadores) return;
 
-        console.log("Datos de la sala obtenidos:", s);
-        console.log("Turno actual (ID):", s.turno);
-
-        const keys = Object.keys(s.jugadores);
-        console.log("IDs de jugadores encontrados:", keys);
+        const keys = Object.keys(s.jugadores).filter(k => !String(k).startsWith('v'));
         
-        const jugadoresReales = keys.filter(k => !String(k).startsWith('v'));
-        
-        if (jugadoresReales.length === 0) {
-            console.error("FALLO CRÍTICO: No hay jugadores reales (sin 'v') en Firebase.");
-        } else {
-            console.log("Estado detallado de los jugadores:");
-            jugadoresReales.forEach(id => {
-                const j = s.jugadores[id];
-                // Mostramos el valor real de enCarcel, o 0 si no existe
-                const carcel = j.enCarcel ?? "NO DEFINIDO";
-                console.log(`Jugador [${id}]: Nombre: ${j.nombre}, Pos: ${j.pos}, enCarcel: ${carcel}`);
-            });
-            console.log("Depuración finalizada. Revisa los valores de 'enCarcel' arriba.");
-        }
+        keys.forEach(id => {
+            const j = s.jugadores[id];
+            console.log(`Jugador [${id}]: ${j.nombre}, Pos: ${j.pos}, Turnos cárcel restantes: ${j.enCarcel || 0}`);
+        });
     } catch (error) {
         console.error("Error durante la depuración:", error);
     }
@@ -1729,144 +1704,147 @@ window.verPropiedad = function(pos, permitirCompra = false) {
     window.abrirModal("Tarjeta de Propiedad", contenido);
 };
 
+// --- 1. ABRIR VENTANA DE INTERCAMBIO ---
+// --- 1. ABRIR VENTANA DE INTERCAMBIO ---
 window.abrirIntercambio = function() {
     get(ref(db, 'salas/' + window.sala)).then((snap) => {
         let data = snap.val();
         if (!data || !data.propiedades) {
-            window.abrirModal("Error", "No tienes propiedades para intercambiar.");
+            window.abrirModal("Error", "<p>No hay propiedades disponibles.</p>");
             return;
         }
 
         let misProps = Object.keys(data.propiedades).filter(idx => data.propiedades[idx].owner === window.miIdx);
-        
         if (misProps.length === 0) {
-            window.abrirModal("Aviso", "No posees propiedades actualmente.");
+            window.abrirModal("Aviso", "<p>No posees propiedades para intercambiar.</p>");
             return;
         }
 
         let optionsProps = misProps.map(idx => `<option value="${idx}">${window.mapa[idx].n}</option>`).join('');
-        
-        // CORRECCIÓN AQUÍ: Verificamos si existe el nombre, si no, ponemos "Jugador + ID"
         let optionsJugadores = Object.keys(data.jugadores || {}).filter(jIdx => String(jIdx) !== String(window.miIdx)).map(jIdx => {
             const nombre = (window.nombres && window.nombres[jIdx]) ? window.nombres[jIdx] : "Jugador " + jIdx;
             return `<option value="${jIdx}">${nombre}</option>`;
         }).join('');
 
-        // Si no hay jugadores, evitamos mostrar el modal roto
-        if (!optionsJugadores) {
-            window.abrirModal("Aviso", "No hay otros jugadores en la sala para realizar intercambios.");
-            return;
-        }
-
         const contenido = `
             <div style="display:flex; flex-direction:column; gap: 10px; width: 100%;">
-                <label><b>Selecciona propiedad:</b></label>
+                <label><b>Propiedad:</b></label>
                 <select id="select-prop" class="input-field">${optionsProps}</select>
-                
                 <label><b>Vender a:</b></label>
                 <select id="select-jugador" class="input-field">${optionsJugadores}</select>
-                
-                <label><b>Valor de venta:</b></label>
-                <input type="number" id="input-valor" class="input-field" min="100" max="999" value="250">
-                
-                <button class="btn-sidebar" style="background:#ff80bf; color:white;" onclick="window.ejecutarIntercambio()">Confirmar Oferta</button>
-                <button class="btn-sidebar" style="background:#ffccd5;" onclick="window.cerrarModal()">Cancelar</button>
+                <label><b>Precio (250 - 1000):</b></label>
+                <input type="number" id="input-valor" class="input-field" min="250" max="1000" value="250">
+                <button class="btn-sidebar" style="background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer;" onclick="window.ejecutarIntercambio()">Confirmar Oferta</button>
             </div>
         `;
         window.abrirModal("🤝 Intercambio", contenido);
     });
 };
 
+// --- 2. EJECUTAR OFERTA ---
+// --- EJECUTAR OFERTA (ÚNICA Y DEFINITIVA) ---
+// --- 1. EJECUTAR OFERTA (CORREGIDO PARA IDs TIPO STRING/NOMBRE) ---
+// --- 1. EJECUTAR OFERTA ---
 window.ejecutarIntercambio = function() {
     const pIdx = document.getElementById('select-prop').value;
     const destino = document.getElementById('select-jugador').value;
     const valor = parseInt(document.getElementById('input-valor').value);
 
-    // Validaciones
-    if (!destino) { alert("No hay jugadores disponibles."); return; }
-    if (isNaN(valor) || valor < 100 || valor > 999) {
-        alert("El valor debe estar entre 100 y 999.");
-        return;
+    if (isNaN(valor) || valor < 250 || valor > 1000) { 
+        window.abrirModal("Error", "El precio debe estar entre 250 y 1000."); 
+        return; 
     }
 
-    // Referencia a la sala y ofertas
-    const ofertasRef = ref(db, 'salas/' + window.sala + '/ofertas');
-    
-    // Guardamos la oferta
-    push(ofertasRef, {
-        de: window.miIdx,
-        para: destino,
-        propiedad: pIdx,
+    const oferta = {
+        propiedad: parseInt(pIdx),
+        vendedor: window.miIdx, 
+        comprador: destino,     
         precio: valor,
         estado: 'pendiente',
-        timestamp: Date.now() // Útil para filtrar
-    });
+        timestamp: Date.now()
+    };
+
+    window.abrirModal("Enviando...", "Procesando oferta...");
     
-    alert("Oferta enviada a " + (window.nombres[destino] || "Jugador " + destino));
-    window.cerrarModal();
+    push(ref(window.db, 'salas/' + window.sala + '/ofertas'), oferta)
+    .then(() => {
+        window.cerrarModal();
+        window.abrirModal("Éxito", "Oferta enviada correctamente.");
+    })
+    .catch((error) => {
+        window.cerrarModal();
+        window.abrirModal("Error", "No se pudo enviar: " + error.message);
+    });
 };
+
+// --- 2. ESCUCHA DE OFERTAS (CON BOTONES MODIFICADOS) ---
+window.ofertasListener = null;
 
 window.escucharOfertas = function() {
-    if (!window.sala || typeof db === 'undefined' || !db) {
-        console.error("No se puede iniciar escucha: sala o db no definidos");
-        return;
+    if (window.ofertasListener) {
+        off(window.ofertasListener);
     }
 
-    const ofertasRef = ref(db, 'salas/' + window.sala + '/ofertas');
-    
-    // Escuchamos nuevas ofertas
-    onChildAdded(ofertasRef, (snap) => {
-        const o = snap.val();
-        const key = snap.key;
+    const ofertasRef = ref(window.db, 'salas/' + window.sala + '/ofertas');
+    window.ofertasListener = ofertasRef;
 
-        // Filtramos: Solo si es para mí y está pendiente
-        if (o && String(o.para) === String(window.miIdx) && o.estado === 'pendiente') {
-            
-            const nombreVendedor = (window.nombres && window.nombres[o.de]) ? window.nombres[o.de] : "Jugador " + o.de;
-            const nombreProp = window.mapa[o.propiedad] ? window.mapa[o.propiedad].n : "Propiedad #" + o.propiedad;
-            
-            // CSS integrado en el HTML para asegurar estilo
-            const htmlContenido = `
-                <div style="text-align: center; padding: 20px; font-family: sans-serif;">
-                    <h3 style="color: #ff80bf; margin-top:0;">¡Nueva Oferta!</h3>
-                    <p style="font-size: 16px;">
-                        <b>${nombreVendedor}</b> te ofrece:<br>
-                        <span style="font-size: 18px; color: #333;">${nombreProp}</span>
-                        <br>por solo <b>$${o.precio}</b>
-                    </p>
-                    <div style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;">
-                        <button class="btn-sidebar" style="background:#27ae60; color:white; border:none; padding:10px 20px; cursor:pointer;" onclick="window.confirmarCompra('${key}')">Aceptar</button>
-                        <button class="btn-sidebar" style="background:#e74c3c; color:white; border:none; padding:10px 20px; cursor:pointer;" onclick="window.cerrarModal()">Rechazar</button>
+    onValue(ofertasRef, (snapshot) => {
+        const ofertas = snapshot.val();
+        if (!ofertas) return;
+
+        Object.keys(ofertas).forEach((key) => {
+            const o = ofertas[key];
+            const esParaMi = String(o.comprador).trim() === String(window.miIdx).trim();
+            const estaPendiente = o.estado === 'pendiente';
+
+            if (esParaMi && estaPendiente) {
+                const nombreVendedor = (window.nombres && window.nombres[o.vendedor]) ? window.nombres[o.vendedor] : o.vendedor;
+                const nombreProp = (window.mapa && window.mapa[o.propiedad]) ? window.mapa[o.propiedad].n : "Propiedad #" + o.propiedad;
+                
+                // Estilo mejorado: Botones más pequeños y abajo
+                window.abrirModal("🤝 Nueva Oferta", `
+                    <div style="text-align: center; padding: 10px;">
+                        <p style="margin-bottom: 30px;"><b>${nombreVendedor}</b> te ofrece <b>${nombreProp}</b> por <b>$${o.precio}</b></p>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 8px; align-items: center;">
+                            <button style="background:#ff80bf; color:white; padding:8px 20px; border:none; border-radius:4px; cursor:pointer; width: 60%;" 
+                                    onclick="window.confirmarCompra('${key}', '${o.vendedor}', ${o.propiedad}, ${o.precio})">ACEPTAR</button>
+                            <button style="background:#e74c3c; color:white; padding:8px 20px; border:none; border-radius:4px; cursor:pointer; width: 60%;" 
+                                    onclick="window.rechazarOferta('${key}')">RECHAZAR</button>
+                        </div>
                     </div>
-                </div>
-            `;
-            
-            window.abrirModal("🤝 Intercambio", htmlContenido);
-        }
+                `);
+            }
+        });
     });
-    console.log("Listener de ofertas activado correctamente.");
 };
 
-window.ejecutarTransaccionCompra = function(vendedorIdx, compradorIdx, pos, precio, ofertaKey) {
-    const vRef = ref(db, 'salas/' + window.sala + '/jugadores/' + vendedorIdx);
-    const cRef = ref(db, 'salas/' + window.sala + '/jugadores/' + compradorIdx);
-    const pRef = ref(db, 'salas/' + window.sala + '/propiedades/' + pos);
-    const oRef = ref(db, 'salas/' + window.sala + '/ofertas/' + ofertaKey);
+// --- 3. TRANSACCIÓN ATÓMICA DE COMPRA (CORREGIDA) ---
+window.confirmarCompra = function(key, vendedorIdx, pos, precio) {
+    window.abrirModal("Procesando...", "Realizando intercambio...");
+    
+    const updates = {};
+    updates['salas/' + window.sala + '/jugadores/' + vendedorIdx + '/dinero'] = increment(Number(precio));
+    updates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = increment(-Number(precio));
+    updates['salas/' + window.sala + '/propiedades/' + pos + '/owner'] = window.miIdx;
+    updates['salas/' + window.sala + '/ofertas/' + key + '/estado'] = 'completada';
 
-    Promise.all([get(vRef), get(cRef)]).then(([snapV, snapC]) => {
-        const v = snapV.val();
-        const c = snapC.val();
-        if (c.dinero >= precio) {
-            update(vRef, { dinero: v.dinero + precio });
-            update(cRef, { dinero: c.dinero - precio });
-            update(pRef, { owner: compradorIdx });
-            update(oRef, { estado: 'completada' });
-            window.cerrarModal();
-            window.log("Intercambio exitoso.");
-        } else {
-            alert("Fondos insuficientes.");
-        }
+    // RUTA CORREGIDA: Apuntamos a la base de datos completa
+    update(ref(window.db), updates)
+    .then(() => {
+        window.cerrarModal();
+        window.abrirModal("Éxito", "¡Intercambio realizado!");
+    })
+    .catch(e => {
+        console.error("Error técnico:", e);
+        window.abrirModal("Error", "Error técnico: " + e.message);
     });
+};
+
+// --- 4. RECHAZAR OFERTA ---
+window.rechazarOferta = function(key) {
+    update(ref(window.db, 'salas/' + window.sala + '/ofertas/' + key), { estado: 'rechazada' })
+    .then(() => window.cerrarModal());
 };
 
 window.pagarAlquiler = function(ownerIdx, monto) {
@@ -2132,19 +2110,18 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         contenido = `<h2>${titulo}</h2><p>${carta.txt}</p>`;
     } 
     else if (posInt === 9) {
-        // --- PRUEBA: DETECCIÓN EN CASILLA 9 ---
-        console.log("¡Detectado aterrizaje en casilla 9 (DEBUG CÁRCEL)!");
+        console.log("¡Cárcel detectada!");
         const snapJ = await get(jugadorRef);
         let j = snapJ.val();
         let visitas = (j?.visitasCarcel || 0) + 1;
         
+        // enCarcel: 2 significa que te quedan 2 turnos (turno actual + 1 extra)
         await update(jugadorRef, { 
-            enCarcel: 1, 
+            enCarcel: 2, 
             visitasCarcel: visitas, 
             pos: 9 
         });
         
-        console.log("Jugador enviado a la cárcel desde casilla 9.");
         window.mostrarOpcionesCarcel();
         return; 
     }
@@ -2172,39 +2149,28 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
 window.mostrarOpcionesCarcel = function() {
     window.abrirModal("Cárcel", `
         <div style="text-align:center;">
-            <p>Has sido encarcelado. ¿Qué deseas hacer?</p>
-            <button class="btn-accion" style="display:block; width:100%; margin-bottom:10px;" onclick="window.intentarHackeo()">Intentar Hackeo (50%)</button>
-            <button class="btn-accion" style="display:block; width:100%; margin-bottom:10px;" onclick="window.pagarFianza()">Pagar Fianza ($200)</button>
-            <button class="btn-accion" style="display:block; width:100%; background:#4a4a4a;" onclick="window.quedarseEnCarcel()">Cumplir Condena</button>
+            <p>Has sido encarcelado. Estás perdiendo turnos.</p>
+            <button class="btn-accion" onclick="window.intentarHackeo(); window.cerrarModal();">Intentar Hackeo (50%)</button>
+            <button class="btn-accion" onclick="window.pagarFianza(); window.cerrarModal();">Pagar Fianza ($200)</button>
+            <button class="btn-accion" onclick="window.quedarseEnCarcel(); window.cerrarModal();">Cumplir Condena</button>
         </div>
     `);
 };
 
-window.intentarHackeo = async function() {
-    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    const snap = await get(jugadorRef);
-    const j = snap.val();
-
-    if (Math.random() < 0.5) {
-        window.log("¡HACKEO EXITOSO!");
-        await update(jugadorRef, { enCarcel: 0 });
-        window.abrirModal("Éxito", "¡Hackeo exitoso! Has salido de la cárcel.");
-    } else {
-        window.log("¡FALLASTE!");
-        // Penalización: turno extra adicional bloqueado
-        const pen = (j.turnosExtraBloqueados || 0) + 1;
-        await update(jugadorRef, { enCarcel: 1, turnosExtraBloqueados: pen });
-        window.abrirModal("¡Fallaste!", `El sistema detectó el intento. Tienes una penalización de ${pen} turno(s) extra bloqueado.`);
-        if (typeof window.pasarTurno === 'function') window.pasarTurno();
-    }
-    // No cerramos el modal si falló para que lean el mensaje, si no, se cierra al terminar
-};
-
 window.pagarFianza = function() {
-    update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { enCarcel: 0, dinero: increment(-200) });
+    // Al poner enCarcel: 0, el sistema lo trata como jugador libre inmediatamente
+    update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { 
+        enCarcel: 0, 
+        dinero: increment(-200) 
+    });
+    
     window.log("Fianza pagada.");
     window.cerrarModal();
-    // Al pagar fianza NO pierde turno, por eso no llamamos a pasarTurno()
+};
+
+window.estaEnCarcel = function(jugadorData) {
+    // Si enCarcel es mayor a 0, el jugador está cumpliendo condena
+    return (jugadorData.enCarcel || 0) > 0;
 };
 
 window.quedarseEnCarcel = async function() {
@@ -2237,6 +2203,58 @@ window.quedarseEnCarcel = async function() {
     // Aquí es donde el visitante podría actuar (lógica futura)
     // Se pasa turno porque decidió quedarse
     if (typeof window.pasarTurno === 'function') window.pasarTurno();
+};
+
+
+window.intentarHackeo = async function() {
+    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const snap = await get(jugadorRef);
+    const j = snap.val();
+
+    // 1. Lógica de Éxito
+    if (Math.random() < 0.5) {
+        window.log("¡HACKEO EXITOSO!");
+        await update(jugadorRef, { enCarcel: 0 });
+        
+        window.abrirModal("¡Éxito!", `
+            <div style="text-align: center; padding: 15px;">
+                <div style="font-size: 3em; margin-bottom: 10px;">🔓</div>
+                <h2 style="color: #4dff88;">Sistema Hackeado</h2>
+                <p>Has burlado la seguridad y quedado en libertad.</p>
+                <button onclick="window.cerrarModal()" style="width:100%; padding:10px; background:#4dff88; border:none; border-radius:5px; cursor:pointer;">Continuar</button>
+            </div>
+        `);
+    } 
+    // 2. Lógica de Fallo (Unificamos con castigarJugador)
+    else {
+        window.log("¡FALLASTE!");
+        
+        // Incrementamos la penalización (usando el nuevo sistema de contador)
+        const pen = (j.turnosExtraBloqueados || 0) + 1;
+        await update(jugadorRef, { 
+            enCarcel: 1, 
+            turnosExtraBloqueados: pen 
+        });
+
+        // Mostramos el modal de castigo unificado
+        const html = `
+            <div style="text-align: center; padding: 15px;">
+                <div style="font-size: 3em; margin-bottom: 10px;">🛡️</div>
+                <h2 style="color: #ff4d4d; margin: 0;">¡Hackeo Fallido!</h2>
+                <p style="color: #555; margin: 15px 0;">El sistema de seguridad ha rastreado tu conexión.</p>
+                <div style="background: #fff0f0; border: 1px solid #ffcccc; padding: 10px; border-radius: 8px; margin-bottom: 15px;">
+                    <span style="font-size: 1.2em; font-weight: bold; color: #cc0000;">PENALIZACIÓN: +${pen} TURNO(S) EXTRA</span>
+                </div>
+                <button onclick="window.cerrarModal(); window.pasarTurno();" 
+                        style="width: 100%; padding: 12px; background: #ff4d4d; border: none; 
+                               color: white; border-radius: 5px; font-weight: bold; cursor: pointer;">
+                    Aceptar consecuencias
+                </button>
+            </div>
+        `;
+
+        window.abrirModal("¡ALERTA DE SEGURIDAD!", html);
+    }
 };
 
 // Función para otorgar recompensa de misión incluyendo estrellas
