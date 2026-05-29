@@ -736,246 +736,6 @@ window.anunciarEnChat = function(salaId, mensaje) {
     // el anuncio de salida se gestiona normalmente mediante un listener en tu sistema de sincronización.
 };
 
-// --- 6. Poderes de Visitante ---
-// Usamos un pequeño intervalo para asegurar que el botón exista antes de intentar inyectar
-const verificarYInyectar = setInterval(() => {
-    const btn = document.getElementById("btn-iniciar-partida");
-    const container = document.getElementById("container-poderes");
-    
-    if (btn && !container) {
-        window.actualizarBotonesPoderes();
-    }
-}, 500);
-
-// --- 1. BARRA DE PODERES ---
-window.actualizarBotonesPoderes = function() {
-    if (window.esVisitante && !document.getElementById('barra-tareas-poderes')) {
-        const barra = document.createElement('div');
-        barra.id = 'barra-tareas-poderes';
-        barra.style.cssText = `position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: auto; max-width: 90%; height: 50px; background: #fff0f3; border: 2px solid #ff80bf; border-radius: 25px; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 0 15px; z-index: 999999; box-shadow: 0 4px 10px #ff80bf;`;
-        const estiloBtn = `padding: 5px 12px; font-size: 11px; height: 30px; border-radius: 15px; background: #ffccd5; border: 1px solid #ff80bf; color: #c71585; cursor: pointer;`;
-
-        barra.innerHTML = `
-            <button class="btn-sidebar" onclick="window.abrirMenuProteccion()" style="${estiloBtn}">Escudo</button>
-            <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.05, 300)" style="${estiloBtn}">Sabotear 5% ($300)</button>
-            <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.10, 500)" style="${estiloBtn}">Sabotear 10% ($500)</button>
-            <button class="btn-sidebar" onclick="window.tomarControlClima()" style="${estiloBtn}">Clima ($200)</button>
-            <button class="btn-sidebar" onclick="window.abrirMenuRescate()" style="${estiloBtn} background: #ff59aa; color: white;">Rescatar ($300)</button>
-        `;
-        document.body.appendChild(barra);
-        document.body.style.paddingBottom = "70px";
-    }
-};
-
-// --- 2. LÓGICA DE PAGO CENTRALIZADA ---
-window.validarYDescontar = async function(costo) {
-    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    const snap = await get(jRef);
-    const dinero = snap.val().dinero || 0;
-    if (dinero < costo) {
-        window.abrirModal("Error", `<p>Saldo insuficiente. Necesitas <b>$${costo}</b>.</p>`);
-        return false;
-    }
-    await update(jRef, { dinero: increment(-costo) });
-    return true;
-};
-
-// --- 3. SABOTAJE ---
-// --- 3. SABOTAJE ---
-window.seleccionarObjetivoSabotaje = async function(porcentaje, costo) {
-    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
-    let html = `<div class="modal-content"><p>Selecciona objetivo (Costo: $${costo}):</p>`;
-    snap.forEach(c => {
-        if (window.esJugadorValido(c.key, c.val())) {
-            html += `<button class="btn-sidebar" style="width:100%; margin-bottom:5px;" onclick="window.ejecutarSabotaje('${c.key}', ${porcentaje}, ${costo}); window.cerrarModal()">Sabotear ${c.key} (${porcentaje*100}%)</button>`;
-        }
-    });
-    window.abrirModal("Sabotaje", html + `</div>`);
-};
-
-window.ejecutarSabotaje = async function(objetivoIdx, porcentaje, costo) {
-    if (await window.validarYDescontar(costo)) {
-        const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + objetivoIdx);
-        const snap = await get(jRef);
-        const jugadorAfectado = snap.val();
-        
-        if (jugadorAfectado.tieneEscudo) {
-            window.abrirModal("Bloqueado", "¡El jugador tiene un escudo!");
-            return;
-        }
-
-        const montoPerdido = Math.round(jugadorAfectado.dinero * porcentaje);
-        const nombreSaboteador = window.nombres[window.miIdx] || "Un visitante";
-        const mensajeFinal = `¡${nombreSaboteador} saboteó a ${objetivoIdx} restándole $${montoPerdido} (${porcentaje*100}%).`;
-
-        await update(jRef, { 
-            dinero: increment(-montoPerdido),
-            notificacion: {
-                titulo: "¡Sabotaje!",
-                mensaje: `¡${nombreSaboteador} ha saboteado tus suministros! Has perdido $${montoPerdido}.`,
-                timestamp: Date.now()
-            }
-        });
-
-        await update(ref(db, 'salas/' + window.sala + '/logs'), {
-            mensaje: mensajeFinal,
-            timestamp: Date.now()
-        });
-    }
-};
-
-// --- 4. RESCATE ---
-window.abrirMenuRescate = async function() {
-    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
-    let html = `<div class="modal-content"><p>Pagar fianza ($300):</p>`;
-    let hayPresos = false;
-    
-    snap.forEach(c => {
-        if ((c.val().enCarcel ?? 0) > 0) {
-            hayPresos = true;
-            html += `<button class="btn-sidebar" style="width:100%; margin-bottom:5px;" onclick="window.ejecutarRescate('${c.key}', 300); window.cerrarModal()">Liberar ${c.key}</button>`;
-        }
-    });
-    
-    if (!hayPresos) html += `<p>No hay nadie en la cárcel.</p>`;
-    window.abrirModal("Rescate", html + `</div>`);
-};
-
-window.ejecutarRescate = async function(idPreso, costo) {
-    if (await window.validarYDescontar(costo)) {
-        const nombreSalvador = window.nombres[window.miIdx] || "Un ciudadano";
-        const mensajeLog = `¡${nombreSalvador} ha pagado la fianza de $${costo} para liberar a ${idPreso}!`;
-        
-        await update(ref(db, 'salas/' + window.sala + '/jugadores/' + idPreso), { 
-            enCarcel: 0,
-            notificacion: {
-                titulo: "¡Libertad!",
-                mensaje: `¡Has sido rescatado! El ciudadano ${nombreSalvador} ha pagado tu fianza de $${costo}.`,
-                timestamp: Date.now()
-            }
-        });
-
-        await update(ref(db, 'salas/' + window.sala + '/logs'), {
-            mensaje: mensajeLog,
-            timestamp: Date.now()
-        });
-    }
-};
-
-// --- 5. CLIMA (ACTUALIZADO CON ALQUILER) ---
-window.tomarControlClima = function() {
-    if (!window.esVisitante) return;
-    get(ref(db, 'salas/' + window.sala + '/controladorClima')).then(snap => {
-        const data = snap.val();
-        if (!data || (Date.now() - data.timestamp > 600000)) {
-            window.abrirControlClima();
-        } else {
-            const minutos = Math.ceil((600000 - (Date.now() - data.timestamp)) / 60000);
-            window.abrirModal("Cooldown", `Intenta en ${minutos} min.`);
-        }
-    });
-};
-
-// --- 5. CLIMA CON CÁLCULO DE ALQUILER DINÁMICO ---
-window.cambiarClimaConCooldown = async function(idx) {
-    if (await window.validarYDescontar(200)) {
-        const nuevoClima = window.climas[idx]; // Esperamos que tengan: {n: "...", tipo: "desastre/bonanza/neutral"}
-        const nombreUsuario = window.nombres[window.miIdx] || "Un visitante";
-        
-        // 1. Calcular el porcentaje aleatorio (5% o 10%)
-        const porcentaje = Math.random() < 0.5 ? 0.05 : 0.10;
-        let efecto = "";
-        let ajuste = 0;
-
-        // 2. Definir lógica según el tipo
-        if (nuevoClima.tipo === "desastre") {
-            ajuste = -porcentaje; // Disminuye
-            efecto = `¡Debido al desastre, los alquileres bajan un ${porcentaje * 100}%!`;
-        } else if (nuevoClima.tipo === "bonanza") {
-            ajuste = porcentaje; // Aumenta
-            efecto = `¡Es época de bonanza, los alquileres suben un ${porcentaje * 100}%!`;
-        } else {
-            ajuste = 0; // Otoño o neutral
-            efecto = "El mercado de alquileres se mantiene estable.";
-        }
-
-        const mensajeLog = `☁️ ${nombreUsuario} cambió el clima a ${nuevoClima.n}. ${efecto}`;
-
-        // 3. Actualizar base de datos
-        await update(ref(db, 'salas/' + window.sala + '/controladorClima'), { 
-            timestamp: Date.now(), 
-            ultimoUsuario: window.miIdx 
-        });
-        
-        // Guardamos el modificador calculado en la sala para que el sistema de cobro lo use
-        await update(ref(db, 'salas/' + window.sala), { 
-            climaIdx: idx,
-            modificadorAlquiler: ajuste 
-        });
-        
-        window.cerrarModal();
-        window.abrirModal("Éxito", "Clima cambiado. " + efecto);
-        
-        await update(ref(db, 'salas/' + window.sala + '/logs'), {
-            mensaje: mensajeLog,
-            timestamp: Date.now()
-        });
-    }
-};
-
-window.abrirControlClima = function() {
-    let html = `<div style="max-height: 300px; overflow-y: auto;">`;
-    window.climas.forEach((c, idx) => {
-        // Mostramos el tipo en el botón como guía
-        html += `<button class="btn-sidebar" style="width:100%; margin:5px 0; padding:8px;" onclick="window.cambiarClimaConCooldown(${idx})">
-                    <b>${c.n}</b><br><small>Tipo: ${c.tipo || 'Neutral'}</small>
-                 </button>`;
-    });
-    window.abrirModal("☁️ Panel de control climático", html + `</div>`);
-};
-
-// --- 6. PROTECCIÓN (ESCUDO) ---
-window.activarEscudo = async function(jugadorIdx) {
-    const nombreProtector = window.nombres[window.miIdx] || "Un ciudadano";
-    const mensajeLog = `🛡️ ¡${nombreProtector} ha establecido un contrato de protección sobre ${jugadorIdx}!`;
-    
-    await update(ref(db, 'salas/' + window.sala + '/jugadores/' + jugadorIdx), { 
-        tieneEscudo: true, 
-        protegidoPor: window.miIdx, 
-        timestampEscudo: Date.now(),
-        notificacion: {
-            titulo: "🛡️ ¡Protección Recibida!",
-            mensaje: `¡El ciudadano ${nombreProtector} te ha puesto bajo su protección! Estás a salvo de sabotajes.`,
-            timestamp: Date.now()
-        }
-    });
-
-    window.abrirModal("Protección Activa", `<div class="modal-content"><p>Ahora proteges a <b>${jugadorIdx}</b>.</p></div>`);
-    
-    await update(ref(db, 'salas/' + window.sala + '/logs'), {
-        mensaje: mensajeLog,
-        timestamp: Date.now()
-    });
-};
-
-window.abrirMenuProteccion = async function() {
-    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
-    let html = `<div class="modal-content"><p>Selecciona a quién deseas proteger:</p>`;
-    let hayJugadores = false;
-
-    snap.forEach(c => {
-        if (window.esJugadorValido(c.key, c.val())) {
-            hayJugadores = true;
-            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" onclick="window.activarEscudo('${c.key}'); window.cerrarModal()">🛡️ Proteger a ${c.key}</button>`;
-        }
-    });
-
-    if (!hayJugadores) html += `<p>No hay otros jugadores disponibles.</p>`;
-    window.abrirModal("Proteger Ciudadano", html + `</div>`);
-};
-
-window.esJugadorValido = (id, d) => (d && d.tipo === 'jugador') || !id.startsWith('v');
-
 window.enviarMensaje = function() {
     const input = document.getElementById('chat-msg');
     const mensaje = input.value.trim();
@@ -2421,7 +2181,7 @@ window.abrirModalMisiones = function() {
     html += `<span class="btn-cerrar-x" onclick="window.cerrarModal()">&times;</span>`;
     
     if (esVisitante) {
-        html += `<h2 style="color: #ff59aa; margin-top: 0;">Misiones del Paseo</h2>`;
+        html += `<h2 style="color: #ff59aa; margin-top: 0;">Misiones de citizens</h2>`;
         const misiones = [
             { id: 'benefactor', titulo: 'El Benefactor', desc: 'Regala $100 a un jugador.', tipo: 'angel', color: '#ff59aa' },
             { id: 'consejero', titulo: 'El Consejero', desc: 'Paga fianza de 3 jugadores.', tipo: 'angel', color: '#ff59aa' },
@@ -2458,20 +2218,395 @@ window.abrirModalMisiones = function() {
     window.abrirModal(esVisitante ? "Misiones" : "Logros", html);
 };
 
-   window.renderEstrellas = function(cantidad) {
-    // Recorremos del 1 al 5 buscando los IDs exactos de tu HTML
+  window.renderEstrellas = function(rep) {
+    // 1. Actualizar texto del botón
+    const btn = document.getElementById('btn-reputacion-global');
+    if (btn) btn.innerText = `Reputación: ${rep} ★`;
+
+    // 2. Actualizar estrellas (Buscamos elementos dentro del modal o del contenedor si existen)
     for (let i = 1; i <= 5; i++) {
-        const star = document.getElementById('star-' + i);
+        const star = document.getElementById(`star-${i}`);
         if (star) {
-            // Si el índice es menor o igual a la cantidad recibida, se activa
-            if (i <= cantidad) {
-                star.classList.add('activa');
-            } else {
-                star.classList.remove('activa');
+            star.style.color = i <= rep ? '#ff59aa' : '#ccc';
+        }
+    }
+    console.log("Estrellas actualizadas a:", rep);
+};
+
+window.aplicarConsecuenciaReputacion = async function(esMalaAccion) {
+    const vRef = ref(db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
+    
+    // 1. Obtenemos el estado más reciente de la base de datos
+    const snap = await get(vRef);
+    const v = snap.val();
+
+    if (!v) return;
+
+    // 2. VERIFICACIÓN CRÍTICA: Si no existe el campo 'alineamiento', obligamos a elegir y detenemos la acción
+    if (!v.alineamiento) {
+        console.log("Visitante sin alineamiento detectado. Abriendo modal...");
+        window.preguntarAlineamiento();
+        return; // Salimos inmediatamente: el poder no se aplica
+    }
+
+    // 3. Procesamos la consecuencia (El visitante YA tiene alineamiento)
+    const alineamiento = v.alineamiento;
+    let rep = parseInt(v.reputacion) || 0;
+
+    // Lógica: Ángel (Buena=+1, Mala=-1) | Gárgola (Buenas=-1, Mala=+1)
+    if (alineamiento === 'angel') {
+        rep = esMalaAccion ? (rep - 1) : (rep + 1);
+    } else if (alineamiento === 'gargola') {
+        rep = esMalaAccion ? (rep + 1) : (rep - 1);
+    }
+
+    // Límites estrictos de 0 a 5 estrellas
+    rep = Math.max(0, Math.min(5, rep));
+
+    // 4. Actualizamos Firebase y refrescamos la UI
+    await update(vRef, { reputacion: rep });
+    window.renderEstrellas(rep);
+    
+    console.log(`Acción procesada: Mala=${esMalaAccion} | Alineamiento: ${alineamiento} | Reputación: ${rep}`);
+};
+
+window.intentarUsarPoder = async function(esMalaAccion, callbackDelPoder) {
+    const vRef = ref(db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
+    const snap = await get(vRef);
+    const v = snap.val();
+
+    // Si no existe, es la primera vez: Lanza el modal y NO ejecuta el poder
+    if (!v || !v.alineamiento) {
+        window.preguntarAlineamiento();
+        return; 
+    }
+
+    // Si ya existe, primero aplicamos la consecuencia de reputación
+    await window.aplicarConsecuenciaReputacion(esMalaAccion);
+    
+    // Luego, ejecutamos el poder real (el callback que venía pendiente)
+    if (typeof callbackDelPoder === 'function') {
+        callbackDelPoder();
+    }
+};
+
+window.preguntarAlineamiento = function() {
+    const html = `
+        <div class="modal-content" style="text-align: center; padding: 20px;">
+            <h2 style="color: #ff59aa;">¿Cuál es tu naturaleza?</h2>
+            <p>Al realizar acciones, tu reputación definirá tu camino:</p>
+            <button class="btn-sidebar" style="background: #ff59aa; color: white; width:100%; margin:10px 0; padding:10px;" 
+                    onclick="window.guardarAlineamiento('angel')">👼 Ángel (Malas acciones restan)</button>
+            <button class="btn-sidebar" style="background: #333; color: white; width:100%; margin:10px 0; padding:10px;" 
+                    onclick="window.guardarAlineamiento('gargola')">👺 Gárgola (Buenas acciones restan)</button>
+        </div>`;
+    window.abrirModal("Elección de Destino", html);
+};
+
+window.guardarAlineamiento = async function(tipo) {
+    const vRef = ref(db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
+    await update(vRef, { 
+        alineamiento: tipo, 
+        reputacion: 0 // CORREGIDO: Inicio en 0
+    });
+    window.cerrarModal();
+    window.renderEstrellas(0);
+    window.log(`Has elegido tu destino: ${tipo === 'angel' ? 'Ángel' : 'Gárgola'}`);
+};
+
+// --- 6. Poderes de Visitante ---
+const verificarYInyectar = setInterval(() => {
+    const btn = document.getElementById("btn-iniciar-partida");
+    const container = document.getElementById("container-poderes");
+    
+    if (btn && !container) {
+        window.actualizarBotonesPoderes();
+    }
+}, 500);
+
+// --- 1. BARRA DE PODERES ---
+window.actualizarBotonesPoderes = function() {
+    if (window.esVisitante && !document.getElementById('barra-tareas-poderes')) {
+        const barra = document.createElement('div');
+        barra.id = 'barra-tareas-poderes';
+        barra.style.cssText = `position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: auto; max-width: 90%; height: 50px; background: #fff0f3; border: 2px solid #ff80bf; border-radius: 25px; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 0 15px; z-index: 999999; box-shadow: 0 4px 10px #ff80bf;`;
+        
+        const estiloBtn = `padding: 5px 12px; font-size: 11px; height: 30px; border-radius: 15px; background: #ffccd5; border: 1px solid #ff80bf; color: #c71585; cursor: pointer;`;
+
+        // Hemos quitado los onclick directos y los asignaremos abajo programáticamente
+        barra.innerHTML = `
+            <button id="poder-escudo" class="btn-sidebar" style="${estiloBtn}">Escudo</button>
+            <button id="poder-sabotaje-5" class="btn-sidebar" style="${estiloBtn}">Sabotear 5% ($300)</button>
+            <button id="poder-sabotaje-10" class="btn-sidebar" style="${estiloBtn}">Sabotear 10% ($500)</button>
+            <button id="poder-clima" class="btn-sidebar" style="${estiloBtn}">Clima ($200)</button>
+            <button id="poder-rescate" class="btn-sidebar" style="${estiloBtn} background: #ff59aa; color: white;">Rescatar ($300)</button>
+        `;
+        document.body.appendChild(barra);
+        document.body.style.paddingBottom = "70px";
+
+        // Asignación de eventos usando el validador de reputación
+        document.getElementById('poder-escudo').onclick = () => window.intentarUsarPoder(false, window.abrirMenuProteccion);
+        
+        document.getElementById('poder-sabotaje-5').onclick = () => window.intentarUsarPoder(true, () => window.seleccionarObjetivoSabotaje(0.05, 300));
+        
+        document.getElementById('poder-sabotaje-10').onclick = () => window.intentarUsarPoder(true, () => window.seleccionarObjetivoSabotaje(0.10, 500));
+        
+        document.getElementById('poder-clima').onclick = () => window.intentarUsarPoder(false, window.tomarControlClima);
+        
+        document.getElementById('poder-rescate').onclick = () => window.intentarUsarPoder(false, window.abrirMenuRescate);
+    }
+};
+
+// --- 2. LÓGICA DE PAGO CENTRALIZADA ---
+window.validarYDescontar = async function(costo) {
+    // Usamos window.db por seguridad para asegurar que siempre haya conexión
+    const jRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const snap = await get(jRef);
+    const datos = snap.val();
+    
+    if (!datos || (datos.dinero || 0) < costo) {
+        window.abrirModal("Error", `<p>Saldo insuficiente. Necesitas <b>$${costo}</b>.</p>`);
+        return false;
+    }
+    
+    await update(jRef, { dinero: increment(-costo) });
+    return true;
+};
+
+// --- 3. SABOTAJE ---
+window.seleccionarObjetivoSabotaje = async function(porcentaje, costo) {
+    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
+    let html = `<div class="modal-content"><p>Selecciona objetivo (Costo: $${costo}):</p>`;
+    snap.forEach(c => {
+        if (window.esJugadorValido(c.key, c.val())) {
+            html += `<button class="btn-sidebar" style="width:100%; margin-bottom:5px;" onclick="window.ejecutarSabotaje('${c.key}', ${porcentaje}, ${costo}); window.cerrarModal()">Sabotear ${c.key} (${porcentaje*100}%)</button>`;
+        }
+    });
+    window.abrirModal("Sabotaje", html + `</div>`);
+};
+
+window.ejecutarSabotaje = async function(objetivoIdx, porcentaje, costo) {
+    if (await window.validarYDescontar(costo)) {
+        const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + objetivoIdx);
+        const snap = await get(jRef);
+        const jugadorAfectado = snap.val();
+        
+        if (jugadorAfectado.tieneEscudo) {
+            window.abrirModal("Bloqueado", "¡El jugador tiene un escudo!");
+            return;
+        }
+
+        const montoPerdido = Math.round(jugadorAfectado.dinero * porcentaje);
+        const nombreSaboteador = window.nombres[window.miIdx] || "Un visitante";
+        const mensajeFinal = `¡${nombreSaboteador} saboteó a ${objetivoIdx} restándole $${montoPerdido} (${porcentaje*100}%).`;
+
+        await update(jRef, { 
+            dinero: increment(-montoPerdido),
+            notificacion: {
+                titulo: "¡Sabotaje!",
+                mensaje: `¡${nombreSaboteador} ha saboteado tus suministros! Has perdido $${montoPerdido}.`,
+                timestamp: Date.now()
             }
+        });
+
+        await update(ref(db, 'salas/' + window.sala + '/logs'), {
+            mensaje: mensajeFinal,
+            timestamp: Date.now()
+        });
+
+        // INTEGRACIÓN REPUTACIÓN: Es una mala acción (true)
+        if (window.esVisitante) {
+            await window.aplicarConsecuenciaReputacion(true);
         }
     }
 };
+
+// --- 4. RESCATE ---
+window.abrirMenuRescate = async function() {
+    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
+    let html = `<div class="modal-content"><p>Pagar fianza ($300):</p>`;
+    let hayPresos = false;
+    
+    snap.forEach(c => {
+        if ((c.val().enCarcel ?? 0) > 0) {
+            hayPresos = true;
+            html += `<button class="btn-sidebar" style="width:100%; margin-bottom:5px;" onclick="window.ejecutarRescate('${c.key}', 300); window.cerrarModal()">Liberar ${c.key}</button>`;
+        }
+    });
+    
+    if (!hayPresos) html += `<p>No hay nadie en la cárcel.</p>`;
+    window.abrirModal("Rescate", html + `</div>`);
+};
+
+window.ejecutarRescate = async function(idPreso, costo) {
+    if (await window.validarYDescontar(costo)) {
+        const nombreSalvador = window.nombres[window.miIdx] || "Un ciudadano";
+        const mensajeLog = `¡${nombreSalvador} ha pagado la fianza de $${costo} para liberar a ${idPreso}!`;
+        
+        await update(ref(db, 'salas/' + window.sala + '/jugadores/' + idPreso), { 
+            enCarcel: 0,
+            notificacion: {
+                titulo: "¡Libertad!",
+                mensaje: `¡Has sido rescatado! El ciudadano ${nombreSalvador} ha pagado tu fianza de $${costo}.`,
+                timestamp: Date.now()
+            }
+        });
+
+        await update(ref(db, 'salas/' + window.sala + '/logs'), {
+            mensaje: mensajeLog,
+            timestamp: Date.now()
+        });
+    }
+};
+
+// --- 5. CLIMA (ACTUALIZADO CON ALQUILER) ---
+window.tomarControlClima = function() {
+    if (!window.esVisitante) return;
+    get(ref(db, 'salas/' + window.sala + '/controladorClima')).then(snap => {
+        const data = snap.val();
+        if (!data || (Date.now() - data.timestamp > 600000)) {
+            window.abrirControlClima();
+        } else {
+            const minutos = Math.ceil((600000 - (Date.now() - data.timestamp)) / 60000);
+            window.abrirModal("Cooldown", `Intenta en ${minutos} min.`);
+        }
+    });
+};
+
+// --- 5. CLIMA CON CÁLCULO DE ALQUILER DINÁMICO ---
+window.cambiarClimaConCooldown = async function(idx) {
+    if (await window.validarYDescontar(200)) {
+        const nuevoClima = window.climas[idx]; // Esperamos que tengan: {n: "...", tipo: "desastre/bonanza/neutral"}
+        const nombreUsuario = window.nombres[window.miIdx] || "Un visitante";
+        
+        // 1. Calcular el porcentaje aleatorio (5% o 10%)
+        const porcentaje = Math.random() < 0.5 ? 0.05 : 0.10;
+        let efecto = "";
+        let ajuste = 0;
+
+        // 2. Definir lógica según el tipo
+        if (nuevoClima.tipo === "desastre") {
+            ajuste = -porcentaje; // Disminuye
+            efecto = `¡Debido al desastre, los alquileres bajan un ${porcentaje * 100}%!`;
+        } else if (nuevoClima.tipo === "bonanza") {
+            ajuste = porcentaje; // Aumenta
+            efecto = `¡Es época de bonanza, los alquileres suben un ${porcentaje * 100}%!`;
+        } else {
+            ajuste = 0; // Otoño o neutral
+            efecto = "El mercado de alquileres se mantiene estable.";
+        }
+
+        const mensajeLog = `☁️ ${nombreUsuario} cambió el clima a ${nuevoClima.n}. ${efecto}`;
+
+        // 3. Actualizar base de datos
+        await update(ref(db, 'salas/' + window.sala + '/controladorClima'), { 
+            timestamp: Date.now(), 
+            ultimoUsuario: window.miIdx 
+        });
+        
+        // Guardamos el modificador calculado en la sala para que el sistema de cobro lo use
+        await update(ref(db, 'salas/' + window.sala), { 
+            climaIdx: idx,
+            modificadorAlquiler: ajuste 
+        });
+        
+        window.cerrarModal();
+        window.abrirModal("Éxito", "Clima cambiado. " + efecto);
+        
+        await update(ref(db, 'salas/' + window.sala + '/logs'), {
+            mensaje: mensajeLog,
+            timestamp: Date.now()
+        });
+    }
+};
+
+window.abrirControlClima = function() {
+    let html = `<div style="max-height: 300px; overflow-y: auto;">`;
+    window.climas.forEach((c, idx) => {
+        // Mostramos el tipo en el botón como guía
+        html += `<button class="btn-sidebar" style="width:100%; margin:5px 0; padding:8px;" onclick="window.cambiarClimaConCooldown(${idx})">
+                    <b>${c.n}</b><br><small>Tipo: ${c.tipo || 'Neutral'}</small>
+                 </button>`;
+    });
+    window.abrirModal("☁️ Panel de control climático", html + `</div>`);
+};
+
+// --- 6. PROTECCIÓN (ESCUDO) ---
+window.activarEscudo = async function(jugadorIdx) {
+    const nombreProtector = window.nombres[window.miIdx] || "Un ciudadano";
+    const mensajeLog = `🛡️ ¡${nombreProtector} ha establecido un contrato de protección sobre ${jugadorIdx}!`;
+    
+    await update(ref(db, 'salas/' + window.sala + '/jugadores/' + jugadorIdx), { 
+        tieneEscudo: true, 
+        protegidoPor: window.miIdx, 
+        timestampEscudo: Date.now(),
+        notificacion: {
+            titulo: "🛡️ ¡Protección Recibida!",
+            mensaje: `¡El ciudadano ${nombreProtector} te ha puesto bajo su protección! Estás a salvo de sabotajes.`,
+            timestamp: Date.now()
+        }
+    });
+
+    window.abrirModal("Protección Activa", `<div class="modal-content"><p>Ahora proteges a <b>${jugadorIdx}</b>.</p></div>`);
+    
+    await update(ref(db, 'salas/' + window.sala + '/logs'), {
+        mensaje: mensajeLog,
+        timestamp: Date.now()
+    });
+};
+
+window.abrirMenuProteccion = async function() {
+    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
+    let html = `<div class="modal-content"><p>Selecciona a quién deseas proteger:</p>`;
+    let hayJugadores = false;
+
+    snap.forEach(c => {
+        if (window.esJugadorValido(c.key, c.val())) {
+            hayJugadores = true;
+            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" onclick="window.activarEscudo('${c.key}'); window.cerrarModal()">🛡️ Proteger a ${c.key}</button>`;
+        }
+    });
+
+    if (!hayJugadores) html += `<p>No hay otros jugadores disponibles.</p>`;
+    window.abrirModal("Proteger Ciudadano", html + `</div>`);
+};
+
+window.esJugadorValido = (id, d) => (d && d.tipo === 'jugador') || !id.startsWith('v');
+
+
+window.obtenerTituloReputacion = function(datos) {
+    const rep = parseInt(datos.reputacion) || 0;
+    const esGargola = datos.alineamiento === 'gargola'; // Asegúrate de usar 'alineamiento' (el campo de tu DB)
+
+    const niveles = esGargola ? [
+        {t: "Sombra", d: "Apenas inicias tu camino de caos."},
+        {t: "Inquietud", d: "Tu presencia incomoda a la ciudad."},
+        {t: "Saboteador", d: "Has causado problemas reales."},
+        {t: "Agente del Caos", d: "El pánico sigue tus pasos."},
+        {t: "Monarca Oscuro", d: "La ciudad es tu patio de juegos."}
+    ] : [
+        {t: "Aprendiz de Luz", d: "Dando tus primeros pasos bondadosos."},
+        {t: "Ayudante", d: "La gente empieza a notar tu bondad."},
+        {t: "Guardián", d: "Proteges a los necesitados."},
+        {t: "Héroe Local", d: "Eres un pilar de la comunidad."},
+        {t: "Ángel de la Ciudad", d: "Tu luz es invencible."}
+    ];
+
+    // CORREGIDO: Si rep es 0, mostramos mensaje inicial, si es 1-5 usamos el índice rep-1
+    if (rep <= 0) return {t: "Desconocido", d: "Aún no has realizado acciones."};
+    return niveles[Math.min(rep - 1, 4)];
+};
+
+// --- 3. MANTENIMIENTO DE INTERFAZ ---
+
+// Vinculación automática del botón
+setInterval(() => {
+    const btn = document.getElementById('btn-reputacion-global');
+    if (btn && !btn.onclick) {
+        btn.onclick = window.mostrarAvisoReputacion;
+        btn.style.cursor = 'pointer';
+    }
+}, 1000);
 
 window.obtenerReputacionData = function(reputacion) {
     const data = [
@@ -2487,75 +2622,87 @@ window.obtenerReputacionData = function(reputacion) {
     return data[idx];
 };
 
-window.mostrarAvisoReputacion = function() {
-    // Obtenemos los datos del jugador actual desde la base de datos local (sincronizada)
-    // Asumimos que window.jugadores contiene la data de la sala
-    const miJugador = window.jugadores ? window.jugadores[window.miIdx] : null;
-    const estrellas = miJugador ? (miJugador.estrellas || 0) : 0;
+window.mostrarAvisoReputacion = async function() {
+    // 1. Determinar la ruta correcta dependiendo de si es visitante o jugador
+    const ruta = window.esVisitante 
+        ? 'salas/' + window.sala + '/visitantes/' + window.miIdx 
+        : 'salas/' + window.sala + '/jugadores/' + window.miIdx;
+
+    // 2. Obtener datos frescos desde la base de datos
+    const snap = await get(ref(db, ruta));
+    const miData = snap.val();
     
-    const repData = window.obtenerReputacionData(estrellas);
+    if (!miData) {
+        console.warn("No se encontraron datos de reputación.");
+        return;
+    }
+
+    // 3. Obtener título y descripción
+    const info = window.obtenerTituloReputacion(miData);
     
+    // 4. Renderizar modal
     const contenido = `
-        <div style="text-align: center;">
-            <h2 style="color: #ff59aa;">Reputación Actual</h2>
-            <p>Rango: <b>${repData.t}</b></p>
-            <div style="font-size: 3em; margin: 10px 0; color: #ff59aa;">★ ${estrellas}</div>
-            <p style="font-style: italic;">"${repData.d}"</p>
-            <button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Continuar</button>
+        <div style="text-align: center; padding: 20px;">
+            <h2 style="color: #ff59aa;">${info.t}</h2>
+            <p style="font-size: 1.1em; margin-bottom: 10px;">${info.d}</p>
+            <div style="font-size: 3em; margin: 15px 0; color: #ff59aa;">${miData.reputacion || 0} ★</div>
+            <button onclick="window.cerrarModal()" style="background: #ff59aa; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer;">Entendido</button>
         </div>`;
     
-    window.abrirModal("Información de Reputación", contenido);
+    window.abrirModal("Tu Estado", contenido);
 };
 
-window.verificarAscenso = function(nuevasEstrellas) {
-    const data = window.obtenerReputacionData(nuevasEstrellas);
-    window.abrirModal("¡Ascenso de Rango!", `
-        <div style="text-align:center;">
-            <h3>¡Has subido a ${data.t}!</h3>
-            <p>${data.d}</p>
-        </div>
-    `);
+window.verificarAscenso = function(repAnterior, repNueva) {
+    // Solo mostramos si el nivel aumentó realmente
+    if (repNueva > repAnterior) {
+        // Necesitamos obtener los datos según el tipo (Ángel/Gárgola)
+        // Usamos una llamada genérica que se apoye en tu función de títulos
+        const data = window.obtenerTituloReputacion({ reputacion: repNueva, alineamiento: window.miAlineamiento });
+        
+        window.abrirModal("¡Ascenso de Rango!", `
+            <div style="text-align:center;">
+                <h2 style="color: #ff59aa;">¡Felicidades!</h2>
+                <p>Has alcanzado el rango de:</p>
+                <h3 style="color: #ff59aa; font-size: 1.5em;">${data.t}</h3>
+                <p><i>${data.d}</i></p>
+                <div style="font-size: 2em; margin: 10px;">${repNueva} ★</div>
+            </div>
+        `);
+    }
 };
 
 window.completarMisionVisitante = async function(tipo) {
-    try {
-        // 1. Definir rutas de forma segura
-        const rol = window.esVisitante ? 'visitantes' : 'jugadores';
-        const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
-        
-        // 2. Obtener datos actuales
-        const snap = await get(userRef);
-        const datos = snap.val();
-        if (!datos) return;
+    const rol = window.esVisitante ? 'visitantes' : 'jugadores';
+    const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
+    const snap = await get(userRef);
+    const datos = snap.val();
+    if (!datos) return;
 
-        // 3. Calcular nueva reputación y recompensas
-        // Se asegura que esté entre 0 y 5
-        const repActual = datos.reputacion ?? 3;
-        const cambio = (tipo === 'angel') ? 1 : -1;
-        const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
-        
-        const recompensa = (tipo === 'angel') ? 200 : 150;
-        const nombreMision = (tipo === 'angel') ? "Misión de Benefactor" : "Misión de Saboteador";
+    // Usamos 'reputacion' (el mismo campo)
+    const repActual = datos.reputacion ?? 0;
+    const cambio = (tipo === 'angel') ? 1 : -1;
+    const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
+    
+    await update(userRef, { 
+        reputacion: nuevaRep,
+        dinero: increment((tipo === 'angel') ? 200 : 150),
+        tipoReputacion: tipo // 'angel' o 'gargola'
+    });
 
-        // 4. Actualizar Firebase de forma atómica
-        await update(userRef, { 
-            reputacion: nuevaRep,
-            dinero: increment(recompensa),
-            misionesCompletadas: increment(1),
-            tipoReputacion: (tipo === 'angel') ? 'angel' : 'gargola' // Registro de alineación
-        });
+    // Disparamos la actualización visual
+    window.renderEstrellas(nuevaRep);
+    
+    // Opcional: mostrar aviso si quieres
+    window.mostrarAvisoReputacionVisitante(); 
+};
 
-     // --- COPIA ESTO EN TU MAIN.JS ---
 
-// 1. Esto asegura que la consola pueda encontrar las herramientas de Firebase
-window.firebaseTools = { ref, get }; 
+// --- 1. CONFIGURACIÓN DE HERRAMIENTAS ---
+// Asegúrate de que 'ref', 'get', 'update', 'db', 'increment' estén definidos globalmente en tu proyecto
+window.firebaseTools = { ref, get, update, increment }; 
 
 window.verInfoReputacionEnConsola = async function() {
-    // Usamos las herramientas guardadas en window
-    const { ref, get } = window.firebaseTools;
-    
     const rol = window.esVisitante ? 'visitantes' : 'jugadores';
-    // Asegúrate de que 'db' sea accesible globalmente (debería estar en tu main)
     const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
     
     try {
@@ -2569,7 +2716,7 @@ window.verInfoReputacionEnConsola = async function() {
 
         const info = {
             Nombre: datos.nombre || "Desconocido",
-            Reputacion: datos.reputacion ?? 3,
+            Reputacion: datos.reputacion ?? 0,
             Alineacion: datos.tipoReputacion || "Neutral",
             Misiones_Completadas: datos.misionesCompletadas || 0,
             Dinero: datos.dinero || 0
@@ -2585,13 +2732,37 @@ window.verInfoReputacionEnConsola = async function() {
         } else {
             console.log("%cEstado: Neutro", "color: #888;");
         }
-        
     } catch (e) {
         console.error("❌ Error al cargar datos para la consola:", e);
     }
 };
 
-        // 5. Actualizar interfaz
+window.completarMisionVisitante = async function(tipo) {
+    try {
+        const rol = window.esVisitante ? 'visitantes' : 'jugadores';
+        const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
+        
+        const snap = await get(userRef);
+        const datos = snap.val();
+        if (!datos) return;
+
+        // Calcular reputación (0 a 5)
+        const repActual = datos.reputacion ?? 0;
+        const cambio = (tipo === 'angel') ? 1 : -1;
+        const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
+        
+        const recompensa = (tipo === 'angel') ? 200 : 150;
+        const nombreMision = (tipo === 'angel') ? "Misión de Benefactor" : "Misión de Saboteador";
+
+        // Actualizar datos
+        await update(userRef, { 
+            reputacion: nuevaRep,
+            dinero: increment(recompensa),
+            misionesCompletadas: increment(1),
+            tipoReputacion: (tipo === 'angel') ? 'angel' : 'gargola'
+        });
+
+        // 5. Actualizar interfaz visual
         if (typeof window.renderEstrellas === 'function') {
             window.renderEstrellas(nuevaRep);
         }
@@ -2607,82 +2778,8 @@ window.verInfoReputacionEnConsola = async function() {
 
     } catch (error) {
         console.error("Error al completar misión:", error);
-        window.log("Error al procesar la misión.");
+        if (typeof window.log === 'function') window.log("Error al procesar la misión.");
     }
-};
-
-window.obtenerTituloReputacion = function(datos) {
-    const rep = datos.reputacion || 0;
-    const esGargola = datos.tipoReputacion === 'gargola';
-
-    if (esGargola) {
-        const niveles = [
-            {t: "Sombra", d: "Apenas inicias tu camino de caos."},
-            {t: "Inquietud", d: "Tu presencia incomoda a la ciudad."},
-            {t: "Saboteador", d: "Has causado problemas reales."},
-            {t: "Agente del Caos", d: "El pánico sigue tus pasos."},
-            {t: "Monarca Oscuro", d: "La ciudad es tu patio de juegos."}
-        ];
-        return niveles[Math.min(rep - 1, 4)];
-    } else {
-        const niveles = [
-            {t: "Aprendiz de Luz", d: "Dando tus primeros pasos bondadosos."},
-            {t: "Ayudante", d: "La gente empieza a notar tu bondad."},
-            {t: "Guardián", d: "Proteges a los necesitados."},
-            {t: "Héroe Local", d: "Eres un pilar de la comunidad."},
-            {t: "Ángel de la Ciudad", d: "Tu luz es invencible."}
-        ];
-        return niveles[Math.min(rep - 1, 4)];
-    }
-};
-
-window.mostrarAvisoReputacionVisitante = function() {
-    // 1. Obtenemos al visitante desde la lista de visitantes
-    const miVisitante = window.visitantes ? window.visitantes[window.miIdx] : null;
-    if (!miVisitante) return;
-
-    // 2. Usamos tu lógica de títulos (que ya maneja lógica de ángel/gárgola)
-    const data = window.obtenerTituloReputacion(miVisitante);
-    
-    // 3. Definimos color según alineación (Rosa para Ángel, Gris para Gárgola)
-    const colorPrincipal = miVisitante.tipoReputacion === 'gargola' ? '#ff59aa' : '#ff59aa';
-    
-    const estilosCSS = `
-        <style>
-            .btn-reputacion-visitante {
-                background: ${colorPrincipal};
-                color: white;
-                border: none;
-                padding: 10px 25px;
-                font-size: 16px;
-                font-weight: bold;
-                border-radius: 20px;
-                cursor: pointer;
-                transition: 0.3s;
-                margin-top: 15px;
-                width: 100%;
-            }
-            .btn-reputacion-visitante:hover {
-                filter: brightness(1.2);
-                transform: scale(1.05);
-            }
-        </style>
-    `;
-    
-    const contenido = `
-        ${estilosCSS}
-        <div style="text-align: center; font-family: sans-serif;">
-            <h2 style="color: ${colorPrincipal};">${data.t}</h2>
-            <p style="color: #555; font-style: italic;">"${data.d}"</p>
-            <div style="font-size: 3em; margin: 15px 0; color: #ff59aa;">
-                ${miVisitante.reputacion || 0} ★
-            </div>
-            <button class="btn-reputacion-visitante" onclick="window.cerrarModal()">
-                Entendido
-            </button>
-        </div>`;
-    
-    window.abrirModal("Progreso de Visitante", contenido);
 };
 
 window.initCheatSystem = function() {
@@ -2763,24 +2860,20 @@ document.addEventListener('DOMContentLoaded', () => {
         chatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                window.enviarMensaje();
+                if (typeof window.enviarMensaje === 'function') window.enviarMensaje();
             }
         });
     }
 
-    // 2. Activación de Música (Primera interacción)
+    // 2. Activación de Música
     document.addEventListener('click', () => {
-        if (typeof window.iniciarMusica === 'function') {
-            window.iniciarMusica();
-        }
+        if (typeof window.iniciarMusica === 'function') window.iniciarMusica();
     }, { once: true });
 
     // 3. Mostrar Dedicatoria
-    if (typeof window.mostrarDedicatoria === 'function') {
-        window.mostrarDedicatoria();
-    }
+    if (typeof window.mostrarDedicatoria === 'function') window.mostrarDedicatoria();
 
-    // 4. Configuración del Dado (Patrón de seguridad)
+    // 4. Configuración del Dado
     (function configurarDado() {
         const dice = document.getElementById('dice');
         if (dice) {
@@ -2795,46 +2888,77 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     })();
 
-    // --- 5. LISTENERS GLOBALES Y PRIVADOS (CORREGIDO) ---
-if (window.db && window.sala && window.miIdx) {
-    
-    // A) Listener para Notificaciones Privadas
-    onValue(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), (snap) => {
-        const aviso = snap.val();
-        // Verificamos que el aviso exista, tenga título y sea reciente (dentro de los últimos 10s)
-        if (aviso && aviso.titulo && (Date.now() - aviso.timestamp < 10000)) {
-            window.abrirModal(aviso.titulo, `
-                <div class="modal-content" style="text-align: center;">
-                    <p style="font-size: 1.1em; color: #c71585;">${aviso.mensaje}</p>
-                    <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>
-                </div>
-            `);
-            // Limpiamos la notificación para que no salte al recargar
-            update(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), { titulo: null, mensaje: null, timestamp: 0 });
+    // ESCUCHA GLOBAL: BOTON REPUTACION
+     document.addEventListener('click', function(e) {
+    // Verificamos si el elemento clicado es nuestro botón o contiene su ID
+    if (e.target && (e.target.id === 'btn-reputacion-global' || e.target.classList.contains('reputacion-label'))) {
+        e.preventDefault();
+        
+        // Ejecutamos la función de aviso
+        if (typeof window.mostrarAvisoReputacion === 'function') {
+            window.mostrarAvisoReputacion();
+        } else if (typeof window.mostrarAvisoReputacionVisitante === 'function') {
+            window.mostrarAvisoReputacionVisitante();
         }
-    });
+    }
+});
 
-    // B) Listener para el Gamelog Global (USANDO QUERY PARA EL ÚLTIMO MENSAJE)
-    // Importante: Asegúrate de tener 'query', 'limitToLast' importados de firebase/database
-    const logsRef = query(ref(window.db, 'salas/' + window.sala + '/logs'), limitToLast(1));
-    
-    onValue(logsRef, (snap) => {
-        const data = snap.val();
-        if (data) {
-            // Como usamos limitToLast(1), los datos vienen dentro de una clave única (el ID del log)
-            const logId = Object.keys(data)[0];
-            const logEntry = data[logId];
+    // 5. LISTENERS GLOBALES (Notificaciones y Logs)
+    if (window.db && window.sala && window.miIdx) {
+        // Notificaciones Privadas
+        onValue(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), (snap) => {
+            const aviso = snap.val();
+            if (aviso && aviso.titulo && (Date.now() - (aviso.timestamp || 0) < 10000)) {
+                window.abrirModal(aviso.titulo, `
+                    <div style="text-align: center;">
+                        <p style="font-size: 1.1em; color: #c71585;">${aviso.mensaje}</p>
+                        <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>
+                    </div>
+                `);
+                update(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), { titulo: null, mensaje: null, timestamp: 0 });
+            }
+        });
 
-            if (logEntry && logEntry.mensaje && (Date.now() - logEntry.timestamp < 5000)) {
-                if (typeof window.log === 'function') {
-                    window.log(logEntry.mensaje);
+        // Gamelog
+        const logsRef = query(ref(window.db, 'salas/' + window.sala + '/logs'), limitToLast(1));
+        onValue(logsRef, (snap) => {
+            const data = snap.val();
+            if (data) {
+                const logId = Object.keys(data)[0];
+                const logEntry = data[logId];
+                if (logEntry && logEntry.mensaje && (Date.now() - (logEntry.timestamp || 0) < 5000)) {
+                    if (typeof window.log === 'function') window.log(logEntry.mensaje);
                 }
             }
-        }
-    });
-}
+        });
 
-    // 6. Generación del Tablero
+        // 5b. LISTENER DE REPUTACIÓN EN TIEMPO REAL
+        onValue(ref(window.db, 'salas/' + window.sala + '/visitantes/' + window.miIdx), (snap) => {
+            const data = snap.val();
+            if (data && data.reputacion !== undefined) {
+                window.renderEstrellas(data.reputacion);
+            }
+        });
+    }
+
+    // 6. VINCULACIÓN DE REPUTACIÓN
+    const iniciarVinculoReputacion = () => {
+        const btnRep = document.getElementById('btn-reputacion-global') || document.querySelector('.reputacion-label');
+        if (btnRep) {
+            btnRep.style.cursor = 'pointer';
+            btnRep.onclick = () => {
+                if (typeof window.mostrarAvisoReputacion === 'function') {
+                    window.mostrarAvisoReputacion();
+                } else if (typeof window.mostrarAvisoReputacionVisitante === 'function') {
+                    window.mostrarAvisoReputacionVisitante();
+                }
+            };
+        }
+    };
+    iniciarVinculoReputacion();
+    setInterval(iniciarVinculoReputacion, 2000); 
+
+    // 7. GENERACIÓN DEL TABLERO
     if (typeof window.generarTablero === 'function') {
         window.generarTablero();
     }
