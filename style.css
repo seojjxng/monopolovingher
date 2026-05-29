@@ -129,43 +129,26 @@ body {
 }
 /* IMPORTANTE: En móviles, apilamos todo */
 @media (max-width: 768px) {
-    /* Reset de anchos para evitar desborde */
-    .board, 
-    .main-column, 
-    .actions-wrapper,
-    .container {
-        width: 95vw !important;
-        max-width: 95vw !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
+    /* Forzamos que el body sea un contenedor de centrado rígido */
+    body {
+        justify-content: flex-start !important; /* Empezamos desde arriba pero con margen */
+        padding-top: 20px !important;
+        padding-bottom: 20px !important;
     }
 
-    /* Tablero cuadrado y responsivo */
-    .board {
-        height: 95vw !important; 
-        grid-template-columns: repeat(8, 1fr) !important;
-        grid-template-rows: repeat(8, 1fr) !important;
-    }
-
-    /* Layout principal */
+    /* Escalamos el contenedor principal para que quepa en pantalla */
     .game-layout {
-        width: 100% !important;
-        padding: 0 !important;
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        justify-content: center !important;
+        transform: scale(0.85); /* Reduce el tamaño al 85% para que quepa */
+        transform-origin: top center; /* Mantiene el centro horizontal pero se ajusta arriba */
+        width: 100vw !important;
+        margin: 0 auto !important;
     }
-    
-    /* Celdas del tablero */
-    .board div[id^="cell-"] {
-        width: 100% !important;
-        height: 100% !important;
-    }
-    
-    /* Opcional: reducir margen del sidebar en móvil si es necesario */
-    .sidebar-wrapper {
-        width: 95vw !important;
+
+    /* Aseguramos que el tablero no exceda el ancho */
+    .board {
+        width: 90vw !important;
+        height: 90vw !important;
+        margin: 0 auto !important;
     }
 }
 /* Contenedores inferiores */
