@@ -496,6 +496,9 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         activo: true, 
         intentosFallidos: 0, 
         estrellas: 0, 
+        tipoReputacion: 'neutral', // 'angel' o 'gargola'
+        misionesCompletadas: 0,
+        accionesIncorrectas: 0,
         visitasCarcel: 0, 
         cumplidasCarcel: 0,
         enCarcel: 0 
@@ -699,27 +702,61 @@ window.anunciarEnChat = function(salaId, mensaje) {
 };
 
 // --- 6. Poderes de Visitante ---
-// --- 1. MENÚ DE PODERES ORDENADO Y FILTRADO ---
+// Usamos un pequeño intervalo para asegurar que el botón exista antes de intentar inyectar
+const verificarYInyectar = setInterval(() => {
+    const btn = document.getElementById("btn-iniciar-partida");
+    const container = document.getElementById("container-poderes");
+    
+    if (btn && !container) {
+        window.actualizarBotonesPoderes();
+    }
+}, 500);
+
 window.actualizarBotonesPoderes = function() {
-    const sidebar = document.querySelector('.sidebar');
-    if (window.esVisitante && sidebar && !document.getElementById("container-poderes")) {
-        const container = document.createElement('div');
-        container.id = "container-poderes";
-        container.innerHTML = `
-            <h4 style="color:#ff59aa; margin:15px 0 10px; text-align:center; border-bottom:1px solid #ffdde2;">
-                <i class="fas fa-magic"></i> Poderes
-            </h4>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                <button class="btn-sidebar" onclick="window.abrirMenuProteccion()" style="padding: 5px; font-size: 0.8em;"><i class="fas fa-shield-alt"></i> Escudo</button>
-                <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.05, 300)" style="padding: 5px; font-size: 0.8em;"><i class="fas fa-chart-line"></i> Sabotaje 5%</button>
-                <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.10, 500)" style="padding: 5px; font-size: 0.8em;"><i class="fas fa-biohazard"></i> Sabotaje 10%</button>
-                <button class="btn-sidebar" onclick="window.tomarControlClima()" style="padding: 5px; font-size: 0.8em;"><i class="fas fa-cloud-sun"></i> Clima</button>
-            </div>
-            <button class="btn-sidebar" onclick="window.abrirMenuRescate()" style="margin-top:5px; width:100%; padding: 5px; background:#3498db; color:white;">
-                <i class="fas fa-unlock"></i> Rescatar / Pagar Fianza ($300)
-            </button>
+    // 1. Verificamos si es visitante y si la barra aún no existe
+    if (window.esVisitante && !document.getElementById('barra-tareas-poderes')) {
+        
+        const barra = document.createElement('div');
+        barra.id = 'barra-tareas-poderes';
+        
+        // Estilos: bajamos el bottom para que esté un poco más abajo y sea más fina
+        barra.style.cssText = `
+            position: fixed;
+            bottom: 5px; 
+            left: 50%;
+            transform: translateX(-50%);
+            width: auto;
+            max-width: 90%;
+            height: 50px;
+            background: #fff0f3;
+            border: 2px solid #ff80bf;
+            border-radius: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 0 15px;
+            z-index: 999999;
+            box-shadow: 0 4px 10px #ff80bf;
         `;
-        sidebar.appendChild(container);
+
+        // Botones pequeños y uniformes (todos en rosa)
+        const estiloBtn = `padding: 5px 12px; font-size: 11px; height: 30px; border-radius: 15px; background: #ffccd5; border: 1px solid #ff80bf; color: #c71585; cursor: pointer;`;
+
+        barra.innerHTML = `
+            <button class="btn-sidebar" onclick="window.abrirMenuProteccion()" style="${estiloBtn}">Escudo</button>
+            <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.05, 300)" style="${estiloBtn}">Sabotear un 5%</button>
+            <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.10, 500)" style="${estiloBtn}">Sabotear un 10%</button>
+            <button class="btn-sidebar" onclick="window.tomarControlClima()" style="${estiloBtn}">Clima</button>
+            <button class="btn-sidebar" onclick="window.abrirMenuRescate()" style="${estiloBtn} background: #ff59aa; color: white;">Rescatar</button>
+        `;
+
+        document.body.appendChild(barra);
+        
+        // Ajuste de margen
+        document.body.style.paddingBottom = "70px";
+        
+        console.log("Barra de poderes (estilo rosa) inyectada.");
     }
 };
 
@@ -755,7 +792,7 @@ window.abrirMenuProteccion = async function() {
                      </button>`;
         }
     });
-    html += `<button class="btn-sidebar" style="width:100%; background:#95a5a6;" onclick="window.cerrarModal()">Cancelar</button></div>`;
+    html += `</div>`;
     window.abrirModal("Proteger Ciudadano", html);
 };
 
@@ -770,7 +807,7 @@ window.seleccionarObjetivoSabotaje = async function(porcentaje, costo) {
                      </button>`;
         }
     });
-    html += `<button class="btn-sidebar" style="width:100%; background:#95a5a6;" onclick="window.cerrarModal()">Cancelar</button></div>`;
+    html += `</div>`;
     window.abrirModal("Sabotaje", html);
 };
 
@@ -819,7 +856,7 @@ window.abrirMenuRescate = async function() {
         html += `<p style="text-align:center;">Nadie está en la cárcel ahora.</p>`;
     }
     
-    html += `<button class="btn-sidebar" style="width:100%; background:#95a5a6; margin-top:10px;" onclick="window.cerrarModal()">Cancelar</button></div>`;
+    html += `</div>`;
     
     // 4. Verificamos que abrirModal exista antes de llamar
     if (typeof window.abrirModal === 'function') {
@@ -867,7 +904,6 @@ window.abrirControlClima = function() {
     });
     
     html += `</div>
-        <button class="btn-cerrar" style="width:100%; margin-top:10px; background:#eee;" onclick="window.cerrarModal()">Cerrar</button>
     </div>`;
     
     window.abrirModal("☁️ Panel de control climático", html);
@@ -1482,7 +1518,7 @@ window.verSaldos = function() {
             });
         }
         
-        txt += `</ul></div><button class="btn-accion" style="width:100%;" onclick="window.cerrarModal()">Cerrar</button></div>`;
+        txt += `</ul></div></div>`;
         window.abrirModal("Saldos", txt);
     });
 };
@@ -1498,7 +1534,7 @@ window.abrirPagar = function() {
             contenido = `
                 <p>Saldo pendiente: <b>$${j.montoPrestamo}</b></p>
                 <button class="btn-accion" style="width:100%; margin-top: 10px;" onclick="window.pagarPrestamo()">Liquidar Préstamo</button>
-                <button class="btn-accion" style="width:100%; margin-top: 5px; background: #4a4a4a;" onclick="window.cerrarModal()">Cancelar</button>`;
+                <button class="btn-accion" style="width:100%; margin-top: 5px; background: #ff59aa;" onclick="window.cerrarModal()">Cancelar</button>`;
         } else {
             contenido = `
                 <p>No tienes deudas pendientes.</p>
@@ -1590,7 +1626,7 @@ window.comprar = function(pos) {
                         Solicitar Préstamo ($1000)
                     </button>
                     
-                    <button class="btn-accion" style="width: 100%; background: #4a4a4a;" onclick="window.cerrarModal()">
+                    <button class="btn-accion" style="width: 100%; background: #ff59aa;" onclick="window.cerrarModal()">
                         Cancelar
                     </button>
                 </div>
@@ -2383,7 +2419,7 @@ window.abrirModalMisiones = function() {
         const misiones = [
             { id: 'benefactor', titulo: 'El Benefactor', desc: 'Regala $100 a un jugador.', tipo: 'angel', color: '#ff59aa' },
             { id: 'consejero', titulo: 'El Consejero', desc: 'Paga fianza de 3 jugadores.', tipo: 'angel', color: '#ff59aa' },
-            { id: 'saboteador', titulo: 'El Saboteador', desc: 'Haz perder un turno a un jugador.', tipo: 'gargola', color: '#4a4a4a' }
+            { id: 'saboteador', titulo: 'El Saboteador', desc: 'Haz perder un turno a un jugador.', tipo: 'gargola', color: '#ff59aa' }
         ];
         
         misiones.forEach(m => {
@@ -2476,45 +2512,172 @@ window.verificarAscenso = function(nuevasEstrellas) {
     `);
 };
 
-window.completarMisionVisitante = function(tipo) {
-    // 1. Definir la ruta dependiendo de si es visitante o jugador
-    const rol = window.esVisitante ? 'visitantes' : 'jugadores';
-    const refPath = `salas/${window.sala}/${rol}/${window.miIdx}`;
-    const userRef = ref(db, refPath);
-    
-    // 2. Obtener datos actuales para calcular el cambio
-    get(userRef).then((snap) => {
+window.completarMisionVisitante = async function(tipo) {
+    try {
+        // 1. Definir rutas de forma segura
+        const rol = window.esVisitante ? 'visitantes' : 'jugadores';
+        const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
+        
+        // 2. Obtener datos actuales
+        const snap = await get(userRef);
         const datos = snap.val();
         if (!datos) return;
 
-        let repActual = datos.reputacion || 3;
-        
-        // Ángel suma, Gárgola resta (limitado entre 0 y 5)
+        // 3. Calcular nueva reputación y recompensas
+        // Se asegura que esté entre 0 y 5
+        const repActual = datos.reputacion ?? 3;
         const cambio = (tipo === 'angel') ? 1 : -1;
         const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
         
-        // Definir recompensa según tipo
         const recompensa = (tipo === 'angel') ? 200 : 150;
-        
-        // 3. Actualizar Firebase
-        update(userRef, { 
+        const nombreMision = (tipo === 'angel') ? "Misión de Benefactor" : "Misión de Saboteador";
+
+        // 4. Actualizar Firebase de forma atómica
+        await update(userRef, { 
             reputacion: nuevaRep,
             dinero: increment(recompensa),
-            misionesCompletadas: increment(1)
-        }).then(() => {
-            // 4. Actualizar la interfaz visual
-            window.renderEstrellas(nuevaRep);
-            window.cerrarModal();
-            
-            // 5. Mostrar aviso de éxito visual
-            const nombreMision = (tipo === 'angel') ? "Misión de Benefactor" : "Misión de Saboteador";
-            if (typeof window.mostrarExitoMision === 'function') {
-                window.mostrarExitoMision(nombreMision, recompensa);
-            }
-            
-            console.log("Misión completada. Reputación: " + nuevaRep);
+            misionesCompletadas: increment(1),
+            tipoReputacion: (tipo === 'angel') ? 'angel' : 'gargola' // Registro de alineación
         });
-    });
+
+     // --- COPIA ESTO EN TU MAIN.JS ---
+
+// 1. Esto asegura que la consola pueda encontrar las herramientas de Firebase
+window.firebaseTools = { ref, get }; 
+
+window.verInfoReputacionEnConsola = async function() {
+    // Usamos las herramientas guardadas en window
+    const { ref, get } = window.firebaseTools;
+    
+    const rol = window.esVisitante ? 'visitantes' : 'jugadores';
+    // Asegúrate de que 'db' sea accesible globalmente (debería estar en tu main)
+    const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
+    
+    try {
+        const snap = await get(userRef);
+        const datos = snap.val();
+        
+        if (!datos) {
+            console.warn("⚠️ No se encontraron datos del jugador actual.");
+            return;
+        }
+
+        const info = {
+            Nombre: datos.nombre || "Desconocido",
+            Reputacion: datos.reputacion ?? 3,
+            Alineacion: datos.tipoReputacion || "Neutral",
+            Misiones_Completadas: datos.misionesCompletadas || 0,
+            Dinero: datos.dinero || 0
+        };
+
+        console.log("%c--- REPORTE DE REPUTACIÓN Y MISIONES ---", "color: #ff59aa; font-weight: bold; font-size: 14px;");
+        console.table(info);
+        
+        if (datos.tipoReputacion === 'angel') {
+            console.log("%cEstado: Protector de la ciudad (Ángel) 👼", "color: #ff59aa;");
+        } else if (datos.tipoReputacion === 'gargola') {
+            console.log("%cEstado: Agente del caos (Gárgola) 👿", "color: #ff59aa;");
+        } else {
+            console.log("%cEstado: Neutro", "color: #888;");
+        }
+        
+    } catch (e) {
+        console.error("❌ Error al cargar datos para la consola:", e);
+    }
+};
+
+        // 5. Actualizar interfaz
+        if (typeof window.renderEstrellas === 'function') {
+            window.renderEstrellas(nuevaRep);
+        }
+
+        if (typeof window.mostrarExitoMision === 'function') {
+            window.mostrarExitoMision(nombreMision, recompensa);
+        } else {
+            window.log(`${nombreMision} completada. Recompensa: $${recompensa}`);
+        }
+
+        window.cerrarModal();
+        console.log(`Misión ${tipo} completada. Reputación: ${nuevaRep}`);
+
+    } catch (error) {
+        console.error("Error al completar misión:", error);
+        window.log("Error al procesar la misión.");
+    }
+};
+
+window.obtenerTituloReputacion = function(datos) {
+    const rep = datos.reputacion || 0;
+    const esGargola = datos.tipoReputacion === 'gargola';
+
+    if (esGargola) {
+        const niveles = [
+            {t: "Sombra", d: "Apenas inicias tu camino de caos."},
+            {t: "Inquietud", d: "Tu presencia incomoda a la ciudad."},
+            {t: "Saboteador", d: "Has causado problemas reales."},
+            {t: "Agente del Caos", d: "El pánico sigue tus pasos."},
+            {t: "Monarca Oscuro", d: "La ciudad es tu patio de juegos."}
+        ];
+        return niveles[Math.min(rep - 1, 4)];
+    } else {
+        const niveles = [
+            {t: "Aprendiz de Luz", d: "Dando tus primeros pasos bondadosos."},
+            {t: "Ayudante", d: "La gente empieza a notar tu bondad."},
+            {t: "Guardián", d: "Proteges a los necesitados."},
+            {t: "Héroe Local", d: "Eres un pilar de la comunidad."},
+            {t: "Ángel de la Ciudad", d: "Tu luz es invencible."}
+        ];
+        return niveles[Math.min(rep - 1, 4)];
+    }
+};
+
+window.mostrarAvisoReputacionVisitante = function() {
+    // 1. Obtenemos al visitante desde la lista de visitantes
+    const miVisitante = window.visitantes ? window.visitantes[window.miIdx] : null;
+    if (!miVisitante) return;
+
+    // 2. Usamos tu lógica de títulos (que ya maneja lógica de ángel/gárgola)
+    const data = window.obtenerTituloReputacion(miVisitante);
+    
+    // 3. Definimos color según alineación (Rosa para Ángel, Gris para Gárgola)
+    const colorPrincipal = miVisitante.tipoReputacion === 'gargola' ? '#ff59aa' : '#ff59aa';
+    
+    const estilosCSS = `
+        <style>
+            .btn-reputacion-visitante {
+                background: ${colorPrincipal};
+                color: white;
+                border: none;
+                padding: 10px 25px;
+                font-size: 16px;
+                font-weight: bold;
+                border-radius: 20px;
+                cursor: pointer;
+                transition: 0.3s;
+                margin-top: 15px;
+                width: 100%;
+            }
+            .btn-reputacion-visitante:hover {
+                filter: brightness(1.2);
+                transform: scale(1.05);
+            }
+        </style>
+    `;
+    
+    const contenido = `
+        ${estilosCSS}
+        <div style="text-align: center; font-family: sans-serif;">
+            <h2 style="color: ${colorPrincipal};">${data.t}</h2>
+            <p style="color: #555; font-style: italic;">"${data.d}"</p>
+            <div style="font-size: 3em; margin: 15px 0; color: #ff59aa;">
+                ${miVisitante.reputacion || 0} ★
+            </div>
+            <button class="btn-reputacion-visitante" onclick="window.cerrarModal()">
+                Entendido
+            </button>
+        </div>`;
+    
+    window.abrirModal("Progreso de Visitante", contenido);
 };
 
 window.initCheatSystem = function() {
