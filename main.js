@@ -64,26 +64,13 @@ window.cerrarDedicatoria = function() {
 
 window.log = function(mensaje) {
     console.log("LOG:", mensaje);
-    
-    // 1. Intentar usar el sistema existente
-    if (typeof window.enviarMensaje === 'function') {
-        window.enviarMensaje("Sistema", mensaje, true);
-    }
-    
-    // 2. FORZAR VISUALIZACIÓN EN EL GAME LOG
     const logContainer = document.getElementById('game-log');
     if (logContainer) {
         const nuevoMensaje = document.createElement('div');
-        nuevoMensaje.style.cssText = "font-size: 0.85em; margin: 2px 0; color: #d63384; font-weight: bold;";
-        
-        // CORRECCIÓN CRÍTICA: Usamos innerHTML en lugar de innerText
-        // para que el navegador renderice los iconos CSS que enviamos desde procesarEvasion
+        // Estilo limpio, sin borde vertical
+        nuevoMensaje.style.cssText = "font-size: 0.85em; margin: 4px 0; color: #d63384; font-weight: bold;";
         nuevoMensaje.innerHTML = `> ${mensaje}`;
-        
-        // Añadimos el mensaje al contenedor
         logContainer.appendChild(nuevoMensaje);
-        
-        // Auto-scroll para ver el mensaje nuevo al final
         logContainer.scrollTop = logContainer.scrollHeight;
     }
 };
@@ -248,15 +235,12 @@ window.sincronizar = function() {
         }
     });
 
-    // 6. CLIMA LISTENER
+  // 6. CLIMA LISTENER
     window.climaListener = onValue(climaRef, (snap) => {
         const val = snap.val();
         const idx = (val !== null && val !== undefined) ? val : 0;
-        
         const elClima = document.getElementById('clima-display');
-        if (elClima && window.climas && window.climas[idx]) {
-             elClima.innerText = `Clima: ${window.climas[idx].n}`;
-        }
+        if (elClima && window.climas && window.climas[idx]) elClima.innerText = `Clima: ${window.climas[idx].n}`;
         
         const gameLog = document.getElementById('game-log');
         if (gameLog) {
@@ -268,6 +252,27 @@ window.sincronizar = function() {
                 gameLog.prepend(header);
             }
             header.innerHTML = `☁️ Clima actual: ${window.climas ? window.climas[idx].n : "Cargando..."}`;
+        }
+    });
+
+   // 7. LOGS LISTENER (SIN LIMITS, DIRECTO AL OBJETO)
+if (window.logListener) { off(window.logListener); }
+
+window.logListener = onValue(ref(window.db, 'salas/' + window.sala + '/logs'), (snap) => {
+    const data = snap.val();
+    
+    // Si no hay datos, salimos
+    if (!data || !data.mensaje) return;
+
+    // Validación: que el mensaje sea nuevo (comparamos timestamps)
+    // Inicializamos window.lastLogTimestamp = 0 en el inicio de sincronizar
+    window.lastLogTimestamp = window.lastLogTimestamp || 0;
+
+    if (data.timestamp > window.lastLogTimestamp && (Date.now() - data.timestamp < 5000)) {
+        window.lastLogTimestamp = data.timestamp;
+        if (typeof window.log === 'function') {
+            window.log(data.mensaje);
+            }
         }
     });
 };
@@ -334,15 +339,25 @@ window.cerrarModal = function() {
 
 // --- 1. CONFIGURACIÓN GLOBAL ---
 window.climas = Object.freeze([
-    { n: "Primavera Soleada", mult: 1.0 }, { n: "Primavera Lluviosa", mult: 1.0 },
-    { n: "Verano Caluroso", mult: 1.0 }, { n: "Verano Nublado", mult: 1.0 },
-    { n: "Otoño Fresco", mult: 1.0 }, { n: "Otoño Ventoso", mult: 1.0 },
-    { n: "Lluvia Fuerte", mult: 0.7 }, { n: "Tormenta Eléctrica", mult: 0.5 },
-    { n: "Ventisca", mult: 0.6 }, { n: "Nevada Intensa", mult: 0.6 },
-    { n: "Tornado", mult: 0.5 }
+    // Bonanza (Suben alquiler)
+    { n: "Primavera Soleada", mult: 1.0, tipo: "bonanza" }, 
+    { n: "Primavera Lluviosa", mult: 1.0, tipo: "bonanza" },
+    { n: "Verano Caluroso", mult: 1.0, tipo: "bonanza" }, 
+    { n: "Verano Nublado", mult: 1.0, tipo: "bonanza" },
+    
+    // Neutral (Se mantienen)
+    { n: "Otoño Fresco", mult: 1.0, tipo: "neutral" }, 
+    { n: "Otoño Ventoso", mult: 1.0, tipo: "neutral" },
+    
+    // Desastres (Bajan alquiler)
+    { n: "Lluvia Fuerte", mult: 0.7, tipo: "desastre" }, 
+    { n: "Tormenta Eléctrica", mult: 0.5, tipo: "desastre" },
+    { n: "Ventisca", mult: 0.6, tipo: "desastre" }, 
+    { n: "Nevada Intensa", mult: 0.6, tipo: "desastre" },
+    { n: "Tornado", mult: 0.5, tipo: "desastre" }
 ]);
 
-// --- Lógica del Ciclo Automático ---
+// --- Lógica del Ciclo Automático (AJUSTADO) ---
 window.iniciarCicloClima = function() {
     if (window.climaInterval) clearInterval(window.climaInterval);
     
@@ -351,7 +366,7 @@ window.iniciarCicloClima = function() {
         const salaData = salaSnap.val();
         if (!salaData) return;
 
-        // Si hay visitantes, el sistema automático se detiene
+        // Si hay visitantes, el sistema automático se detiene (toman el control ellos)
         const hayVisitantes = salaData.visitantes && Object.keys(salaData.visitantes).length > 0;
         if (hayVisitantes) return; 
 
@@ -364,12 +379,29 @@ window.iniciarCicloClima = function() {
             const nuevoIdx = Math.floor(Math.random() * window.climas.length);
             const nuevoClima = window.climas[nuevoIdx];
             
-            await update(ref(db, 'salas/' + window.sala), { climaIdx: nuevoIdx });
+            // 1. Calcular el ajuste automático
+            const porcentaje = Math.random() < 0.5 ? 0.05 : 0.10;
+            let ajuste = 0;
             
-            // Registro del Sistema vía tu log
-            if (typeof window.log === 'function') {
-                window.log(`¡El clima ha cambiado a ${nuevoClima.n}!`);
-            }
+            if (nuevoClima.tipo === "desastre") ajuste = -porcentaje;
+            else if (nuevoClima.tipo === "bonanza") ajuste = porcentaje;
+
+            // 2. Actualizar el clima Y el modificador en Firebase
+            await update(ref(db, 'salas/' + window.sala), { 
+                climaIdx: nuevoIdx,
+                modificadorAlquiler: ajuste
+            });
+            
+            // 3. Actualizar también el timestamp del controlador para el cooldown
+            await update(controlRef, { timestamp: ahora });
+            
+            // 4. Registro del Sistema en el Log Global
+            const mensaje = `¡El clima cambió a ${nuevoClima.n}! ${ajuste !== 0 ? 'Ajuste de alquiler: ' + (ajuste * 100).toFixed(0) + '%' : 'Alquiler estable.'}`;
+            
+            await update(ref(db, 'salas/' + window.sala + '/logs'), {
+                mensaje: mensaje,
+                timestamp: ahora
+            });
         }
     }, 600000); 
 };
@@ -715,284 +747,250 @@ const verificarYInyectar = setInterval(() => {
     }
 }, 500);
 
+// --- 1. BARRA DE PODERES ---
 window.actualizarBotonesPoderes = function() {
-    // 1. Verificamos si es visitante y si la barra aún no existe
     if (window.esVisitante && !document.getElementById('barra-tareas-poderes')) {
-        
         const barra = document.createElement('div');
         barra.id = 'barra-tareas-poderes';
-        
-        // Estilos: bajamos el bottom para que esté un poco más abajo y sea más fina
-        barra.style.cssText = `
-            position: fixed;
-            bottom: 5px; 
-            left: 50%;
-            transform: translateX(-50%);
-            width: auto;
-            max-width: 90%;
-            height: 50px;
-            background: #fff0f3;
-            border: 2px solid #ff80bf;
-            border-radius: 25px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            padding: 0 15px;
-            z-index: 999999;
-            box-shadow: 0 4px 10px #ff80bf;
-        `;
-
-        // Botones pequeños y uniformes (todos en rosa)
+        barra.style.cssText = `position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: auto; max-width: 90%; height: 50px; background: #fff0f3; border: 2px solid #ff80bf; border-radius: 25px; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 0 15px; z-index: 999999; box-shadow: 0 4px 10px #ff80bf;`;
         const estiloBtn = `padding: 5px 12px; font-size: 11px; height: 30px; border-radius: 15px; background: #ffccd5; border: 1px solid #ff80bf; color: #c71585; cursor: pointer;`;
 
         barra.innerHTML = `
             <button class="btn-sidebar" onclick="window.abrirMenuProteccion()" style="${estiloBtn}">Escudo</button>
-            <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.05, 300)" style="${estiloBtn}">Sabotear un 5%</button>
-            <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.10, 500)" style="${estiloBtn}">Sabotear un 10%</button>
-            <button class="btn-sidebar" onclick="window.tomarControlClima()" style="${estiloBtn}">Clima</button>
-            <button class="btn-sidebar" onclick="window.abrirMenuRescate()" style="${estiloBtn} background: #ff59aa; color: white;">Rescatar</button>
+            <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.05, 300)" style="${estiloBtn}">Sabotear 5% ($300)</button>
+            <button class="btn-sidebar" onclick="window.seleccionarObjetivoSabotaje(0.10, 500)" style="${estiloBtn}">Sabotear 10% ($500)</button>
+            <button class="btn-sidebar" onclick="window.tomarControlClima()" style="${estiloBtn}">Clima ($200)</button>
+            <button class="btn-sidebar" onclick="window.abrirMenuRescate()" style="${estiloBtn} background: #ff59aa; color: white;">Rescatar ($300)</button>
         `;
-
         document.body.appendChild(barra);
-        
-        // Ajuste de margen
         document.body.style.paddingBottom = "70px";
-        
-        console.log("Barra de poderes (estilo rosa) inyectada.");
     }
 };
 
-// --- 3. LÓGICA DE ESCUDO CON NOTIFICACIÓN EN LOG ---
-window.activarEscudo = async function(jugadorIdx) {
-    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + jugadorIdx);
-    const nombreVisitante = window.nombres[window.miIdx] || "Visitante";
-    
-    await update(jRef, { 
-        tieneEscudo: true,
-        protegidoPor: window.miIdx,
-        timestampEscudo: Date.now() 
-    });
-    
-    window.log(`${nombreVisitante} ha establecido un contrato de protección para ${jugadorIdx}. ¡Cobrarán el 50% de sus ganancias!`);
-    window.abrirModal("¡Protección Activa!", `<div class="modal-content"><p>Ahora proteges a <b>${jugadorIdx}</b>.</p><button class="btn-accion" onclick="window.cerrarModal()">Aceptar</button></div>`);
+// --- 2. LÓGICA DE PAGO CENTRALIZADA ---
+window.validarYDescontar = async function(costo) {
+    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const snap = await get(jRef);
+    const dinero = snap.val().dinero || 0;
+    if (dinero < costo) {
+        window.abrirModal("Error", `<p>Saldo insuficiente. Necesitas <b>$${costo}</b>.</p>`);
+        return false;
+    }
+    await update(jRef, { dinero: increment(-costo) });
+    return true;
 };
 
-// --- 4. SELECCIÓN DE OBJETIVO ---
-window.esJugadorValido = function(id, datosJugador) {
-    if (datosJugador && datosJugador.tipo === 'jugador') return true;
-    return !id.startsWith('v');
+// --- 3. SABOTAJE ---
+// --- 3. SABOTAJE ---
+window.seleccionarObjetivoSabotaje = async function(porcentaje, costo) {
+    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
+    let html = `<div class="modal-content"><p>Selecciona objetivo (Costo: $${costo}):</p>`;
+    snap.forEach(c => {
+        if (window.esJugadorValido(c.key, c.val())) {
+            html += `<button class="btn-sidebar" style="width:100%; margin-bottom:5px;" onclick="window.ejecutarSabotaje('${c.key}', ${porcentaje}, ${costo}); window.cerrarModal()">Sabotear ${c.key} (${porcentaje*100}%)</button>`;
+        }
+    });
+    window.abrirModal("Sabotaje", html + `</div>`);
+};
+
+window.ejecutarSabotaje = async function(objetivoIdx, porcentaje, costo) {
+    if (await window.validarYDescontar(costo)) {
+        const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + objetivoIdx);
+        const snap = await get(jRef);
+        const jugadorAfectado = snap.val();
+        
+        if (jugadorAfectado.tieneEscudo) {
+            window.abrirModal("Bloqueado", "¡El jugador tiene un escudo!");
+            return;
+        }
+
+        const montoPerdido = Math.round(jugadorAfectado.dinero * porcentaje);
+        const nombreSaboteador = window.nombres[window.miIdx] || "Un visitante";
+        const mensajeFinal = `¡${nombreSaboteador} saboteó a ${objetivoIdx} restándole $${montoPerdido} (${porcentaje*100}%).`;
+
+        await update(jRef, { 
+            dinero: increment(-montoPerdido),
+            notificacion: {
+                titulo: "¡Sabotaje!",
+                mensaje: `¡${nombreSaboteador} ha saboteado tus suministros! Has perdido $${montoPerdido}.`,
+                timestamp: Date.now()
+            }
+        });
+
+        await update(ref(db, 'salas/' + window.sala + '/logs'), {
+            mensaje: mensajeFinal,
+            timestamp: Date.now()
+        });
+    }
+};
+
+// --- 4. RESCATE ---
+window.abrirMenuRescate = async function() {
+    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
+    let html = `<div class="modal-content"><p>Pagar fianza ($300):</p>`;
+    let hayPresos = false;
+    
+    snap.forEach(c => {
+        if ((c.val().enCarcel ?? 0) > 0) {
+            hayPresos = true;
+            html += `<button class="btn-sidebar" style="width:100%; margin-bottom:5px;" onclick="window.ejecutarRescate('${c.key}', 300); window.cerrarModal()">Liberar ${c.key}</button>`;
+        }
+    });
+    
+    if (!hayPresos) html += `<p>No hay nadie en la cárcel.</p>`;
+    window.abrirModal("Rescate", html + `</div>`);
+};
+
+window.ejecutarRescate = async function(idPreso, costo) {
+    if (await window.validarYDescontar(costo)) {
+        const nombreSalvador = window.nombres[window.miIdx] || "Un ciudadano";
+        const mensajeLog = `¡${nombreSalvador} ha pagado la fianza de $${costo} para liberar a ${idPreso}!`;
+        
+        await update(ref(db, 'salas/' + window.sala + '/jugadores/' + idPreso), { 
+            enCarcel: 0,
+            notificacion: {
+                titulo: "¡Libertad!",
+                mensaje: `¡Has sido rescatado! El ciudadano ${nombreSalvador} ha pagado tu fianza de $${costo}.`,
+                timestamp: Date.now()
+            }
+        });
+
+        await update(ref(db, 'salas/' + window.sala + '/logs'), {
+            mensaje: mensajeLog,
+            timestamp: Date.now()
+        });
+    }
+};
+
+// --- 5. CLIMA (ACTUALIZADO CON ALQUILER) ---
+window.tomarControlClima = function() {
+    if (!window.esVisitante) return;
+    get(ref(db, 'salas/' + window.sala + '/controladorClima')).then(snap => {
+        const data = snap.val();
+        if (!data || (Date.now() - data.timestamp > 600000)) {
+            window.abrirControlClima();
+        } else {
+            const minutos = Math.ceil((600000 - (Date.now() - data.timestamp)) / 60000);
+            window.abrirModal("Cooldown", `Intenta en ${minutos} min.`);
+        }
+    });
+};
+
+// --- 5. CLIMA CON CÁLCULO DE ALQUILER DINÁMICO ---
+window.cambiarClimaConCooldown = async function(idx) {
+    if (await window.validarYDescontar(200)) {
+        const nuevoClima = window.climas[idx]; // Esperamos que tengan: {n: "...", tipo: "desastre/bonanza/neutral"}
+        const nombreUsuario = window.nombres[window.miIdx] || "Un visitante";
+        
+        // 1. Calcular el porcentaje aleatorio (5% o 10%)
+        const porcentaje = Math.random() < 0.5 ? 0.05 : 0.10;
+        let efecto = "";
+        let ajuste = 0;
+
+        // 2. Definir lógica según el tipo
+        if (nuevoClima.tipo === "desastre") {
+            ajuste = -porcentaje; // Disminuye
+            efecto = `¡Debido al desastre, los alquileres bajan un ${porcentaje * 100}%!`;
+        } else if (nuevoClima.tipo === "bonanza") {
+            ajuste = porcentaje; // Aumenta
+            efecto = `¡Es época de bonanza, los alquileres suben un ${porcentaje * 100}%!`;
+        } else {
+            ajuste = 0; // Otoño o neutral
+            efecto = "El mercado de alquileres se mantiene estable.";
+        }
+
+        const mensajeLog = `☁️ ${nombreUsuario} cambió el clima a ${nuevoClima.n}. ${efecto}`;
+
+        // 3. Actualizar base de datos
+        await update(ref(db, 'salas/' + window.sala + '/controladorClima'), { 
+            timestamp: Date.now(), 
+            ultimoUsuario: window.miIdx 
+        });
+        
+        // Guardamos el modificador calculado en la sala para que el sistema de cobro lo use
+        await update(ref(db, 'salas/' + window.sala), { 
+            climaIdx: idx,
+            modificadorAlquiler: ajuste 
+        });
+        
+        window.cerrarModal();
+        window.abrirModal("Éxito", "Clima cambiado. " + efecto);
+        
+        await update(ref(db, 'salas/' + window.sala + '/logs'), {
+            mensaje: mensajeLog,
+            timestamp: Date.now()
+        });
+    }
+};
+
+window.abrirControlClima = function() {
+    let html = `<div style="max-height: 300px; overflow-y: auto;">`;
+    window.climas.forEach((c, idx) => {
+        // Mostramos el tipo en el botón como guía
+        html += `<button class="btn-sidebar" style="width:100%; margin:5px 0; padding:8px;" onclick="window.cambiarClimaConCooldown(${idx})">
+                    <b>${c.n}</b><br><small>Tipo: ${c.tipo || 'Neutral'}</small>
+                 </button>`;
+    });
+    window.abrirModal("☁️ Panel de control climático", html + `</div>`);
+};
+
+// --- 6. PROTECCIÓN (ESCUDO) ---
+window.activarEscudo = async function(jugadorIdx) {
+    const nombreProtector = window.nombres[window.miIdx] || "Un ciudadano";
+    const mensajeLog = `🛡️ ¡${nombreProtector} ha establecido un contrato de protección sobre ${jugadorIdx}!`;
+    
+    await update(ref(db, 'salas/' + window.sala + '/jugadores/' + jugadorIdx), { 
+        tieneEscudo: true, 
+        protegidoPor: window.miIdx, 
+        timestampEscudo: Date.now(),
+        notificacion: {
+            titulo: "🛡️ ¡Protección Recibida!",
+            mensaje: `¡El ciudadano ${nombreProtector} te ha puesto bajo su protección! Estás a salvo de sabotajes.`,
+            timestamp: Date.now()
+        }
+    });
+
+    window.abrirModal("Protección Activa", `<div class="modal-content"><p>Ahora proteges a <b>${jugadorIdx}</b>.</p></div>`);
+    
+    await update(ref(db, 'salas/' + window.sala + '/logs'), {
+        mensaje: mensajeLog,
+        timestamp: Date.now()
+    });
 };
 
 window.abrirMenuProteccion = async function() {
     const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
-    let html = `<div class="modal-content"><p>Protege a un jugador (los visitantes no pueden ser protegidos):</p>`;
+    let html = `<div class="modal-content"><p>Selecciona a quién deseas proteger:</p>`;
+    let hayJugadores = false;
+
     snap.forEach(c => {
-        const datos = c.val();
-        if (window.esJugadorValido(c.key, datos)) {
-            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" onclick="window.activarEscudo('${c.key}'); window.cerrarModal()">
-                        <i class="fas fa-user-shield"></i> ${c.key}
-                     </button>`;
-        }
-    });
-    html += `</div>`;
-    window.abrirModal("Proteger Ciudadano", html);
-};
-
-window.seleccionarObjetivoSabotaje = async function(porcentaje, costo) {
-    const snap = await get(ref(db, 'salas/' + window.sala + '/jugadores'));
-    let html = `<div class="modal-content"><p>Elige a quién sabotear (${porcentaje*100}% de éxito):</p>`;
-    snap.forEach(c => {
-        const datos = c.val();
-        if (window.esJugadorValido(c.key, datos)) {
-            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" onclick="window.ejecutarSabotaje('${c.key}', ${porcentaje}, ${costo}); window.cerrarModal()">
-                        <i class="fas fa-skull"></i> ${c.key}
-                     </button>`;
-        }
-    });
-    html += `</div>`;
-    window.abrirModal("Sabotaje", html);
-};
-
-window.ejecutarSabotaje = async function(objetivoIdx, porcentaje, costo) {
-    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + objetivoIdx);
-    const snap = await get(jRef);
-    const j = snap.val();
-    if (j.tieneEscudo) {
-        window.abrirModal("Bloqueado", `<div class="modal-content"><p><i class="fas fa-ban"></i> ¡El jugador tiene un escudo activo!</p></div>`);
-        return;
-    }
-    await update(jRef, { dinero: increment(-(j.dinero * porcentaje)) });
-    await update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { dinero: increment(-costo) });
-    window.log(`${window.nombres[window.miIdx]} saboteó a ${objetivoIdx} restándole el ${porcentaje*100}%.`);
-};
-
-// --- 5. UNIFICACIÓN: RESCATE Y FIANZA ---
-window.abrirMenuRescate = async function() {
-    // 1. Aseguramos que tenemos conexión
-    if (!window.db || !window.sala) return;
-
-    const snap = await get(ref(window.db, 'salas/' + window.sala + '/jugadores'));
-    let html = `<div class="modal-content"><p>Selecciona un prisionero para pagar su fianza ($300):</p>`;
-    let hayPresos = false;
-
-    // 2. Iteración segura
-    snap.forEach(c => {
-        const datos = c.val();
-        
-        // --- PROTECCIÓN ---
-        // Usamos (datos.enCarcel ?? 0) para que si es undefined, se trate como 0
-        const enCarcel = datos?.enCarcel ?? 0;
-
-        if (enCarcel > 0) {
-            hayPresos = true;
-            // 3. Verificación de seguridad en el onclick
-            // Usamos comillas simples y escapamos datos si es necesario
-            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" 
-                        onclick="window.ejecutarRescate('${c.key}', 300); window.cerrarModal()">
-                        <i class="fas fa-unlock-alt"></i> Pagar fianza de ${c.key}
-                     </button>`;
+        if (window.esJugadorValido(c.key, c.val())) {
+            hayJugadores = true;
+            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" onclick="window.activarEscudo('${c.key}'); window.cerrarModal()">🛡️ Proteger a ${c.key}</button>`;
         }
     });
 
-    if (!hayPresos) {
-        html += `<p style="text-align:center;">Nadie está en la cárcel ahora.</p>`;
-    }
-    
-    html += `</div>`;
-    
-    // 4. Verificamos que abrirModal exista antes de llamar
-    if (typeof window.abrirModal === 'function') {
-        window.abrirModal("Rescate / Fianza", html);
-    } else {
-        console.error("Error: window.abrirModal no está definida.");
-    }
+    if (!hayJugadores) html += `<p>No hay otros jugadores disponibles.</p>`;
+    window.abrirModal("Proteger Ciudadano", html + `</div>`);
 };
 
-window.ejecutarRescate = async function(idPreso, costo) {
-    const visitanteRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    const snapVisitante = await get(visitanteRef);
-    const dineroVisitante = snapVisitante.val().dinero || 0;
-
-    if (dineroVisitante < costo) {
-        window.abrirModal("Error", "No tienes suficiente dinero para pagar la fianza.");
-        return;
-    }
-
-    const presoRef = ref(db, 'salas/' + window.sala + '/jugadores/' + idPreso);
-    
-    // Ejecutar rescate: Cobrar al visitante y liberar al preso
-    await Promise.all([
-        update(visitanteRef, { dinero: increment(-costo) }),
-        update(presoRef, { enCarcel: 0 })
-    ]);
-
-    window.log(`¡El visitante ${window.nombres[window.miIdx]} pagó la fianza de ${idPreso}!`);
-    window.abrirModal("Éxito", `<div class="modal-content"><p>Has pagado $${costo} y liberado a <b>${idPreso}</b>.</p></div>`);
-};
-
-
-window.abrirControlClima = function() {
-    let html = `
-    <div style="max-height: 300px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;">
-        <style>.clima-scroll::-webkit-scrollbar { display: none; }</style>
-        <p style="font-size: 0.85em; margin-bottom: 10px;">Elige el clima. Se aplicará un <b>cooldown de 10 min</b>.</p>
-        <div class="clima-scroll">`;
-        
-    window.climas.forEach((c, idx) => {
-        html += `<button class="btn-sidebar" style="width:100%; margin:5px 0; padding:8px;" 
-                 onclick="window.cambiarClimaConCooldown(${idx})">
-                    <b>${c.n}</b>
-                 </button>`;
-    });
-    
-    html += `</div>
-    </div>`;
-    
-    window.abrirModal("☁️ Panel de control climático", html);
-};
-
-window.cambiarClimaConCooldown = function(idx) {
-    const ahora = Date.now();
-    const nuevoClima = window.climas[idx];
-    const nombreJugador = (window.nombres && window.nombres[window.miIdx]) ? window.nombres[window.miIdx] : "Ciudadano";
-    const porcentaje = Math.round(nuevoClima.mult * 100);
-
-    // 1. Guardar cooldown
-    update(ref(db, 'salas/' + window.sala + '/controladorClima'), {
-        timestamp: ahora,
-        ultimoUsuario: window.miIdx
-    });
-
-    // 2. Actualizar clima
-    update(ref(db, 'salas/' + window.sala), { climaIdx: idx });
-
-    // 3. Registrar en el log usando tu función centralizada
-    const mensaje = `¡${nombreJugador} ha cambiado el clima a ${nuevoClima.n}! Las propiedades ahora valen un ${porcentaje}% de su valor original.`;
-    if (typeof window.log === 'function') {
-        window.log(mensaje);
-    }
-
-    // 4. Actualizar display visual
-    const display = document.getElementById('clima-display');
-    if (display) display.innerText = `Clima: ${nuevoClima.n}`;
-
-    // 5. Ventana de confirmación
-    window.cerrarModal();
-    window.abrirModal("¡Cambio Exitoso!", `
-        <div class="modal-content" style="text-align: center;">
-            <p>Clima: <b>${nuevoClima.n}</b> aplicado.</p>
-            <p>Impacto: <b>${porcentaje}%</b> del valor original.</p>
-            <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Aceptar</button>
-        </div>
-    `);
-};
-
-window.tomarControlClima = function() {
-    if (!window.esVisitante) return;
-    const refControl = ref(db, 'salas/' + window.sala + '/controladorClima');
-    
-    get(refControl).then(snap => {
-        const data = snap.val();
-        const ahora = Date.now();
-        // Cooldown de 10 minutos (600,000 ms)
-        if (!data || (ahora - data.timestamp > 600000)) {
-            window.abrirControlClima();
-        } else {
-            const minutosRestantes = Math.ceil((600000 - (ahora - data.timestamp)) / 60000);
-            window.abrirModal("Control Bloqueado", `<p>El clima está bajo cooldown. Intenta de nuevo en ${minutosRestantes} min.</p>`);
-        }
-    });
-};
+window.esJugadorValido = (id, d) => (d && d.tipo === 'jugador') || !id.startsWith('v');
 
 window.enviarMensaje = function() {
     const input = document.getElementById('chat-msg');
     const mensaje = input.value.trim();
-    
-    // Validaciones básicas
     if (mensaje === "" || !window.sala || window.miIdx === undefined) return;
-    
-    // Usamos window.miIdx directamente si es el ID (Dog, Horse, etc.)
-    // Si necesitas un formato más limpio para visitantes, puedes procesarlo aquí
     let idMostrar = window.miIdx;
-    
-    // Si tu sistema usa IDs tipo "v1", "v2" y quieres que digan "Visitante 1", etc.
     if (typeof idMostrar === 'string' && idMostrar.startsWith('v')) {
         const num = idMostrar.replace('v', '');
         idMostrar = "Visitante " + num;
     }
-
     push(ref(window.db, 'salas/' + window.sala + '/chat'), {
-        n: idMostrar, // Ahora enviará el ID (Dog, Horse, Visitante 1, etc.)
+        n: idMostrar,
         m: mensaje,
         t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }).then(() => {
-        input.value = "";
-    }).catch((error) => {
-        console.error("Error al enviar mensaje:", error);
-    });
+    }).then(() => { input.value = ""; }).catch((e) => console.error(e));
 };
-
 // --- Lógica de Lanzamiento de Dado ---
 window.tirarDado = async function() {
     // 1. Verificación: Los visitantes NO pueden mover fichas
@@ -2771,7 +2769,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 2. Activación de Música (Primera interacción)
-    // Se vincula al primer clic del usuario para evitar bloqueos del navegador
     document.addEventListener('click', () => {
         if (typeof window.iniciarMusica === 'function') {
             window.iniciarMusica();
@@ -2787,21 +2784,57 @@ document.addEventListener('DOMContentLoaded', () => {
     (function configurarDado() {
         const dice = document.getElementById('dice');
         if (dice) {
-            // El uso de cloneNode es un truco para eliminar eventos antiguos
             const nuevoDice = dice.cloneNode(true);
             dice.parentNode.replaceChild(nuevoDice, dice);
-            
             nuevoDice.onclick = (e) => {
                 e.stopPropagation();
                 if (typeof window.tirarDado === 'function') window.tirarDado();
             };
         } else {
-            // Reintenta si el elemento aún no ha aparecido en el DOM
             setTimeout(configurarDado, 1000);
         }
     })();
 
-    // 5. Generación del Tablero
+    // --- 5. LISTENERS GLOBALES Y PRIVADOS (CORREGIDO) ---
+if (window.db && window.sala && window.miIdx) {
+    
+    // A) Listener para Notificaciones Privadas
+    onValue(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), (snap) => {
+        const aviso = snap.val();
+        // Verificamos que el aviso exista, tenga título y sea reciente (dentro de los últimos 10s)
+        if (aviso && aviso.titulo && (Date.now() - aviso.timestamp < 10000)) {
+            window.abrirModal(aviso.titulo, `
+                <div class="modal-content" style="text-align: center;">
+                    <p style="font-size: 1.1em; color: #c71585;">${aviso.mensaje}</p>
+                    <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>
+                </div>
+            `);
+            // Limpiamos la notificación para que no salte al recargar
+            update(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), { titulo: null, mensaje: null, timestamp: 0 });
+        }
+    });
+
+    // B) Listener para el Gamelog Global (USANDO QUERY PARA EL ÚLTIMO MENSAJE)
+    // Importante: Asegúrate de tener 'query', 'limitToLast' importados de firebase/database
+    const logsRef = query(ref(window.db, 'salas/' + window.sala + '/logs'), limitToLast(1));
+    
+    onValue(logsRef, (snap) => {
+        const data = snap.val();
+        if (data) {
+            // Como usamos limitToLast(1), los datos vienen dentro de una clave única (el ID del log)
+            const logId = Object.keys(data)[0];
+            const logEntry = data[logId];
+
+            if (logEntry && logEntry.mensaje && (Date.now() - logEntry.timestamp < 5000)) {
+                if (typeof window.log === 'function') {
+                    window.log(logEntry.mensaje);
+                }
+            }
+        }
+    });
+}
+
+    // 6. Generación del Tablero
     if (typeof window.generarTablero === 'function') {
         window.generarTablero();
     }
