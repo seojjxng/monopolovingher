@@ -2,13 +2,10 @@
 body { 
     background: #fff0f3; 
     font-family: sans-serif; 
-    
-    /* Centrado global */
     display: flex; 
     flex-direction: column; 
-    align-items: center;    /* Centra horizontalmente */
-    justify-content: center; /* Centra verticalmente si el juego cabe */
-    
+    align-items: center; 
+    /* QUITAMOS justify-content: center; para que no fuerce el alto */
     min-height: 100vh; 
     padding: 20px; 
     color: #c71585; 
@@ -16,22 +13,19 @@ body {
 .container {
     display: flex;
     flex-direction: row;        
-    justify-content: center;    /* Centrado horizontal */
-    align-items: center;        /* CAMBIO: De flex-start a center (Centrado vertical) */
+    justify-content: center;    /* Mantiene centrado horizontal */
+    
+    /* CAMBIA ESTO: de 'center' a 'stretch' */
+    align-items: stretch;        
+    
     gap: 20px;                  
     max-width: 1000px;          
     width: 100%;                
     margin: 0 auto;             
-    padding: 0 10px;            
-}
-.main-column {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    width: 600px;
-    flex-shrink: 0;
-    /* QUITAMOS el margin-left para controlar el centro desde el board */
-    margin: 0 auto;
+    padding: 0 10px;
+    
+    /* Añade esto para asegurar que el contenedor tenga altura */
+    min-height: 600px; 
 }
 /* TABLERO */
 /* Contenedor principal del sidebar */
@@ -39,18 +33,16 @@ body {
     display: flex;
     flex-direction: column;
     width: 300px;
-    gap: 15px; /* Unificamos el espacio entre elementos */
     flex-shrink: 0;
+    align-self: stretch; /* Esto le dice al wrapper: "toma la altura de tu vecino (el tablero)" */
 }
-
-/* El sidebar interno (la columna de juego) */
 .sidebar {
-    width: 100%;
+    /* En lugar de height: 100%, usa flex: 1 para que ocupe todo el espacio sobrante */
+    flex: 1; 
     display: flex;
     flex-direction: column;
     gap: 15px;
 }
-
 /* Botón estilo Sidebar (consistente con los otros botones) */
 .btn-sidebar {
     padding: 12px;
@@ -101,41 +93,73 @@ body {
     border-radius: 1px;
 
 }
-
-/* Contenedor de botones fuera del tablero */
-
-.actions-bar { 
-    display: flex; 
-    justify-content: space-between; 
-    gap: 10px; 
-    background: #ffffff; 
-    padding: 10px; 
-    border-radius: 15px; 
-    border: 2px solid #ffccd5; 
+.controls-container {
+    display: flex;
+    flex-direction: row; 
+    align-items: center; 
+    gap: 15px;
+    width: 100%;
+    max-width: 600px;
+    margin: 10px auto; /* Centrado automático */
 }
-/* Panel específico para el modo 2v2 */
+.game-layout {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: stretch; /* ESTO ES LO QUE ESTIRA LAS COLUMNAS */
+    gap: 20px;
+    width: 100%;
+    max-width: 950px;
+    margin: 0 auto;
+    /* QUITAMOS min-height: 600px y ponemos altura fija al tablero */
+}
 
-.mode-panel {
-
-    background: #fff0f9;
-
-    padding: 15px;
-
-    border-radius: 20px;
-
-    border: 2px solid #ffccd5;
-
-    text-align: center;
+/* LA COLUMNA PRINCIPAL */
+.main-column {
+    display: flex;
+    flex-direction: column;
+    width: 600px;
+    flex-shrink: 0;
+    /* ALINEACIÓN: Esto mantendrá el board arriba y acciones abajo */
+    justify-content: space-between; 
+}
+/* IMPORTANTE: En móviles, apilamos todo */
+@media (max-width: 900px) {
+    .game-layout {
+        flex-direction: column;
+        align-items: center;
+    }
 }
 /* Contenedores inferiores */
 #banco-container { display: flex; gap: 5px; justify-content: center; }
-#modo-2v2-container { margin-top: 10px; }
-/* Botones - Ajustados para que no se deformen */
+#btn-iniciar-partida {
+    width: 100%;
+    padding: 12px;
+    background: #ff80bf;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 12px; /* Unificado a 12px */
+    display: flex;       /* Cambiado de none a flex para que sea fácil de mostrar */
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-weight: bold;
+    transition: background 0.3s;
+}
+
+#btn-iniciar-partida:hover {
+    background: #ff59aa;
+}
+
 .btn { width: 100%; padding: 10px; background: #ff59aa; color: #d24285; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 12px; }
 #banco-container .btn { width: auto; flex: 1; font-size: 10px; padding: 8px 5px; }
 /* Ajustes críticos para Chat y Log */
 #game-log, #chat-log { 
-    height: 125px !important; 
+    /* ELIMINA height: 125px !important; */
+    flex-grow: 1; /* Esto hace que ocupen el espacio disponible */
+    min-height: 100px; /* Tamaño mínimo aceptable */
+    
     overflow-y: auto; 
     font-size: 11px; 
     color: #c71585; 
@@ -145,13 +169,10 @@ body {
     border: 1px solid #ffccd5; 
     margin: 5px 0 15px 0; 
     width: 100%;
-    flex-shrink: 0;
-    /* Mantenemos relative para que el 'sticky' del clima funcione */
+    /* Quitamos flex-shrink: 0 para permitir que se compriman si es necesario */
     position: relative; 
     scrollbar-width: none; 
-    -ms-overflow-style: none;
 }
-
 /* Chrome, Safari y Opera */
 #game-log::-webkit-scrollbar, 
 #chat-log::-webkit-scrollbar {
@@ -322,10 +343,37 @@ body {
 .btn-misiones { background: linear-gradient(135deg, #ff80bf, #ff59aa); color: white; margin-top: 10px; border: none; padding: 8px 16px; border-radius: 20px; font-weight: bold; cursor: pointer; }
 
 /* SIDEBAR, PANEL, ACCIONES (Manteniendo tu estructura estable) */
-.panel { background: #ffffff; padding: 15px; border-radius: 15px; border: 2px solid #ffccd5; flex-grow: 1; min-height: 400px; display: flex; flex-direction: column; gap: 10px; }
+.panel { 
+    background: #ffffff; 
+    padding: 15px; 
+    border-radius: 15px; 
+    border: 2px solid #ffccd5; 
+    
+    /* Configuración para estiramiento total */
+    flex-grow: 1;        /* Esto hace que crezca */
+    min-height: 0;       /* IMPORTANTE: Esto permite que el panel se encoja o estire según el padre */
+    
+    display: flex; 
+    flex-direction: column; 
+    gap: 10px; 
+}
 .scroll-box { flex-grow: 1; background: #fff5f7; border: 1px solid #ffccd5; border-radius: 8px; padding: 8px; overflow-y: auto; font-size: 12px; min-height: 100px; }
 .input-field { padding: 8px; border: 1px solid #ffccd5; border-radius: 8px; width: 100%; }
 .actions-wrapper { width: 600px; }
+.actions-wrapper { 
+    width: 600px;  /* Debe coincidir con el ancho de tu tablero */
+    margin-top: 10px; 
+}
+
+.actions-bar { 
+    display: flex; 
+    justify-content: space-between; 
+    gap: 10px; 
+    background: #ffffff; 
+    padding: 10px; 
+    border-radius: 15px; 
+    border: 2px solid #ffccd5; 
+}
 .modal-header { display: flex; justify-content: space-between; color: #ff59aa; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #ffccd5; padding-bottom: 5px; }
 button { cursor: pointer; }
 /* Botón de cerrar tipo Windows */
@@ -394,16 +442,16 @@ button { cursor: pointer; }
     align-items: center;
     width: 100%;
     padding: 12px;
-    margin-top: 5px;
+    /* CAMBIO: Quitamos el margen aquí para tener control total desde el contenedor */
+    margin-top: 0; 
     border: 2px solid #ff80bf; 
     border-radius: 12px;
     background-color: #ffccd5; 
     color: #ff59aa;             
     font-weight: bold;
     cursor: pointer;
-    transition: background-color 0.3s ease, color 0.3s ease; /* Transición limpia */
+    transition: background-color 0.3s ease, color 0.3s ease;
     
-    /* Forzamos a quitar cualquier tipo de sombra o brillo */
     box-shadow: none !important;
     outline: none !important;
 }
@@ -424,16 +472,6 @@ button { cursor: pointer; }
     cursor: not-allowed;
 }
 
-/* El contenedor que mencionaste */
-.actions-bar { 
-    display: flex; 
-    justify-content: space-between; 
-    gap: 10px; 
-    background: #ffffff; 
-    padding: 10px; 
-    border-radius: 15px; 
-    border: 2px solid #ffccd5; 
-}
 .icono-transporte {
     display: flex; 
     justify-content: center; 
@@ -441,15 +479,6 @@ button { cursor: pointer; }
 }
 .icono-transporte img {
     object-fit: contain;
-}
-
-.game-layout {
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    gap: 20px;
-    width: 920px; 
-    margin: 0 auto;
 }
 .carta-monopoly {
     background: #f7f1e3;
