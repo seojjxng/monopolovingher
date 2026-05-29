@@ -4,11 +4,13 @@ body {
     font-family: sans-serif; 
     display: flex; 
     flex-direction: column; 
+    /* Cambiamos align-items para que el centrado sea por margen */
     align-items: center; 
-    /* QUITAMOS justify-content: center; para que no fuerce el alto */
     min-height: 100vh; 
     padding: 20px; 
     color: #c71585; 
+    /* IMPORTANTE: Esto evita que el contenido se desborde en móviles */
+    width: 100%;
 }
 .container {
     display: flex;
@@ -106,12 +108,11 @@ body {
     display: flex;
     flex-direction: row;
     justify-content: center;
-    align-items: stretch; /* ESTO ES LO QUE ESTIRA LAS COLUMNAS */
+    align-items: stretch; 
     gap: 20px;
     width: 100%;
     max-width: 950px;
-    margin: 0 auto;
-    /* QUITAMOS min-height: 600px y ponemos altura fija al tablero */
+    margin: 0 auto; /* Esto es lo que centra el bloque en la pantalla */
 }
 
 /* LA COLUMNA PRINCIPAL */
@@ -127,7 +128,8 @@ body {
 @media (max-width: 900px) {
     .game-layout {
         flex-direction: column;
-        align-items: center;
+        align-items: center; /* Centra el tablero y sidebar horizontalmente */
+        align-items: stretch; /* Mantenemos stretch para que el sidebar llene el ancho */
     }
 }
 /* Contenedores inferiores */
