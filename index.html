@@ -55,8 +55,11 @@
             <div id="cell-27" class="celda-juego"></div>
 
             <div class="center-zone" id="center-zone">
-                <div class="reputacion-label" onclick="mostrarAvisoReputacion()">Reputación</div>
-                <div class="estrellas-container" data-reputacion">
+                    <div class="reputacion-label" id="btn-reputacion-global" 
+                     onclick="window.mostrarAvisoReputacion()" 
+                     style="cursor:pointer;">
+                     Reputación</div>
+                <div class="estrellas-container" data-reputacion="0">
                     <span class="estrella" id="star-1">★</span>
                     <span class="estrella" id="star-2">★</span>
                     <span class="estrella" id="star-3">★</span>
@@ -114,9 +117,9 @@
     <div class="actions-bar" style="width: 100%; display: flex; flex-direction: column; gap: 8px; margin-top: 0;">
         <button class="btn-accion" style="width: 100%; color: white" onclick="window.mostrarAviso2v2()">Modo 2v2</button>
         
-        <button id="btn-iniciar-partida" class="btn-accion" style="width: 100%; padding: 12px; border: none; cursor: pointer; border-radius: 12px; display: none; align-items: center; justify-content: center; gap: 8px;" onclick="window.iniciarPartida()">
-            <span style="width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 10px solid white; display: inline-block;"></span>
-            Iniciar Partida
+        <button id="btn-iniciar-partida" class="btn-accion btn-iniciar-oculto" style="width: 100%; padding: 12px; border: none; cursor: pointer; border-radius: 12px; align-items: center; justify-content: center; gap: 8px;" onclick="window.iniciarPartida()">
+        <span style="width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 10px solid white; display: inline-block;"></span>
+        Iniciar Partida
         </button>
           </div>
        </div>
