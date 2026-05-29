@@ -493,7 +493,12 @@ button { cursor: pointer; }
     color: #888;
     cursor: not-allowed;
 }
-
+.btn-iniciar-visible {
+    display: flex !important;
+}
+.btn-iniciar-oculto {
+    display: none !important;
+}
 .icono-transporte {
     display: flex; 
     justify-content: center; 
