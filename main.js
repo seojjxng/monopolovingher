@@ -1,9 +1,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, child, get, set, runTransaction, update, onValue, push, onDisconnect, off, increment } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { getDatabase, ref, child, get, set, runTransaction, update, onValue, push, onDisconnect, off, increment, onChildAdded } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { firebaseConfig } from './firebase-config.js'; 
 
 if (typeof window.db === 'undefined') {
-    window.db = null; // Inicializamos vacío para que no sea undefined
+    window.db = null; 
 }
 
 const app = initializeApp(firebaseConfig);
@@ -13,12 +13,104 @@ window.db = database;
 window.nombres = ["Dog", "Horse", "Hat", "Car"];
 window.colores = ["#ffb7b2", "#f29f9f", "#c2f0c9", "#f3aee9"];
 
-// Variables globales de listeners
+// Variables globales de listeners (Asegúrate de tener todas estas)
 window.chatListener = null;
 window.estadoListener = null;
 window.climaListener = null;
+window.logsListener = null; 
+window.ofertasListener = null;   // <--- NECESARIO: Para evitar ofertas duplicadas
+window.reputacionListener = null; // <--- NECESARIO: Para evitar que el listener de reputación se multiplique
 window.estaLanzando = false;
+window.notificacionListener = null;
 
+// SISTEMA DE LOG GLOBAL - Sincronizado para Jugadores y Visitantes
+window.log = function(mensaje) {
+    // Si no hay sala, intentamos usar console.log para debug
+    if (!window.sala || !window.db) {
+        console.log("Log local (sin sala):", mensaje);
+        return;
+    }
+    
+    // Escribimos en la base de datos: Todos los que escuchen la sala verán esto
+    const logsRef = ref(window.db, 'salas/' + window.sala + '/logs');
+    push(logsRef, {
+        mensaje: mensaje,
+        timestamp: Date.now()
+    });
+};
+
+// SISTEMA DE LOG GLOBAL - Sincronizado para Jugadores y Visitantes
+window.log = function(mensaje) {
+    // Si no hay sala, intentamos usar console.log para debug
+    if (!window.sala || !window.db) {
+        console.log("Log local (sin sala):", mensaje);
+        return;
+    }
+    
+    // Escribimos en la base de datos: Todos los que escuchen la sala verán esto
+    const logsRef = ref(window.db, 'salas/' + window.sala + '/logs');
+    push(logsRef, {
+        mensaje: mensaje,
+        timestamp: Date.now()
+    });
+};
+
+window.agregarLogAlDOM = function(mensaje) {
+    const logContainer = document.getElementById('game-log');
+    if (logContainer) {
+        const nuevoMensaje = document.createElement('div');
+        nuevoMensaje.style.cssText = "font-size: 0.85em; margin: 4px 0; color: #d63384; font-weight: bold;";
+        nuevoMensaje.innerHTML = `> ${mensaje}`;
+        logContainer.appendChild(nuevoMensaje);
+        logContainer.scrollTop = logContainer.scrollHeight;
+        
+        // Limpieza si hay muchos logs
+        if (logContainer.children.length > 50) {
+            logContainer.removeChild(logContainer.children[0]);
+        }
+    }
+};
+
+// 1. ESTA ES LA FUNCIÓN QUE DEBES LLAMAR EN TU SINCRONIZAR
+window.iniciarLogs = function() {
+    if (!window.sala) return;
+    // Limpieza antes de crear
+    if (window.logsListener) off(window.logsListener);
+
+    const logsRef = ref(window.db, 'salas/' + window.sala + '/logs');
+    const logContainer = document.getElementById('game-log');
+    if (logContainer) logContainer.innerHTML = ""; // Limpiamos pantalla
+
+    // A. CARGA HISTÓRICA (El visitante ve lo que pasó antes de entrar)
+    get(logsRef).then((snapshot) => {
+        if (snapshot.exists()) {
+            snapshot.forEach((childSnap) => {
+                const msg = childSnap.val().mensaje;
+                if (msg) window.agregarLogAlDOM(msg);
+            });
+        }
+    });
+
+    // B. ESCUCHA DE NUEVOS (En tiempo real)
+    window.logsListener = onChildAdded(logsRef, (snapshot) => {
+        const msg = snapshot.val().mensaje;
+        if (msg) window.agregarLogAlDOM(msg);
+    });
+};
+
+// 2. FUNCIÓN DE RENDERIZADO (Global para jugadores y visitantes)
+window.agregarLogAlDOM = function(mensaje) {
+    const logContainer = document.getElementById('game-log');
+    if (logContainer) {
+        const div = document.createElement('div');
+        div.style.cssText = "font-size: 0.85em; margin: 4px 0; color: #d63384; font-weight: bold;";
+        div.innerHTML = `> ${mensaje}`;
+        logContainer.appendChild(div);
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+};
+
+// 3. Tus otras funciones de utilidad
 window.checkDb = function() {
     if (typeof window.db === 'undefined' || !window.db) {
         console.error("CRÍTICO: Firebase DB no está definida aún.");
@@ -27,6 +119,7 @@ window.checkDb = function() {
     return true;
 };
 
+// 4. Ejecución final
 if (typeof window.initCheatSystem === 'function') {
     window.initCheatSystem();
 }
@@ -60,19 +153,6 @@ window.cerrarDedicatoria = function() {
     
     // Aquí forzamos el play después de que el usuario hizo clic en la 'x'
     window.bgMusic.play().catch(e => console.log("Aún bloqueado por el navegador"));
-};
-
-window.log = function(mensaje) {
-    console.log("LOG:", mensaje);
-    const logContainer = document.getElementById('game-log');
-    if (logContainer) {
-        const nuevoMensaje = document.createElement('div');
-        // Estilo limpio, sin borde vertical
-        nuevoMensaje.style.cssText = "font-size: 0.85em; margin: 4px 0; color: #d63384; font-weight: bold;";
-        nuevoMensaje.innerHTML = `> ${mensaje}`;
-        logContainer.appendChild(nuevoMensaje);
-        logContainer.scrollTop = logContainer.scrollHeight;
-    }
 };
 
 window.generarTablero = function() {
@@ -129,11 +209,11 @@ window.generarTablero = function() {
     });
 };
 
-// --- SINCRONIZACIÓN CENTRALIZADA ---
 window.sincronizar = function() {
+    console.log("DEBUG: Iniciando sincronización para sala:", window.sala);
     // 1. GUARDIA DE SEGURIDAD
     if (typeof window.db === 'undefined' || !window.db) {
-        console.warn("Firebase DB no inicializada. Reintentando en 500ms...");
+        console.warn("Firebase DB no inicializada. Reintentando...");
         setTimeout(window.sincronizar, 500);
         return;
     }
@@ -149,26 +229,41 @@ window.sincronizar = function() {
     if (window.chatListener) { off(window.chatListener); window.chatListener = null; }
     if (window.estadoListener) { off(window.estadoListener); window.estadoListener = null; }
     if (window.climaListener) { off(window.climaListener); window.climaListener = null; }
+    if (window.logsListener) { off(window.logsListener); window.logsListener = null; }
+    if (window.ofertasListener) { off(window.ofertasListener); window.ofertasListener = null; }
+    if (window.reputacionListener) { off(window.reputacionListener); window.reputacionListener = null; }
+    if (window.notificacionListener) { off(window.notificacionListener); window.notificacionListener = null; }
 
     // 3. REFERENCIAS
     const salaRef = ref(window.db, 'salas/' + window.sala);
     const chatRef = ref(window.db, 'salas/' + window.sala + '/chat');
     const climaRef = ref(window.db, 'salas/' + window.sala + '/climaIdx');
 
+    // Inicializamos logs para todos (Jugadores y Visitantes)
+    if (typeof window.iniciarLogs === 'function') {
+        window.iniciarLogs();
+    }
+
     // 4. CHAT LISTENER
     window.chatListener = onValue(chatRef, (snap) => {
-        const chatLog = document.getElementById('chat-log');
-        if (!chatLog) return;
-        
-        const data = snap.val();
-        chatLog.innerHTML = ""; 
-        if (!data || typeof data !== 'object') return;
+    // 1. Buscamos el elemento PRIMERO
+    const chatLog = document.getElementById('chat-log');
+    
+    // 2. Si no existe, avisamos en la consola para detectar el error
+    if (!chatLog) {
+        console.error("¡ERROR! El elemento 'chat-log' no existe en el DOM de esta vista.");
+        return; 
+    }
+    
+    // 3. Si existe, procedemos con la lógica
+    const data = snap.val();
+    chatLog.innerHTML = ""; 
+    if (!data || typeof data !== 'object') return;
 
         Object.values(data).forEach(m => {
-            if (m.n === "Sistema" && !m.esChat) return;
+            if (m.n === "Sistema" && !m.m) return;
             const colorEstilo = m.esRosa ? "#ff80bf" : "#333";
             const nombreDisplay = (m.n === "Info" || m.n === "Sistema") ? "" : `<b>${m.n}:</b>`;
-            
             const msgDiv = document.createElement('div');
             msgDiv.style.cssText = `color: ${colorEstilo}; margin-bottom: 5px; text-align: left; word-wrap: break-word;`;
             msgDiv.innerHTML = `<small>[${m.t || "00:00"}]</small> ${nombreDisplay} ${m.m}`;
@@ -180,42 +275,38 @@ window.sincronizar = function() {
     // 5. ESTADO LISTENER (Sincronización maestra)
     window.estadoListener = onValue(salaRef, (snap) => {
         const s = snap.val();
-        
-        // --- PROTECCIÓN CRÍTICA ---
-        // Si no hay datos en la sala, abortamos para no causar errores en cascada
         if (!s) return; 
-
         window.salaData = s;
+        window.creadorSala = s.creador;
 
         // Pintamos el tablero
         if (typeof window.pintarTodasLasCasillas === 'function') {
-            try { window.pintarTodasLasCasillas(s); } catch (err) { console.warn("Esperando datos de fichas..."); }
+            try { window.pintarTodasLasCasillas(s); } catch (err) { console.warn("Esperando datos..."); }
         }
 
-        // Lógica de Creador y Botón Iniciar
-        window.creadorSala = s.creador;
+        // LÓGICA DE BOTÓN INICIAR (Blindado contra parpadeos)
         const btnIniciar = document.getElementById('btn-iniciar-partida');
         if (btnIniciar) {
-            btnIniciar.style.display = (window.miIdx && window.miIdx === window.creadorSala && s.estado === "esperando") ? 'block' : 'none';
+            const debeSerVisible = (window.miIdx && window.miIdx === s.creador && s.estado === "esperando");
+            btnIniciar.style.display = ''; 
+            if (debeSerVisible) {
+                btnIniciar.classList.remove('btn-iniciar-oculto');
+                btnIniciar.classList.add('btn-iniciar-visible');
+            } else {
+                btnIniciar.classList.remove('btn-iniciar-visible');
+                btnIniciar.classList.add('btn-iniciar-oculto');
+            }
         }
 
+        // Control de Turnos
         if (window.estadoPrevio === "esperando" && s.estado === "jugando") {
             if (typeof window.anunciar === 'function') window.anunciar("¡La partida ha comenzado!");
         }
         window.estadoPrevio = s.estado;
 
-        // Dinero (Seguridad opcional)
-        const elDinero = document.getElementById('dinero-mio');
-        if (elDinero && s.jugadores && s.jugadores[window.miIdx]) {
-            elDinero.innerText = s.jugadores[window.miIdx].dinero ?? 0;
-        }
+        // UI Turnos y Botones
+        if (typeof window.actualizarTurnoUI === 'function') window.actualizarTurnoUI(s);
 
-        // Actualización Turno
-        if (typeof window.actualizarTurnoUI === 'function') {
-            window.actualizarTurnoUI(s);
-        }
-
-        // Botón Lanzar Dado
         const btnDado = document.querySelector('img[alt="Lanzar dado"]') || document.getElementById('dice');
         if (btnDado) {
             const esMiTurno = (s.estado === "jugando" && s.turno === window.miIdx);
@@ -224,18 +315,12 @@ window.sincronizar = function() {
             btnDado.style.cursor = esMiTurno ? 'pointer' : 'default';
         }
 
-        // --- PROTECCIÓN DEFINITIVA DE TOKENS ---
-        // Se valida s.jugadores antes de procesar para evitar "Cannot read properties of undefined"
         if (s.jugadores && typeof window.actualizarTokens === 'function') {
-            try {
-                window.actualizarTokens(s.jugadores);
-            } catch (e) {
-                console.error("Error en actualizarTokens:", e);
-            }
+            try { window.actualizarTokens(s.jugadores); } catch (e) { console.error(e); }
         }
     });
 
-  // 6. CLIMA LISTENER
+    // 6. CLIMA LISTENER
     window.climaListener = onValue(climaRef, (snap) => {
         const val = snap.val();
         const idx = (val !== null && val !== undefined) ? val : 0;
@@ -252,27 +337,6 @@ window.sincronizar = function() {
                 gameLog.prepend(header);
             }
             header.innerHTML = `☁️ Clima actual: ${window.climas ? window.climas[idx].n : "Cargando..."}`;
-        }
-    });
-
-   // 7. LOGS LISTENER (SIN LIMITS, DIRECTO AL OBJETO)
-if (window.logListener) { off(window.logListener); }
-
-window.logListener = onValue(ref(window.db, 'salas/' + window.sala + '/logs'), (snap) => {
-    const data = snap.val();
-    
-    // Si no hay datos, salimos
-    if (!data || !data.mensaje) return;
-
-    // Validación: que el mensaje sea nuevo (comparamos timestamps)
-    // Inicializamos window.lastLogTimestamp = 0 en el inicio de sincronizar
-    window.lastLogTimestamp = window.lastLogTimestamp || 0;
-
-    if (data.timestamp > window.lastLogTimestamp && (Date.now() - data.timestamp < 5000)) {
-        window.lastLogTimestamp = data.timestamp;
-        if (typeof window.log === 'function') {
-            window.log(data.mensaje);
-            }
         }
     });
 };
@@ -512,23 +576,28 @@ window.mostrarErrorOcupado = function(rol) {
     window.abrirModal("⚠️ Ficha Ocupada", htmlError);
 };
 
-// --- 3. Lógica de Unión/Creación de Jugador (Fichas) ---
 window.procesarUnion = async function(salaId, rol, esCreacion) {
     window.sala = salaId;
-    const botonIniciar = document.getElementById('btn-iniciar-partida');
     
-    // Mapeo para asignar un ID de pieza único
+    // Función de seguridad para mostrar el botón
+    const forzarMostrarBoton = () => {
+        const btn = document.getElementById('btn-iniciar-partida');
+        if (btn) {
+            btn.style.setProperty('display', 'flex', 'important');
+            console.log("Botón de inicio forzado a visible.");
+        } else {
+            console.error("ERROR: No se encontró el elemento 'btn-iniciar-partida' en el DOM.");
+        }
+    };
+    
     const pieceMap = { "Dog": 0, "Horse": 1, "Hat": 2, "Car": 3 };
-    
-    // DETERMINAR SALDO INICIAL
-    // Si el rol empieza con 'v', es visitante (2000), si no, es jugador normal (1500)
     const esVisitante = rol.toString().startsWith('v');
     const dineroInicial = esVisitante ? 2000 : 1500;
     
     const datosJugador = { 
         nombre: rol, 
         pieceNum_: pieceMap[rol] ?? 0, 
-        dinero: dineroInicial, // <--- AQUÍ ESTÁ EL CAMBIO
+        dinero: dineroInicial,
         pos: 0, 
         activo: true, 
         intentosFallidos: 0, 
@@ -553,7 +622,7 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         window.creadorSala = rol; 
         window.esVisitante = esVisitante;
         
-        if (botonIniciar) botonIniciar.style.display = 'flex';
+        forzarMostrarBoton(); // Si es creador, mostramos siempre
         
         window.cerrarModal();
         window.anunciarEnChat(salaId, rol + " ha creado la sala.");
@@ -567,13 +636,16 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         runTransaction(dbRef, (jugadores) => {
             if (!jugadores) jugadores = {};
             if (jugadores[rol]) return undefined; 
-            
             jugadores[rol] = datosJugador;
             return jugadores;
         }).then((res) => {
             if (res.committed) {
                 window.miIdx = rol; 
                 window.esVisitante = esVisitante;
+                
+                // Si el que se une es el creador (o quieres que el primero lo vea), forzamos
+                forzarMostrarBoton();
+                
                 window.cerrarModal();
                 window.anunciarEnChat(salaId, rol + " se ha unido.");
                 
@@ -586,7 +658,6 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
     }
 };
 
-// B. Función para iniciar la partida y repartir dinero
 window.iniciarPartida = function() {
     if (!window.sala) return;
     
@@ -595,58 +666,27 @@ window.iniciarPartida = function() {
     get(salaRef).then((snap) => {
         const s = snap.val();
         if (!s || !s.jugadores) {
-            console.error("No se encontraron jugadores para iniciar.");
+            window.log("No hay jugadores en la sala.");
             return;
         }
 
-        // Validación: No permitir reiniciar si ya está jugando
-        if (s.estado === "jugando") {
-            window.log("La partida ya está en curso.");
-            return;
-        }
+        if (s.estado === "jugando") return;
 
-        // --- CORRECCIÓN: FILTRAR JUGADORES VÁLIDOS ---
-        const fichasValidas = ["Dog", "Horse", "Hat", "Car"]; 
-        
-        // Filtramos para que solo entren al sorteo quienes coinciden con una ficha
-        const jugadoresIds = Object.keys(s.jugadores).filter(id => fichasValidas.includes(id));
-
-        if (jugadoresIds.length === 0) {
-            window.log("Error: No hay jugadores con ficha válida para empezar.");
-            return;
-        }
-
-        // Elegimos al azar solo entre los jugadores válidos
+        const jugadoresIds = Object.keys(s.jugadores);
         const jugadorInicial = jugadoresIds[Math.floor(Math.random() * jugadoresIds.length)];
 
-        let actualizaciones = { 
-            estado: "jugando", 
-            turno: jugadorInicial 
-        };
+        let actualizaciones = { estado: "jugando", turno: jugadorInicial };
 
-        // Asignamos el dinero a todos los jugadores detectados
-        Object.keys(s.jugadores).forEach(id => {
+        // Repartir dinero a todos los que están en la rama 'jugadores'
+        jugadoresIds.forEach(id => {
             actualizaciones['jugadores/' + id + '/dinero'] = 1500;
             actualizaciones['jugadores/' + id + '/enCarcel'] = 0; 
         });
 
-        update(salaRef, actualizaciones)
-        .then(() => {
-            // Confirmación visual
-            const nombreTurno = s.jugadores[jugadorInicial].nombre || jugadorInicial;
-            window.log("¡La partida ha comenzado! Turno de: " + nombreTurno);
-            window.log("Se han repartido $1500 a cada jugador.");
-            
-            // Forzamos sincronización local
+        update(salaRef, actualizaciones).then(() => {
+            window.log("¡Partida iniciada!");
             window.sincronizar();
-        })
-        .catch((error) => {
-            console.error("Error al actualizar la base de datos:", error);
-            window.log("Error al iniciar partida: " + error.message);
         });
-
-    }).catch((error) => {
-        console.error("Error al leer la sala:", error);
     });
 };
 
@@ -662,58 +702,70 @@ window.mostrarAviso2v2 = function() {
 
 // --- 4. Unión de Visitante (Automática) ---
 window.unirseComoVisitante = async function(salaId, esCreacion, nombreVisitante = "Citizen") {
-    window.sala = salaId;
-    window.esVisitante = true;
-    
-    // --- LÓGICA DE CREACIÓN O UNIÓN ---
-    if (esCreacion) {
-        const nuevoRol = 'v1';
-        const roomData = {
-            estado: "esperando",
-            creador: nuevoRol,
-            jugadores: { 
-                [nuevoRol]: { nombre: nombreVisitante, activo: true, pos: 0, dinero: 2000 } 
-            }
-        };
-        await set(ref(db, 'salas/' + salaId), roomData);
-        window.miIdx = nuevoRol;
-        window.creadorSala = nuevoRol;
-    } else {
-        const dbRef = ref(db, 'salas/' + salaId + '/jugadores');
-        const res = await runTransaction(dbRef, (jugadores) => {
-            if (!jugadores) jugadores = {};
-            const numVisitantes = Object.keys(jugadores).filter(k => k.startsWith('v')).length;
-            const nuevoRol = 'v' + (numVisitantes + 1);
-            jugadores[nuevoRol] = { 
-                nombre: nombreVisitante + " " + (numVisitantes + 1), 
-                activo: true, 
-                pos: 0, 
-                dinero: 2000 
+    try {
+        window.sala = salaId;
+        window.esVisitante = true;
+        
+        // --- LÓGICA DE CREACIÓN O UNIÓN ---
+        if (esCreacion) {
+            const nuevoRol = 'v1';
+            const roomData = {
+                estado: "esperando",
+                creador: nuevoRol,
+                jugadores: { 
+                    [nuevoRol]: { nombre: nombreVisitante, activo: true, pos: 0, dinero: 2000 } 
+                }
             };
+            await set(ref(window.db, 'salas/' + salaId), roomData);
             window.miIdx = nuevoRol;
-            return jugadores;
+            window.creadorSala = nuevoRol;
+        } else {
+            const dbRef = ref(window.db, 'salas/' + salaId + '/jugadores');
+            const res = await runTransaction(dbRef, (jugadores) => {
+                if (!jugadores) jugadores = {};
+                const numVisitantes = Object.keys(jugadores).filter(k => k.startsWith('v')).length;
+                const nuevoRol = 'v' + (numVisitantes + 1);
+                jugadores[nuevoRol] = { 
+                    nombre: nombreVisitante + " " + (numVisitantes + 1), 
+                    activo: true, 
+                    pos: 0, 
+                    dinero: 2000 
+                };
+                window.miIdx = nuevoRol;
+                return jugadores;
+            });
+            if (!res.committed) throw new Error("No se pudo unir a la sala (Transacción fallida)");
+        }
+
+        // --- INICIALIZACIÓN DE DATOS ---
+        const visitanteRef = ref(window.db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
+        await set(visitanteRef, {
+            nombre: nombreVisitante,
+            activo: true, 
+            pos: 0, 
+            reputacion: 0,
+            misionesCompletadas: 0
         });
-        if (!res.committed) return;
+
+        // --- FINALIZACIÓN Y UI (Blindada) ---
+        window.cerrarModal();
+        if (typeof window.anunciarEnChat === 'function') window.anunciarEnChat(salaId, "Un visitante se ha unido a la partida.");
+        if (typeof window.actualizarBotonesPoderes === 'function') window.actualizarBotonesPoderes();
+        
+        // CORRECCIÓN DEL ERROR: Solo ejecutar si la función existe
+        if (typeof window.renderEstrellas === 'function') {
+            window.renderEstrellas(0);
+        }
+
+        window.abrirModal("Éxito", `<p>Entraste como <b>Visitante</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
+        
+        // LLAMADA CRÍTICA:
+        window.sincronizar();
+
+    } catch (error) {
+        console.error("Error crítico al unirse:", error);
+        window.abrirModal("Error", `<p>No se pudo conectar: ${error.message}</p>`);
     }
-
-    // --- INICIALIZACIÓN DE DATOS ---
-    // Usamos window.miIdx directamente, que ya está definido arriba
-    const visitanteRef = ref(db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
-    await set(visitanteRef, {
-        nombre: nombreVisitante,
-        activo: true, 
-        pos: 0, 
-        reputacion: 0,
-        misionesCompletadas: 0
-    });
-
-    // --- FINALIZACIÓN Y UI ---
-    window.cerrarModal();
-    window.anunciarEnChat(salaId, "Un visitante se ha unido a la partida.");
-    window.actualizarBotonesPoderes();
-    window.renderEstrellas(0);
-    window.abrirModal("Éxito", `<p>Entraste como <b>Visitante</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
-    window.sincronizar();
 };
 
 // --- 5. Anuncio en Chat y Desconexión (Crítico) ---
@@ -902,41 +954,48 @@ window.pasarTurno = async function() {
     const salaRef = ref(db, 'salas/' + window.sala);
     const snap = await get(salaRef);
     const s = snap.val();
+    
+    // Si no hay jugadores, abortar
     if (!s || !s.jugadores) return;
 
+    // Filtramos jugadores válidos (que NO son visitantes)
     const listaJugadores = Object.keys(s.jugadores).filter(id => !id.startsWith('v'));
-    const idxActual = listaJugadores.indexOf(s.turno);
     
-    // Función recursiva para encontrar el siguiente jugador válido
+    // Si no hay jugadores normales, no se puede pasar turno
+    if (listaJugadores.length === 0) return;
+
+    // Asegurar que s.turno sea válido, si no, empezar por el primero
+    let idxActual = listaJugadores.indexOf(s.turno);
+    if (idxActual === -1) idxActual = 0; 
+    
     const buscarSiguiente = async (indice) => {
         let siguienteIdx = (indice + 1) % listaJugadores.length;
         let siguienteId = listaJugadores[siguienteIdx];
         let jugadorSiguiente = s.jugadores[siguienteId];
 
-        // Si el jugador está en la cárcel, reducimos su condena
+        // Validar que el objeto jugadorSiguiente exista
+        if (!jugadorSiguiente) return buscarSiguiente(siguienteIdx);
+
         if (jugadorSiguiente.enCarcel > 0) {
             let nuevoContador = jugadorSiguiente.enCarcel - 1;
             
-            // Actualizamos su contador en Firebase
             await update(ref(db, `salas/${window.sala}/jugadores/${siguienteId}`), {
                 enCarcel: nuevoContador
             });
 
             if (nuevoContador > 0) {
-                window.log(jugadorSiguiente.nombre + " sigue en la cárcel. Le quedan " + nuevoContador + " turnos.");
-                // Si aún le quedan turnos, volvemos a llamar a la función para buscar al siguiente
+                window.log(jugadorSiguiente.nombre + " sigue en la cárcel.");
                 return await buscarSiguiente(siguienteIdx);
             } else {
-                window.log(jugadorSiguiente.nombre + " ha cumplido su condena y sale de la cárcel.");
-                return siguienteId; // Ya es libre, este es el turno
+                window.log(jugadorSiguiente.nombre + " ha salido de la cárcel.");
+                return siguienteId;
             }
         }
-        return siguienteId; // Es libre, este es el turno
+        return siguienteId;
     };
 
     const siguienteId = await buscarSiguiente(idxActual);
     
-    // Finalizamos el cambio de turno
     await update(salaRef, { turno: siguienteId });
     window.log("Turno de: " + (s.jugadores[siguienteId]?.nombre || siguienteId));
 };
@@ -1201,28 +1260,31 @@ window.pagarPrestamo = async function() {
 
     // 4. Aplicar cambios de forma atómica
     try {
-        const estrellasActuales = (j.estrellas || 0);
-        const nuevasEstrellas = estrellasActuales + 1;
+        // Ahora usamos 'reputacion' (o 'estrellas' como respaldo) para mantener la consistencia
+        const repActual = parseInt(j.reputacion || j.estrellas || 0);
+        const nuevaRep = repActual + 1;
 
-        // Usamos increment para que el saldo inicial de 1500/2000 se respete perfectamente
         await update(jRef, { 
             tienePrestamo: false, 
             montoPrestamo: 0,
             dinero: increment(-j.montoPrestamo), 
-            estrellas: nuevasEstrellas
+            reputacion: nuevaRep,
+            // Opcional: limpiar el campo viejo si ya migraste todo a 'reputacion'
+            estrellas: null 
         });
 
-        // 5. Refrescar la interfaz inmediatamente
-        if (typeof window.renderEstrellas === 'function') {
-            window.renderEstrellas(nuevasEstrellas);
+        // 5. Refrescar la interfaz
+        // Si tienes una función para renderizar la reputación, llámala aquí
+        if (typeof window.renderReputacion === 'function') {
+            window.renderReputacion(nuevaRep);
         }
 
-        window.log("¡Deuda liquidada! Has ganado 1 estrella de reputación.");
+        window.log("¡Deuda liquidada! Has ganado 1 punto de reputación.");
 
         window.abrirModal("Banco Central", `
             <div class="modal-body">
                 <p>Deuda liquidada correctamente.</p>
-                <p>Has recibido <b>+1 estrella</b> de reputación por tu responsabilidad financiera.</p>
+                <p>Has recibido <b>+1 punto</b> de reputación por tu responsabilidad financiera.</p>
                 <button class="btn-accion" style="margin-top:15px;" onclick="window.cerrarModal()">Aceptar</button>
             </div>
         `);
@@ -1324,25 +1386,27 @@ window.verificarParColor = async function(pos, todasLasPropiedades) {
         todasLasPropiedades[idx] && todasLasPropiedades[idx].owner === window.miIdx
     );
 
-    // Si tiene exactamente 2, le damos la estrella
+    // Si tiene exactamente 2, le damos la recompensa
     if (propiasDelGrupo.length === 2) {
         const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
         const snap = await get(jugadorRef);
         let j = snap.val();
 
-        // Evitamos dar la estrella si ya la tiene registrada
+        // Evitamos dar el bono si ya lo tiene registrado
         if (!j.bonoParColor) {
-            const nuevasEstrellas = (j.estrellas || 0) + 1;
+            // Usamos 'reputacion' (o 'estrellas' si aún no has migrado el campo)
+            const repActual = parseInt(j.reputacion || j.estrellas || 0);
+            const nuevaRep = repActual + 1;
             
             await update(jugadorRef, { 
-                estrellas: nuevasEstrellas,
+                reputacion: nuevaRep,
                 bonoParColor: true 
             });
 
-            window.log("⭐ ¡Has adquirido un par de color y ganado una estrella!");
+            window.log("⭐ ¡Has adquirido un par de color y ganado una estrella de reputación!");
 
-            // Llamamos a tu función de aviso de reputación que ya usa el modal CSS
-            window.mostrarAvisoReputacion(nuevasEstrellas);
+            // Llamamos a la función sin parámetros, ya que ella misma lee la DB
+            window.mostrarAvisoReputacion();
         }
     }
 };
@@ -1392,9 +1456,7 @@ window.comprar = function(pos) {
                         Solicitar Préstamo ($1000)
                     </button>
                     
-                    <button class="btn-accion" style="width: 100%; background: #ff59aa;" onclick="window.cerrarModal()">
-                        Cancelar
-                    </button>
+                    
                 </div>
             `);
         }
@@ -1677,23 +1739,6 @@ window.interaccionAlquiler = function(ownerIdx, monto) {
     };
 };
 
-// 2. Ejecuta el pago normal
-window.confirmarPago = async function(ownerIdx, monto) {
-    window.decisionTomada = true;
-    const montoLimpio = parseFloat(monto) || 0;
-    const esImpuesto = (ownerIdx === 'IMPUESTO');
-    
-    if (esImpuesto) {
-        await update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { dinero: increment(-montoLimpio) });
-        await update(ref(db, 'salas/' + window.sala), { pozoImpuestos: increment(montoLimpio) });
-    } else {
-        await window.pagarAlquiler(ownerIdx, montoLimpio);
-    }
-    
-    window.log("Pago normal realizado: $" + montoLimpio);
-    window.cerrarModal();
-};
-
 // 3. Función centralizada de pago (la única que debes usar)
 window.pagarAlquiler = async function(ownerIdx, monto) {
     const montoLimpio = parseFloat(monto) || 0;
@@ -1711,17 +1756,24 @@ window.pagarAlquiler = async function(ownerIdx, monto) {
     await update(dRef, { dinero: increment(montoLimpio) });
 
     window.log("Alquiler de $" + montoLimpio + " pagado correctamente.");
-    window.cerrarModal();
+    // NOTA: Se eliminó window.cerrarModal() de aquí porque ya se llama 
+    // desde la función principal que invoca a pagarAlquiler.
 };
 
 // 2. Ejecuta el pago normal si el jugador no quiere arriesgarse
 window.confirmarPago = async function(ownerIdx, monto) {
-    // 1. FORZAMOS A QUE MONTO SEA NÚMERO AQUÍ
+    // 1. FORZAMOS A QUE MONTO SEA NÚMERO
     const montoNumerico = parseFloat(monto) || 0;
     
     window.decisionTomada = true;
     const esImpuesto = (ownerIdx === 'IMPUESTO');
     
+    // 2. REGISTRO EN EL SISTEMA DE REPUTACIÓN (Éxito)
+    // Se registra como acción positiva para el contador de 5 veces
+    const tipoAccion = esImpuesto ? 'impuesto' : 'alquiler';
+    await window.actualizarReputacionConContador(tipoAccion, true);
+
+    // 3. LÓGICA DE PAGO
     if (esImpuesto) {
         await update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { 
             dinero: increment(-montoNumerico) 
@@ -1733,7 +1785,7 @@ window.confirmarPago = async function(ownerIdx, monto) {
         await window.pagarAlquiler(ownerIdx, montoNumerico);
     }
     
-    // 2. USAMOS EL VALOR LIMPIO
+    // 4. LOG Y CIERRE
     window.log("Pago normal realizado: $" + montoNumerico);
     window.cerrarModal();
 };
@@ -1742,8 +1794,9 @@ window.procesarEvasion = async function(ownerIdx, monto) {
     window.decisionTomada = true;
     const montoLimpio = parseFloat(monto) || 0;
     const esImpuesto = (ownerIdx === 'IMPUESTO');
+    const tipoAccion = esImpuesto ? 'impuesto' : 'alquiler';
     
-    // 1. Desactivar botones para evitar clics múltiples
+    // 1. Desactivar botones
     const botones = document.querySelectorAll('.btn-accion');
     botones.forEach(b => { b.disabled = true; b.style.opacity = "0.5"; });
 
@@ -1752,9 +1805,10 @@ window.procesarEvasion = async function(ownerIdx, monto) {
     let j = snap.val();
     const rnd = Math.random();
 
-    // 2. LÓGICA DE PAGO
+    // 2. LÓGICA DE EVASIÓN
     if (rnd > 0.6) {
         window.log("¡Éxito! Has evadido totalmente.");
+        // Opcional: Si evadir es una acción, aquí podrías contar el éxito de evasión si lo deseas
     } 
     else if (rnd > 0.3) {
         const montoParcial = Math.max(1, Math.floor(montoLimpio / 2));
@@ -1767,19 +1821,11 @@ window.procesarEvasion = async function(ownerIdx, monto) {
         }
     } 
     else {
-        // Falló la evasión
+        // Falló la evasión: Penalización
         const multa = montoLimpio + 100;
-        let intentos = (j.intentosFallidos || 0) + 1;
-        let updates = { intentosFallidos: intentos };
         
-        // Penalización por intentos fallidos
-        if (intentos >= 5) { 
-            updates.intentosFallidos = 0; 
-            updates.estrellas = Math.max(0, (j.estrellas || 0) - 1); 
-            window.log("¡Has perdido 1 estrella por reincidencia!");
-        }
-        
-        await update(jugadorRef, updates);
+        // NOTIFICACIÓN A SISTEMA DE REPUTACIÓN: Fallo (Acción de Evasión)
+        await window.actualizarReputacionConContador(tipoAccion, false);
         
         if (esImpuesto) {
             await update(jugadorRef, { dinero: increment(-multa) });
@@ -1793,6 +1839,9 @@ window.procesarEvasion = async function(ownerIdx, monto) {
 };
 
 window.pagarImpuesto = async function(monto) {
+    // NOTIFICACIÓN A SISTEMA DE REPUTACIÓN: Éxito (Pagó correctamente)
+    await window.actualizarReputacionConContador('impuesto', true);
+    
     await update(ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { dinero: increment(-monto) });
     await update(ref(db, 'salas/' + window.sala), { pozoImpuestos: increment(monto) });
     window.cerrarModal();
@@ -1803,7 +1852,7 @@ window.mejorar = function(pos) {
     const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const tRef = ref(db, 'salas/' + window.sala + '/propiedades');
 
-    Promise.all([get(tRef), get(jRef)]).then(([snapT, snapJ]) => {
+    Promise.all([get(tRef), get(jRef)]).then(async ([snapT, snapJ]) => {
         const todas = snapT.val();
         const j = snapJ.val();
         const costo = 50; 
@@ -1811,12 +1860,16 @@ window.mejorar = function(pos) {
         if (window.verificarMonopolio(pos, todas) && j.dinero >= costo) {
             const nivelActual = (todas[pos].nivel || 0);
             if (nivelActual < 5) {
-                update(pRef, { nivel: nivelActual + 1 });
-                update(jRef, { dinero: j.dinero - costo });
+                // 1. APLICAR MEJORA
+                await update(pRef, { nivel: nivelActual + 1 });
+                await update(jRef, { dinero: j.dinero - costo });
+                
+                // 2. REGISTRAR EN CONTADOR DE REPUTACIÓN (Éxito en construcción)
+                await window.actualizarReputacionConContador('construccion', true);
+                
                 window.cerrarModal();
                 window.log("Propiedad mejorada al nivel " + (nivelActual + 1));
             } else {
-                // Mensaje límite hotel con CSS
                 window.abrirModal("Límite alcanzado", `
                     <div style="text-align: center; padding: 10px;">
                         <p>¡Ya tienes un hotel (nivel máximo)!</p>
@@ -1825,7 +1878,6 @@ window.mejorar = function(pos) {
                 `);
             }
         } else {
-            // Mensaje requisitos con CSS
             window.abrirModal("Acción no permitida", `
                 <div style="text-align: center; padding: 10px;">
                     <p>Necesitas poseer todas las propiedades del mismo color y dinero suficiente para mejorar.</p>
@@ -1866,7 +1918,7 @@ window.hipotecar = function(pos) {
                 update(pRef, { hipotecada: false });
                 update(jRef, { dinero: j.dinero - costoLiberar });
                 
-                window.abrirModal("🏦 Banco Hipotecario", `
+                window.abrirModal("Banco Hipotecario", `
                     <div style="text-align:center; padding:15px;">
                         <p>Has pagado la deuda y liberado tu propiedad.</p>
                         <p style="font-size:1.2em; font-weight:bold; color:#2ecc71;">Costo: $${costoLiberar}</p>
@@ -1906,7 +1958,7 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     const esTurnoActual = (data.turno === window.miIdx);
     const puedeComprar = esLlegadaPorMovimiento && esTurnoActual;
     const prop = data.propiedades ? data.propiedades[posInt] : null;
-    const p = window.mapa[posInt]; // Tu configuración del tablero
+    const p = window.mapa[posInt]; 
     const jugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
 
     if (prop && prop.owner) window.pintarCasilla(posInt, prop.owner);
@@ -1928,11 +1980,9 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     }
 
     // --- 2. PROPIEDAD NORMAL ---
-   if (p && p.p > 0) {
+    if (p && p.p > 0) {
         if (prop && prop.owner && prop.owner !== window.miIdx) {
-            // AQUI ESTABA EL FALLO: Si p.a es 0, usamos el 10% del precio (p.p) como respaldo
             const alquilerReal = (p.a && p.a > 0) ? p.a : Math.floor(p.p * 0.1);
-            console.log("DEBUG: Cobrando alquiler de:", alquilerReal);
             window.interaccionAlquiler(prop.owner, alquilerReal);
         } else {
             window.verPropiedad(posInt, puedeComprar);
@@ -1948,21 +1998,15 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         const carta = window.obtenerCarta();
         titulo = (p.n === "ARCA COMUNAL") ? "Arca Comunal" : "Suerte (?)";
         await update(jugadorRef, { dinero: increment(carta.v) });
+        // Si gana dinero en Arca/Suerte, cuenta como éxito
+        if (carta.v > 0) await window.actualizarReputacionConContador('evento', true);
         contenido = `<h2>${titulo}</h2><p>${carta.txt}</p>`;
     } 
     else if (posInt === 9) {
-        console.log("¡Cárcel detectada!");
         const snapJ = await get(jugadorRef);
         let j = snapJ.val();
         let visitas = (j?.visitasCarcel || 0) + 1;
-        
-        // enCarcel: 2 significa que te quedan 2 turnos (turno actual + 1 extra)
-        await update(jugadorRef, { 
-            enCarcel: 2, 
-            visitasCarcel: visitas, 
-            pos: 9 
-        });
-        
+        await update(jugadorRef, { enCarcel: 2, visitasCarcel: visitas, pos: 9 });
         window.mostrarOpcionesCarcel();
         return; 
     }
@@ -1978,8 +2022,11 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     }
     else if (p.n === "PARADA") {
         const pozo = data.pozoImpuestos || 0;
-        await update(jugadorRef, { dinero: increment(pozo) });
-        await update(salaRef, { pozoImpuestos: 0 });
+        if (pozo > 0) {
+            await update(jugadorRef, { dinero: increment(pozo) });
+            await update(salaRef, { pozoImpuestos: 0 });
+            await window.actualizarReputacionConContador('evento', true);
+        }
         titulo = "Parada Gratuita";
         contenido = `<h2>Parada</h2><p>Recolectaste $${pozo}.</p>`;
     }
@@ -2000,18 +2047,14 @@ window.mostrarOpcionesCarcel = function() {
 
 window.pagarFianza = async function() {
     const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    
-    // Obtenemos los datos actuales para verificar el contador
     const snap = await get(jugadorRef);
     const j = snap.val();
     
-    // Verificamos si tiene saldo suficiente
     if ((j.dinero || 0) < 200) {
         window.abrirModal("Error", "No tienes suficiente dinero para pagar la fianza ($200).");
         return;
     }
 
-    // Calculamos el nuevo contador de fianzas
     let fianzasPagadas = (j.fianzasPagadas || 0) + 1;
     let updates = { 
         enCarcel: 0, 
@@ -2021,14 +2064,13 @@ window.pagarFianza = async function() {
 
     let mensaje = "Fianza pagada.";
 
-    // Si llega a 3, le damos la estrella y reiniciamos el contador
     if (fianzasPagadas >= 3) {
-        updates.fianzasPagadas = 0; // Reiniciamos para que pueda volver a ganar otra
-        updates.estrellas = increment(1);
-        mensaje = "¡Fianza pagada! Por tu buena conducta al pagar 3 veces, has ganado 1 estrella.";
+        updates.fianzasPagadas = 0;
+        // CORRECCIÓN: usamos reputacion en lugar de estrellas
+        updates.reputacion = increment(1);
+        mensaje = "¡Fianza pagada! Por tu buena conducta al pagar 3 veces, has ganado 1 punto de reputación.";
     }
 
-    // Ejecutamos los cambios
     await update(jugadorRef, updates);
     
     window.log(mensaje);
@@ -2041,7 +2083,6 @@ window.pagarFianza = async function() {
 };
 
 window.estaEnCarcel = function(jugadorData) {
-    // Si enCarcel es mayor a 0, el jugador está cumpliendo condena
     return (jugadorData.enCarcel || 0) > 0;
 };
 
@@ -2056,8 +2097,10 @@ window.quedarseEnCarcel = async function() {
 
     if (cumplidas >= 10) {
         updates.cumplidasCarcel = 0;
-        updates.estrellas = (j.estrellas || 5) + 1;
-        mensajeExtra = `<p style="color: #ff59aa;"><b>¡Felicidades!</b> Has ganado 1 estrella por buen comportamiento.</p>`;
+        // CORRECCIÓN: usamos reputacion en lugar de estrellas
+        const repActual = parseInt(j.reputacion || 0);
+        updates.reputacion = repActual + 1;
+        mensajeExtra = `<p style="color: #ff59aa;"><b>¡Felicidades!</b> Has ganado 1 punto de reputación por buen comportamiento.</p>`;
     }
 
     await update(jugadorRef, updates);
@@ -2071,22 +2114,20 @@ window.quedarseEnCarcel = async function() {
     `);
 
     window.log("Cumpliendo condena...");
-    
-    // Aquí es donde el visitante podría actuar (lógica futura)
-    // Se pasa turno porque decidió quedarse
     if (typeof window.pasarTurno === 'function') window.pasarTurno();
 };
-
 
 window.intentarHackeo = async function() {
     const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const snap = await get(jugadorRef);
     const j = snap.val();
 
-    // 1. Lógica de Éxito
     if (Math.random() < 0.5) {
         window.log("¡HACKEO EXITOSO!");
-        await update(jugadorRef, { enCarcel: 0 });
+        await update(jugadorRef, { 
+            enCarcel: 0,
+            turnosExtraBloqueados: 0 
+        });
         
         window.abrirModal("¡Éxito!", `
             <div style="text-align: center; padding: 15px;">
@@ -2096,19 +2137,17 @@ window.intentarHackeo = async function() {
                 <button onclick="window.cerrarModal()" style="width:100%; padding:10px; background:#4dff88; border:none; border-radius:5px; cursor:pointer;">Continuar</button>
             </div>
         `);
-    } 
-    // 2. Lógica de Fallo (Unificamos con castigarJugador)
-    else {
+    } else {
         window.log("¡FALLASTE!");
-        
-        // Incrementamos la penalización (usando el nuevo sistema de contador)
         const pen = (j.turnosExtraBloqueados || 0) + 1;
         await update(jugadorRef, { 
             enCarcel: 1, 
             turnosExtraBloqueados: pen 
         });
 
-        // Mostramos el modal de castigo unificado
+        // Esta función ya utiliza el campo 'reputacion' internamente en la lógica unificada
+        await window.actualizarReputacionConContador('hackeo', false);
+
         const html = `
             <div style="text-align: center; padding: 15px;">
                 <div style="font-size: 3em; margin-bottom: 10px;">🛡️</div>
@@ -2124,8 +2163,67 @@ window.intentarHackeo = async function() {
                 </button>
             </div>
         `;
-
         window.abrirModal("¡ALERTA DE SEGURIDAD!", html);
+    }
+};
+
+window.actualizarReputacionConContador = async function(tipoAccion, fueExitoso) {
+    // 1. Identificar ruta (Visitante o Jugador)
+    const rutaBase = window.esVisitante 
+        ? 'salas/' + window.sala + '/visitantes/' + window.miIdx 
+        : 'salas/' + window.sala + '/jugadores/' + window.miIdx;
+
+    const refUsuario = ref(db, rutaBase);
+    const snap = await get(refUsuario);
+    const u = snap.val();
+    
+    if (!u) return;
+
+    // 2. Definir campos de contador
+    const campoContador = `contador_${tipoAccion}_${fueExitoso ? 'exitoso' : 'fallido'}`;
+    let contador = (u[campoContador] || 0) + 1;
+    let actualizaciones = { [campoContador]: contador };
+    let mensaje = "";
+
+    // 3. Lógica de 5 acciones (Reseteo y ajuste de reputación)
+    if (contador >= 5) {
+        actualizaciones[campoContador] = 0; // Reset del contador al llegar a 5
+        
+        // Obtenemos el valor actual de reputación (priorizando el campo unificado)
+        const repActual = parseInt(u.reputacion || u.estrellas || 0);
+
+        if (window.esVisitante) {
+            // Lógica para Ángeles/Gárgulas
+            const alineamiento = u.alineamiento;
+            let cambioRep = (fueExitoso) ? (alineamiento === 'angel' ? 1 : -1) : (alineamiento === 'angel' ? -1 : 1);
+            let nuevaRep = Math.max(0, Math.min(5, repActual + cambioRep));
+            
+            actualizaciones.reputacion = nuevaRep;
+            // Limpiamos el campo viejo si existía
+            if (u.estrellas !== undefined) actualizaciones.estrellas = null;
+
+            if (nuevaRep > repActual) window.verificarAscenso(repActual, nuevaRep);
+            mensaje = `¡Evento de reputación! ${fueExitoso ? "Éxito" : "Fallo"} en ${tipoAccion}. Reputación ajustada.`;
+        } else {
+            // Lógica para Jugadores Normales
+            let nuevaRep = Math.max(0, Math.min(5, repActual + (fueExitoso ? 1 : -1)));
+            
+            actualizaciones.reputacion = nuevaRep;
+            // Limpiamos el campo viejo si existía
+            if (u.estrellas !== undefined) actualizaciones.estrellas = null;
+
+            mensaje = fueExitoso ? "¡Logro acumulado! +1 reputación." : "¡Penalización! -1 reputación.";
+        }
+    }
+
+    // 4. Aplicar actualizaciones a Firebase
+    await update(refUsuario, actualizaciones);
+    
+    // 5. Log y actualización visual
+    if (mensaje) window.log(mensaje);
+    if (typeof window.renderEstrellas === 'function') {
+        const nuevaRepVisual = actualizaciones.reputacion !== undefined ? actualizaciones.reputacion : (u.reputacion || u.estrellas || 0);
+        window.renderEstrellas(nuevaRepVisual);
     }
 };
 
@@ -2136,35 +2234,39 @@ window.otorgarRecompensaMision = async function(mision) {
     let j = snap.val();
     
     // 1. Preparamos el objeto de actualizaciones
+    // Usamos 'reputacion' (o estrellas de respaldo)
+    const repActual = parseInt(j.reputacion || j.estrellas || 0);
     let updates = { 
         dinero: increment(mision.rec) 
     };
 
-    let ganoEstrella = false;
-    const estrellasActuales = j.estrellas || 0;
+    let ganoRep = false;
 
-    // 2. Lógica de estrella (solo si es menor a 5)
-    if (estrellasActuales < 5) {
-        updates.estrellas = estrellasActuales + 1;
-        ganoEstrella = true;
+    // 2. Lógica de reputación (solo si es menor a 5)
+    if (repActual < 5) {
+        updates.reputacion = repActual + 1;
+        // Limpiamos el campo viejo si existía
+        if (j.estrellas !== undefined) updates.estrellas = null;
+        ganoRep = true;
     }
 
     // 3. Aplicamos los cambios en Firebase
     await update(jugadorRef, updates);
     
-    // 4. Actualizamos la interfaz visual de las estrellas al instante
-    if (typeof window.renderEstrellas === 'function') {
-        const nuevoValor = ganoEstrella ? updates.estrellas : estrellasActuales;
-        window.renderEstrellas(nuevoValor);
+    // 4. Actualizamos la interfaz visual si existe la función
+    if (typeof window.renderReputacion === 'function') {
+        const nuevoValor = ganoRep ? (repActual + 1) : repActual;
+        window.renderReputacion(nuevoValor);
     }
     
     window.log(`Misión completada: ${mision.titulo}. Recompensa: $${mision.rec}`);
 
-    // 5. Solo si ganó estrella y NO es el máximo, lanzamos el aviso CSS
-    if (ganoEstrella) {
-        window.mostrarAvisoReputacion(updates.estrellas);
+    // 5. Aviso de recompensa
+    if (ganoRep) {
+        // La función mostrarAvisoReputacion ya lee la base de datos sola
+        window.mostrarAvisoReputacion();
     } else {
-        // Si no ganó estrella (ya es nivel 5), solo avisamos del dinero
+        // Si ya es nivel 5, solo avisamos del dinero
         window.abrirModal("Misión Completada", `
             <div style="text-align: center;">
                 <h2>${mision.titulo}</h2>
@@ -2197,7 +2299,7 @@ window.abrirModalMisiones = function() {
             </div>`;
         });
     } else {
-        html += `<h2 style="color: #ff59aa; margin-top: 0;">🏆 Objetivos del Jugador</h2>`;
+        html += `<h2 style="color: #ff59aa; margin-top: 0;">Objetivos del Jugador</h2>`;
         const misiones = [
             { titulo: 'Inversor', desc: 'Poseer 3 propiedades.', rec: 200 },
             { titulo: 'Coleccionista', desc: 'Completar un set.', rec: 300 },
@@ -2209,28 +2311,34 @@ window.abrirModalMisiones = function() {
             <div style="background: #fff; padding: 10px; margin: 10px 0; border-radius: 10px; border: 1px solid #ff80bf; text-align: left;">
                 <div style="font-weight: bold; color: #ff59aa;">${m.titulo}</div>
                 <div style="font-size: 0.9em; margin: 5px 0;">${m.desc}</div>
-                <div style="font-size: 0.85em; font-weight: bold; color: #ff59aa;">Premio: $${m.rec}</div>
+                <div style="font-size: 0.85em; font-weight: bold; color: #ff59aa;">Premio: $${m.rec} + 1 Reputación</div>
             </div>`;
         });
     }
     
     html += `</div>`;
+    
+    // Abrimos el modal con el título correspondiente según el rol
     window.abrirModal(esVisitante ? "Misiones" : "Logros", html);
 };
 
-  window.renderEstrellas = function(rep) {
-    // 1. Actualizar texto del botón
+  window.renderReputacion = function(rep) {
+    // 1. Actualizar texto del botón (Cambiamos el nombre de ID si fuera necesario, 
+    // pero mantendré 'btn-reputacion-global' como tenías)
     const btn = document.getElementById('btn-reputacion-global');
     if (btn) btn.innerText = `Reputación: ${rep} ★`;
 
-    // 2. Actualizar estrellas (Buscamos elementos dentro del modal o del contenedor si existen)
+    // 2. Actualizar visualización de estrellas
+    // Buscamos elementos con ID star-1 hasta star-5
     for (let i = 1; i <= 5; i++) {
         const star = document.getElementById(`star-${i}`);
         if (star) {
+            // Si el índice i es menor o igual a la reputación actual, se ilumina
             star.style.color = i <= rep ? '#ff59aa' : '#ccc';
         }
     }
-    console.log("Estrellas actualizadas a:", rep);
+    
+    console.log("Reputación actualizada visualmente a:", rep);
 };
 
 window.aplicarConsecuenciaReputacion = async function(esMalaAccion) {
@@ -2242,16 +2350,16 @@ window.aplicarConsecuenciaReputacion = async function(esMalaAccion) {
 
     if (!v) return;
 
-    // 2. VERIFICACIÓN CRÍTICA: Si no existe el campo 'alineamiento', obligamos a elegir y detenemos la acción
+    // 2. VERIFICACIÓN CRÍTICA: Si no existe el campo 'alineamiento', obligamos a elegir
     if (!v.alineamiento) {
         console.log("Visitante sin alineamiento detectado. Abriendo modal...");
         window.preguntarAlineamiento();
-        return; // Salimos inmediatamente: el poder no se aplica
+        return; 
     }
 
-    // 3. Procesamos la consecuencia (El visitante YA tiene alineamiento)
+    // 3. Procesamos la consecuencia (Usamos reputacion, respaldado por estrellas)
     const alineamiento = v.alineamiento;
-    let rep = parseInt(v.reputacion) || 0;
+    let rep = parseInt(v.reputacion || v.estrellas || 0);
 
     // Lógica: Ángel (Buena=+1, Mala=-1) | Gárgola (Buenas=-1, Mala=+1)
     if (alineamiento === 'angel') {
@@ -2260,12 +2368,19 @@ window.aplicarConsecuenciaReputacion = async function(esMalaAccion) {
         rep = esMalaAccion ? (rep + 1) : (rep - 1);
     }
 
-    // Límites estrictos de 0 a 5 estrellas
+    // Límites estrictos de 0 a 5
     rep = Math.max(0, Math.min(5, rep));
 
-    // 4. Actualizamos Firebase y refrescamos la UI
-    await update(vRef, { reputacion: rep });
-    window.renderEstrellas(rep);
+    // 4. Actualizamos Firebase (limpiando estrellas si existían)
+    await update(vRef, { 
+        reputacion: rep,
+        estrellas: null 
+    });
+
+    // 5. Refrescamos la UI con la función unificada
+    if (typeof window.renderReputacion === 'function') {
+        window.renderReputacion(rep);
+    }
     
     console.log(`Acción procesada: Mala=${esMalaAccion} | Alineamiento: ${alineamiento} | Reputación: ${rep}`);
 };
@@ -2284,7 +2399,7 @@ window.intentarUsarPoder = async function(esMalaAccion, callbackDelPoder) {
     // Si ya existe, primero aplicamos la consecuencia de reputación
     await window.aplicarConsecuenciaReputacion(esMalaAccion);
     
-    // Luego, ejecutamos el poder real (el callback que venía pendiente)
+    // Luego, ejecutamos el poder real
     if (typeof callbackDelPoder === 'function') {
         callbackDelPoder();
     }
@@ -2296,21 +2411,31 @@ window.preguntarAlineamiento = function() {
             <h2 style="color: #ff59aa;">¿Cuál es tu naturaleza?</h2>
             <p>Al realizar acciones, tu reputación definirá tu camino:</p>
             <button class="btn-sidebar" style="background: #ff59aa; color: white; width:100%; margin:10px 0; padding:10px;" 
-                    onclick="window.guardarAlineamiento('angel')">👼 Ángel (Malas acciones restan)</button>
+                    onclick="window.guardarAlineamiento('angel')">Ángel (Malas acciones restan)</button>
             <button class="btn-sidebar" style="background: #333; color: white; width:100%; margin:10px 0; padding:10px;" 
-                    onclick="window.guardarAlineamiento('gargola')">👺 Gárgola (Buenas acciones restan)</button>
+                    onclick="window.guardarAlineamiento('gargola')">Gárgola (Buenas acciones restan)</button>
         </div>`;
     window.abrirModal("Elección de Destino", html);
 };
 
 window.guardarAlineamiento = async function(tipo) {
     const vRef = ref(db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
+    
+    // Guardamos el alineamiento y establecemos la reputación inicial en 0
     await update(vRef, { 
         alineamiento: tipo, 
-        reputacion: 0 // CORREGIDO: Inicio en 0
+        reputacion: 0,
+        // Eliminamos rastro del campo viejo si existía
+        estrellas: null 
     });
+    
     window.cerrarModal();
-    window.renderEstrellas(0);
+    
+    // Usamos la nueva función unificada de renderizado
+    if (typeof window.renderReputacion === 'function') {
+        window.renderReputacion(0);
+    }
+    
     window.log(`Has elegido tu destino: ${tipo === 'angel' ? 'Ángel' : 'Gárgola'}`);
 };
 
@@ -2320,12 +2445,15 @@ const verificarYInyectar = setInterval(() => {
     const container = document.getElementById("container-poderes");
     
     if (btn && !container) {
-        window.actualizarBotonesPoderes();
+        if (typeof window.actualizarBotonesPoderes === 'function') {
+            window.actualizarBotonesPoderes();
+        }
     }
 }, 500);
 
 // --- 1. BARRA DE PODERES ---
 window.actualizarBotonesPoderes = function() {
+    // Verificamos que sea visitante y que no exista ya la barra para evitar duplicados
     if (window.esVisitante && !document.getElementById('barra-tareas-poderes')) {
         const barra = document.createElement('div');
         barra.id = 'barra-tareas-poderes';
@@ -2333,7 +2461,6 @@ window.actualizarBotonesPoderes = function() {
         
         const estiloBtn = `padding: 5px 12px; font-size: 11px; height: 30px; border-radius: 15px; background: #ffccd5; border: 1px solid #ff80bf; color: #c71585; cursor: pointer;`;
 
-        // Hemos quitado los onclick directos y los asignaremos abajo programáticamente
         barra.innerHTML = `
             <button id="poder-escudo" class="btn-sidebar" style="${estiloBtn}">Escudo</button>
             <button id="poder-sabotaje-5" class="btn-sidebar" style="${estiloBtn}">Sabotear 5% ($300)</button>
@@ -2344,7 +2471,7 @@ window.actualizarBotonesPoderes = function() {
         document.body.appendChild(barra);
         document.body.style.paddingBottom = "70px";
 
-        // Asignación de eventos usando el validador de reputación
+        // Asignación de eventos: intentamos usar el poder tras aplicar la consecuencia de reputación
         document.getElementById('poder-escudo').onclick = () => window.intentarUsarPoder(false, window.abrirMenuProteccion);
         
         document.getElementById('poder-sabotaje-5').onclick = () => window.intentarUsarPoder(true, () => window.seleccionarObjetivoSabotaje(0.05, 300));
@@ -2359,8 +2486,10 @@ window.actualizarBotonesPoderes = function() {
 
 // --- 2. LÓGICA DE PAGO CENTRALIZADA ---
 window.validarYDescontar = async function(costo) {
-    // Usamos window.db por seguridad para asegurar que siempre haya conexión
-    const jRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    // Usamos la variable global db (o window.db si así la tienes configurada en tu init de Firebase)
+    const dbRef = window.db || db; 
+    const jRef = ref(dbRef, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    
     const snap = await get(jRef);
     const datos = snap.val();
     
@@ -2456,6 +2585,11 @@ window.ejecutarRescate = async function(idPreso, costo) {
             mensaje: mensajeLog,
             timestamp: Date.now()
         });
+
+        // INTEGRACIÓN REPUTACIÓN: Rescatar es una BUENA acción (false en esMalaAccion)
+        if (window.esVisitante) {
+            await window.aplicarConsecuenciaReputacion(false);
+        }
     }
 };
 
@@ -2574,61 +2708,124 @@ window.abrirMenuProteccion = async function() {
 window.esJugadorValido = (id, d) => (d && d.tipo === 'jugador') || !id.startsWith('v');
 
 
-window.obtenerTituloReputacion = function(datos) {
-    const rep = parseInt(datos.reputacion) || 0;
-    const esGargola = datos.alineamiento === 'gargola'; // Asegúrate de usar 'alineamiento' (el campo de tu DB)
+window.actualizarReputacionConContador = async function(tipoAccion, fueExitoso) {
+    // 1. Identificar si es Visitante o Jugador
+    const rutaBase = window.esVisitante 
+        ? 'salas/' + window.sala + '/visitantes/' + window.miIdx 
+        : 'salas/' + window.sala + '/jugadores/' + window.miIdx;
 
-    const niveles = esGargola ? [
-        {t: "Sombra", d: "Apenas inicias tu camino de caos."},
-        {t: "Inquietud", d: "Tu presencia incomoda a la ciudad."},
-        {t: "Saboteador", d: "Has causado problemas reales."},
-        {t: "Agente del Caos", d: "El pánico sigue tus pasos."},
-        {t: "Monarca Oscuro", d: "La ciudad es tu patio de juegos."}
-    ] : [
-        {t: "Aprendiz de Luz", d: "Dando tus primeros pasos bondadosos."},
-        {t: "Ayudante", d: "La gente empieza a notar tu bondad."},
-        {t: "Guardián", d: "Proteges a los necesitados."},
-        {t: "Héroe Local", d: "Eres un pilar de la comunidad."},
-        {t: "Ángel de la Ciudad", d: "Tu luz es invencible."}
-    ];
+    const refUsuario = ref(db, rutaBase);
+    const snap = await get(refUsuario);
+    const u = snap.val();
+    if (!u) return;
+    
+    // 2. Definir campos
+    const campoContador = `contador_${tipoAccion}_${fueExitoso ? 'exitoso' : 'fallido'}`;
+    let contador = (u[campoContador] || 0) + 1;
+    let actualizaciones = { [campoContador]: contador };
+    
+    // Guardamos la reputación anterior para verificar cambios
+    const repAnterior = parseInt(u.reputacion || u.estrellas || 0);
 
-    // CORREGIDO: Si rep es 0, mostramos mensaje inicial, si es 1-5 usamos el índice rep-1
-    if (rep <= 0) return {t: "Desconocido", d: "Aún no has realizado acciones."};
-    return niveles[Math.min(rep - 1, 4)];
+    // 3. Lógica de 5 acciones
+    if (contador >= 5) {
+        actualizaciones[campoContador] = 0; // Reset
+        
+        let nuevaRep = repAnterior;
+
+        if (window.esVisitante) {
+            const alineamiento = u.alineamiento;
+            let cambio = (fueExitoso) ? (alineamiento === 'angel' ? 1 : -1) : (alineamiento === 'angel' ? -1 : 1);
+            nuevaRep = Math.max(0, Math.min(5, repAnterior + cambio));
+        } else {
+            nuevaRep = Math.max(0, Math.min(5, repAnterior + (fueExitoso ? 1 : -1)));
+        }
+
+        actualizaciones.reputacion = nuevaRep;
+        if (u.estrellas !== undefined) actualizaciones.estrellas = null; // Limpieza
+
+        // 4. Lógica de Ascenso integrada
+        if (nuevaRep > repAnterior) {
+            // Obtenemos la info usando la función unificada
+            const info = window.obtenerInfoReputacion({ ...u, reputacion: nuevaRep });
+            
+            window.abrirModal("¡Ascenso de Rango!", `
+                <div style="text-align:center; padding: 20px;">
+                    <h2 style="color: #ff59aa;">¡Felicidades!</h2>
+                    <p>Has alcanzado el nuevo rango de:</p>
+                    <h3 style="color: #ff59aa; font-size: 1.5em; margin: 10px 0;">${info.t}</h3>
+                    <p style="font-style: italic; color: #555;">${info.d}</p>
+                    <div style="font-size: 2em; margin: 20px 0; color: #ff59aa; font-weight: bold;">
+                        ${nuevaRep} ★
+                    </div>
+                    <button onclick="window.cerrarModal()" style="background: #ff59aa; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer;">
+                        Continuar
+                    </button>
+                </div>
+            `);
+        } else {
+            window.log(fueExitoso ? "Reputación aumentada." : "Reputación penalizada.");
+        }
+    }
+
+    await update(refUsuario, actualizaciones);
+    if (typeof window.renderReputacion === 'function') window.renderReputacion(actualizaciones.reputacion || repAnterior);
 };
 
-// --- 3. MANTENIMIENTO DE INTERFAZ ---
+window.obtenerInfoReputacion = function(datos) {
+    // 1. Unificamos la lectura del valor de reputación/estrellas
+    // (Asegúrate de que en Firebase el campo se llame 'reputacion' en ambos casos para evitar errores)
+    const rep = parseInt(datos.reputacion || datos.estrellas) || 0;
 
-// Vinculación automática del botón
-setInterval(() => {
-    const btn = document.getElementById('btn-reputacion-global');
-    if (btn && !btn.onclick) {
-        btn.onclick = window.mostrarAvisoReputacion;
-        btn.style.cursor = 'pointer';
+    // 2. Lógica para VISITANTES (Ángeles / Gárgolas)
+    if (window.esVisitante) {
+        const esGargola = datos.alineamiento === 'gargola';
+        const niveles = esGargola ? [
+            {t: "Sombra", d: "Apenas inicias tu camino de caos."},
+            {t: "Inquietud", d: "Tu presencia incomoda a la ciudad."},
+            {t: "Saboteador", d: "Has causado problemas reales."},
+            {t: "Agente del Caos", d: "El pánico sigue tus pasos."},
+            {t: "Monarca Oscuro", d: "La ciudad es tu patio de juegos."}
+        ] : [
+            {t: "Aprendiz de Luz", d: "Dando tus primeros pasos bondadosos."},
+            {t: "Ayudante", d: "La gente empieza a notar tu bondad."},
+            {t: "Guardián", d: "Proteges a los necesitados."},
+            {t: "Héroe Local", d: "Eres un pilar de la comunidad."},
+            {t: "Ángel de la Ciudad", d: "Tu luz es invencible."}
+        ];
+
+        if (rep <= 0) return {t: "Desconocido", d: "Aún no has realizado acciones."};
+        return niveles[Math.min(rep - 1, 4)];
+    } 
+    
+    // 3. Lógica para JUGADORES (Tabla estándar)
+    else {
+        const data = [
+            { t: "Principiante en Sombras", d: "Apenas comienzas tu camino. Eres un extraño en las calles de Naeun Town." },
+            { t: "Novato Urbano", d: "Empiezas a ser reconocido en el vecindario. Tu presencia se nota." },
+            { t: "Estrella Naciente", d: "Tu nombre suena en los negocios locales. Empiezas a destacar." },
+            { t: "Ciudadano Distinguido", d: "Cuentas con el respeto de los habitantes. Eres alguien importante." },
+            { t: "Icono de la Ciudad", d: "Tu influencia es innegable. Todos conocen tus hazañas." },
+            { t: "Leyenda de Naeun Town", d: "Eres el dueño de la ciudad. Tu nombre quedará grabado en la historia." }
+        ];
+        
+        const idx = Math.min(rep, data.length - 1);
+        return data[idx];
     }
-}, 1000);
+};
 
 window.obtenerReputacionData = function(reputacion) {
-    const data = [
-        { t: "Principiante en Sombras", d: "Apenas comienzas tu camino. Eres un extraño en las calles de Naeun Town." },
-        { t: "Novato Urbano", d: "Empiezas a ser reconocido en el vecindario. Tu presencia se nota." },
-        { t: "Estrella Naciente", d: "Tu nombre suena en los negocios locales. Empiezas a destacar." },
-        { t: "Ciudadano Distinguido", d: "Cuentas con el respeto de los habitantes. Eres alguien importante." },
-        { t: "Icono de la Ciudad", d: "Tu influencia es innegable. Todos conocen tus hazañas." },
-        { t: "Leyenda de Naeun Town", d: "Eres el dueño de la ciudad. Tu nombre quedará grabado en la historia." }
-    ];
-    // Asegura que no se pase del índice máximo
+    const data = window.obtenerTablaReputacion();
     const idx = Math.min(reputacion, data.length - 1);
     return data[idx];
 };
 
+// 2. FUNCIÓN DE MOSTRAR AVISO (Corregida y optimizada)
 window.mostrarAvisoReputacion = async function() {
-    // 1. Determinar la ruta correcta dependiendo de si es visitante o jugador
     const ruta = window.esVisitante 
         ? 'salas/' + window.sala + '/visitantes/' + window.miIdx 
         : 'salas/' + window.sala + '/jugadores/' + window.miIdx;
 
-    // 2. Obtener datos frescos desde la base de datos
     const snap = await get(ref(db, ruta));
     const miData = snap.val();
     
@@ -2637,65 +2834,75 @@ window.mostrarAvisoReputacion = async function() {
         return;
     }
 
-    // 3. Obtener título y descripción
-    const info = window.obtenerTituloReputacion(miData);
+    // Usamos la función unificada de info
+    const info = window.obtenerInfoReputacion(miData);
+    const puntos = parseInt(miData.reputacion || 0);
     
-    // 4. Renderizar modal
     const contenido = `
         <div style="text-align: center; padding: 20px;">
             <h2 style="color: #ff59aa;">${info.t}</h2>
             <p style="font-size: 1.1em; margin-bottom: 10px;">${info.d}</p>
-            <div style="font-size: 3em; margin: 15px 0; color: #ff59aa;">${miData.reputacion || 0} ★</div>
-            <button onclick="window.cerrarModal()" style="background: #ff59aa; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer;">Entendido</button>
+            <div style="font-size: 3em; margin: 15px 0; color: #ff59aa; font-weight: bold;">
+                ${puntos} ★
+            </div>
+            <button onclick="window.cerrarModal()" style="background: #ff59aa; color: white; border: none; padding: 12px 25px; border-radius: 20px; cursor: pointer; font-weight: bold;">
+                Entendido
+            </button>
         </div>`;
     
     window.abrirModal("Tu Estado", contenido);
 };
 
-window.verificarAscenso = function(repAnterior, repNueva) {
-    // Solo mostramos si el nivel aumentó realmente
-    if (repNueva > repAnterior) {
-        // Necesitamos obtener los datos según el tipo (Ángel/Gárgola)
-        // Usamos una llamada genérica que se apoye en tu función de títulos
-        const data = window.obtenerTituloReputacion({ reputacion: repNueva, alineamiento: window.miAlineamiento });
+window.completarMisionVisitante = async function(tipo) {
+    try {
+        const rol = window.esVisitante ? 'visitantes' : 'jugadores';
+        const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
         
-        window.abrirModal("¡Ascenso de Rango!", `
-            <div style="text-align:center;">
-                <h2 style="color: #ff59aa;">¡Felicidades!</h2>
-                <p>Has alcanzado el rango de:</p>
-                <h3 style="color: #ff59aa; font-size: 1.5em;">${data.t}</h3>
-                <p><i>${data.d}</i></p>
-                <div style="font-size: 2em; margin: 10px;">${repNueva} ★</div>
-            </div>
-        `);
+        const snap = await get(userRef);
+        const datos = snap.val();
+        if (!datos) return;
+
+        // 1. Calcular reputación (usando campo unificado)
+        const repActual = parseInt(datos.reputacion || datos.estrellas || 0);
+        const cambio = (tipo === 'angel') ? 1 : -1;
+        const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
+        
+        const recompensa = (tipo === 'angel') ? 200 : 150;
+        const nombreMision = (tipo === 'angel') ? "Misión de Benefactor" : "Misión de Saboteador";
+
+        // 2. Actualizar datos en Firebase
+        await update(userRef, { 
+            reputacion: nuevaRep,
+            estrellas: null, // Limpiamos campo viejo
+            dinero: increment(recompensa),
+            misionesCompletadas: increment(1),
+            tipoReputacion: tipo
+        });
+
+        // 3. Actualizar interfaz visual unificada
+        if (typeof window.renderReputacion === 'function') {
+            window.renderReputacion(nuevaRep);
+        }
+
+        // 4. Mostrar aviso de resultado
+        // Primero mostramos el éxito de la misión y luego el estado de reputación
+        if (typeof window.mostrarExitoMision === 'function') {
+            window.mostrarExitoMision(nombreMision, recompensa);
+        } else {
+            window.log(`${nombreMision} completada. Recompensa: $${recompensa}`);
+        }
+
+        // Llamamos al aviso de reputación unificado
+        window.mostrarAvisoReputacion();
+
+        window.cerrarModal();
+        console.log(`Misión ${tipo} completada. Reputación: ${nuevaRep}`);
+
+    } catch (error) {
+        console.error("Error al completar misión:", error);
+        if (typeof window.log === 'function') window.log("Error al procesar la misión.");
     }
 };
-
-window.completarMisionVisitante = async function(tipo) {
-    const rol = window.esVisitante ? 'visitantes' : 'jugadores';
-    const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
-    const snap = await get(userRef);
-    const datos = snap.val();
-    if (!datos) return;
-
-    // Usamos 'reputacion' (el mismo campo)
-    const repActual = datos.reputacion ?? 0;
-    const cambio = (tipo === 'angel') ? 1 : -1;
-    const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
-    
-    await update(userRef, { 
-        reputacion: nuevaRep,
-        dinero: increment((tipo === 'angel') ? 200 : 150),
-        tipoReputacion: tipo // 'angel' o 'gargola'
-    });
-
-    // Disparamos la actualización visual
-    window.renderEstrellas(nuevaRep);
-    
-    // Opcional: mostrar aviso si quieres
-    window.mostrarAvisoReputacionVisitante(); 
-};
-
 
 // --- 1. CONFIGURACIÓN DE HERRAMIENTAS ---
 // Asegúrate de que 'ref', 'get', 'update', 'db', 'increment' estén definidos globalmente en tu proyecto
@@ -2734,51 +2941,6 @@ window.verInfoReputacionEnConsola = async function() {
         }
     } catch (e) {
         console.error("❌ Error al cargar datos para la consola:", e);
-    }
-};
-
-window.completarMisionVisitante = async function(tipo) {
-    try {
-        const rol = window.esVisitante ? 'visitantes' : 'jugadores';
-        const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
-        
-        const snap = await get(userRef);
-        const datos = snap.val();
-        if (!datos) return;
-
-        // Calcular reputación (0 a 5)
-        const repActual = datos.reputacion ?? 0;
-        const cambio = (tipo === 'angel') ? 1 : -1;
-        const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
-        
-        const recompensa = (tipo === 'angel') ? 200 : 150;
-        const nombreMision = (tipo === 'angel') ? "Misión de Benefactor" : "Misión de Saboteador";
-
-        // Actualizar datos
-        await update(userRef, { 
-            reputacion: nuevaRep,
-            dinero: increment(recompensa),
-            misionesCompletadas: increment(1),
-            tipoReputacion: (tipo === 'angel') ? 'angel' : 'gargola'
-        });
-
-        // 5. Actualizar interfaz visual
-        if (typeof window.renderEstrellas === 'function') {
-            window.renderEstrellas(nuevaRep);
-        }
-
-        if (typeof window.mostrarExitoMision === 'function') {
-            window.mostrarExitoMision(nombreMision, recompensa);
-        } else {
-            window.log(`${nombreMision} completada. Recompensa: $${recompensa}`);
-        }
-
-        window.cerrarModal();
-        console.log(`Misión ${tipo} completada. Reputación: ${nuevaRep}`);
-
-    } catch (error) {
-        console.error("Error al completar misión:", error);
-        if (typeof window.log === 'function') window.log("Error al procesar la misión.");
     }
 };
 
@@ -2905,19 +3067,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 5. LISTENERS GLOBALES (Notificaciones y Logs)
     if (window.db && window.sala && window.miIdx) {
-        // Notificaciones Privadas
-        onValue(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), (snap) => {
-            const aviso = snap.val();
-            if (aviso && aviso.titulo && (Date.now() - (aviso.timestamp || 0) < 10000)) {
-                window.abrirModal(aviso.titulo, `
-                    <div style="text-align: center;">
-                        <p style="font-size: 1.1em; color: #c71585;">${aviso.mensaje}</p>
-                        <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>
-                    </div>
-                `);
-                update(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), { titulo: null, mensaje: null, timestamp: 0 });
-            }
-        });
+    
+    // Notificaciones Privadas (Controlada)
+    window.notificacionListener = onValue(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), (snap) => {
+        const aviso = snap.val();
+        if (aviso && aviso.titulo && (Date.now() - (aviso.timestamp || 0) < 10000)) {
+            window.abrirModal(aviso.titulo, `
+                <div style="text-align: center;">
+                    <p style="font-size: 1.1em; color: #c71585;">${aviso.mensaje}</p>
+                    <button class="btn-accion" style="width: 100%; margin-top: 15px;" onclick="window.cerrarModal()">Entendido</button>
+                </div>
+            `);
+            update(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), { titulo: null, mensaje: null, timestamp: 0 });
+        }
+    });
 
         // Gamelog
         const logsRef = query(ref(window.db, 'salas/' + window.sala + '/logs'), limitToLast(1));
@@ -2933,13 +3096,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // 5b. LISTENER DE REPUTACIÓN EN TIEMPO REAL
-        onValue(ref(window.db, 'salas/' + window.sala + '/visitantes/' + window.miIdx), (snap) => {
-            const data = snap.val();
-            if (data && data.reputacion !== undefined) {
-                window.renderEstrellas(data.reputacion);
-            }
-        });
-    }
+        window.reputacionListener = onValue(ref(window.db, 'salas/' + window.sala + '/visitantes/' + window.miIdx), (snap) => {
+        const data = snap.val();
+        if (data && data.reputacion !== undefined) {
+            window.renderEstrellas(data.reputacion);
+        }
+    });
+}
 
     // 6. VINCULACIÓN DE REPUTACIÓN
     const iniciarVinculoReputacion = () => {
