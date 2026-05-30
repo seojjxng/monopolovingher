@@ -11,7 +11,7 @@ const database = getDatabase(app);
 window.db = database; 
 
 window.nombres = ["Dog", "Horse", "Hat", "Car"];
-window.colores = ["#ffb7b2", "#f29f9f", "#c2f0c9", "#f3aee9"];
+window.colores = ["#88c4ec", "#f29c9c", "#c2f0c9", "#f3aee9"];
 
 // Variables globales de listeners
 window.chatListener = null;
@@ -125,6 +125,12 @@ window.generarTablero = function() {
                     <div class="nombre">${casilla.n}</div>
                  </div>`
             );
+
+        // Contenedor de mejoras
+        const hc = document.createElement('div');
+        hc.className = 'house-container';
+        d.appendChild(hc);
+
         board.appendChild(d);
     });
 };
@@ -355,6 +361,22 @@ window.cerrarModal = function() {
     }
 };
 
+// Añade esto una vez al inicio de tu script
+window.obtenerDatosJugador = function(id, data = null) {
+    // 1. Si tenemos data (snapshot), buscamos ahí primero
+    if (data && data.jugadores && data.jugadores[id]) {
+        return {
+            nombre: data.jugadores[id].nombre || "Jugador",
+            color: window.colores ? (window.colores[id] || "#ccc") : "#ccc"
+        };
+    }
+    // 2. Si no, buscamos en globales (Respaldo)
+    return {
+        nombre: (window.nombres && window.nombres[id]) ? window.nombres[id] : "Jugador " + id,
+        color: (window.colores && window.colores[id]) ? window.colores[id] : "#ccc"
+    };
+};
+
 // --- 1. CONFIGURACIÓN GLOBAL ---
 window.climas = Object.freeze([
     // Bonanza (Suben alquiler)
@@ -435,11 +457,11 @@ window.mapa = [
 ];
 
 const grupos = [
-    {color: "#ff80bf", indices: [1, 3, 4, 5]},
-    {color: "#a5d8ff", indices: [7, 10, 11, 13]},
-    {color: "#b2f2bb", indices: [14, 15, 16, 17]},
-    {color: "#ffd8a8", indices: [19, 20, 21, 23]}, 
-    {color: "#f5f5dc", indices: [8, 24, 26, 27]} 
+    {color: "#edca70", indices: [1, 3, 4, 5]},
+    {color: "#6bb8da", indices: [7, 10, 11, 13]},
+    {color: "#f571b1", indices: [14, 15, 16, 17]},
+    {color: "#7cc687", indices: [19, 20, 21, 23]}, 
+    {color: "#b671e7", indices: [8, 24, 26, 27]} 
 ];
 
 // 3. Funciones de Posicionamiento
@@ -588,30 +610,34 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
         }
         
     } else {
-        // 3. Lógica si te unes a una sala existente (Transacción Atómica)
+        // 3. Lógica si te unes o te reconectas (Transacción Atómica)
         const dbRef = ref(db, 'salas/' + salaId + '/jugadores');
         
         runTransaction(dbRef, (jugadores) => {
             if (!jugadores) jugadores = {};
             
-            // Si el rol ya existe, abortamos la transacción para no sobrescribir
-            if (jugadores[rol]) return undefined; 
-            
-            jugadores[rol] = datosJugador;
+            if (jugadores[rol]) {
+                // RECONEXIÓN: El jugador ya existe, solo activamos su estado.
+                // Mantenemos TODO lo demás (dinero, pos, etc.) intacto.
+                jugadores[rol].activo = true; 
+            } else {
+                // UNIÓN: Jugador nuevo, creamos su ficha desde cero.
+                jugadores[rol] = datosJugador;
+            }
             return jugadores;
         }).then((res) => {
             if (res.committed) {
-                // Éxito: El servidor aceptó la escritura
+                // Éxito: El servidor aceptó la unión o reconexión
                 window.miIdx = rol; 
                 window.esVisitante = esVisitante;
                 
                 window.cerrarModal();
-                window.anunciarEnChat(salaId, rol + " se ha unido.");
+                window.anunciarEnChat(salaId, rol + " se ha unido o reconectado.");
                 
                 window.sincronizar();
                 if (typeof window.escucharOfertas === 'function') window.escucharOfertas(); 
             } else {
-                // Fallo: Alguien se adelantó o la lógica de negocio impidió la unión
+                // Fallo: Ocurrió un error en la transacción o el ID estaba bloqueado
                 window.mostrarErrorOcupado(rol);
             }
         }).catch((err) => {
@@ -620,7 +646,6 @@ window.procesarUnion = async function(salaId, rol, esCreacion) {
     }
 };
 
-
 window.iniciarPartida = function() {
     if (!window.sala) return;
     
@@ -628,6 +653,8 @@ window.iniciarPartida = function() {
     
     get(salaRef).then((snap) => {
         const s = snap.val();
+        
+        // Verificación de seguridad
         if (!s || !s.jugadores) {
             console.error("No se encontraron jugadores para iniciar.");
             window.log("Error: No hay nadie en la sala para empezar.");
@@ -640,9 +667,7 @@ window.iniciarPartida = function() {
             return;
         }
 
-        // --- CORRECCIÓN: ELIMINACIÓN DE FILTRO HARDCODEADO ---
-        // Ahora todos los usuarios registrados en 'jugadores' (tanto Jugadores como Visitantes) 
-        // son válidos para iniciar el sorteo del turno inicial.
+        // Obtenemos los IDs (roles) de los jugadores registrados
         const jugadoresIds = Object.keys(s.jugadores);
 
         if (jugadoresIds.length === 0) {
@@ -650,34 +675,38 @@ window.iniciarPartida = function() {
             return;
         }
 
-        // Elegimos al azar entre TODOS los participantes
+        // Elegimos al azar usando los IDs
         const jugadorInicial = jugadoresIds[Math.floor(Math.random() * jugadoresIds.length)];
 
+        // Preparamos las actualizaciones (rutas relativas a la sala)
         let actualizaciones = { 
             estado: "jugando", 
             turno: jugadorInicial 
         };
 
-        // Asignamos el dinero a todos los participantes detectados
-        // Se mantiene la lógica de reparto de $1500 para todos
-        Object.keys(s.jugadores).forEach(id => {
+        // Asignamos condiciones iniciales a cada jugador por su ID
+        jugadoresIds.forEach(id => {
             actualizaciones['jugadores/' + id + '/dinero'] = 1500;
             actualizaciones['jugadores/' + id + '/enCarcel'] = 0; 
+            actualizaciones['jugadores/' + id + '/activo'] = true;
         });
 
+        // Ejecutamos la actualización atómica
         update(salaRef, actualizaciones)
         .then(() => {
-            // Confirmación visual
-            const nombreTurno = s.jugadores[jugadorInicial].nombre || jugadorInicial;
+            // Confirmación segura: usamos el ID para buscar el nombre
+            const jugadorData = s.jugadores[jugadorInicial];
+            const nombreTurno = jugadorData ? (jugadorData.nombre || jugadorInicial) : jugadorInicial;
+            
             window.log("¡La partida ha comenzado! Turno de: " + nombreTurno);
             window.log("Se han repartido $1500 a cada participante.");
             
-            // Forzamos sincronización local para actualizar botones y tablero inmediatamente
+            // Forzamos sincronización local
             window.sincronizar();
         })
         .catch((error) => {
             console.error("Error al actualizar la base de datos:", error);
-            window.log("Error al iniciar partida: " + error.message);
+            window.abrirModal("Error", "No se pudo iniciar la partida: " + error.message);
         });
 
     }).catch((error) => {
@@ -695,27 +724,27 @@ window.mostrarAviso2v2 = function() {
     `);
 };
 
-// --- 4. Unión de Visitante (Automática) ---
 // --- 4. Unión de Visitante (Persistente y con distinción) ---
-window.unirseComoVisitante = async function(salaId, esCreacion, nombreVisitante = "Citizen") {
+window.unirseComoVisitante = async function(salaId, esCreacion, nombreVisitante = "Visitante") {
     window.sala = salaId;
     window.esVisitante = true;
+    
+    // El ID será el nombre del visitante proporcionado
+    const miRolCalculado = nombreVisitante;
     
     // Configuración unificada para visitante dentro de 'jugadores'
     const datosVisitante = { 
         nombre: nombreVisitante, 
-        esVisitante: true, // Discriminador crítico
+        esVisitante: true, 
         activo: true, 
         pos: 0, 
         dinero: 2000,
         reputacion: 0,
-        misionesCompletadas: 0
+        misionesCompletadas: 0,
+        pieceNum_: 99 // Fallback de seguridad
     };
 
-    let miRolCalculado = "";
-
     if (esCreacion) {
-        miRolCalculado = 'v1';
         const roomData = {
             estado: "esperando",
             creador: miRolCalculado,
@@ -726,12 +755,22 @@ window.unirseComoVisitante = async function(salaId, esCreacion, nombreVisitante 
         const dbRef = ref(db, 'salas/' + salaId + '/jugadores');
         const res = await runTransaction(dbRef, (jugadores) => {
             if (!jugadores) jugadores = {};
-            const numVisitantes = Object.keys(jugadores).filter(k => k.startsWith('v')).length;
-            miRolCalculado = 'v' + (numVisitantes + 1);
-            jugadores[miRolCalculado] = datosVisitante;
+            
+            // Lógica de reconexión/unión por ID (sin auto-incremento)
+            if (jugadores[miRolCalculado]) {
+                // Si el ID existe, solo marcamos como activo
+                jugadores[miRolCalculado].activo = true;
+            } else {
+                // Si el ID no existe, creamos la ficha
+                jugadores[miRolCalculado] = datosVisitante;
+            }
             return jugadores;
         });
-        if (!res.committed) return;
+        
+        if (!res.committed) {
+            console.error("Error en la transacción de unión de visitante.");
+            return;
+        }
     }
 
     // --- FINALIZACIÓN Y PERSISTENCIA ---
@@ -741,7 +780,7 @@ window.unirseComoVisitante = async function(salaId, esCreacion, nombreVisitante 
     window.configurarDesconexion(window.sala, window.miIdx);
     
     window.cerrarModal();
-    window.anunciarEnChat(salaId, "Un visitante se ha unido a la partida.");
+    window.anunciarEnChat(salaId, nombreVisitante + " se ha unido a la partida.");
     window.actualizarBotonesPoderes();
     window.renderEstrellas(0);
     window.abrirModal("Éxito", `<p>Entraste como <b>Visitante (${window.miIdx})</b></p><button class="btn-sidebar" onclick="window.cerrarModal()">Comenzar</button>`);
@@ -762,6 +801,7 @@ window.anunciarEnChat = function(salaId, mensaje, esSistema = true) {
 };
 
 window.configurarDesconexion = function(salaId, jugadorIdx) {
+    // jugadorIdx es el ID único (ej: "Dog", "v1")
     const miRef = ref(db, 'salas/' + salaId + '/jugadores/' + jugadorIdx);
 
     // Marcamos como inactivo en lugar de borrar para mantener la integridad de los turnos
@@ -775,9 +815,11 @@ window.enviarMensaje = function() {
     if (!input) return;
     
     const mensaje = input.value.trim();
+    // window.miIdx es el ID/Nombre del jugador
     if (mensaje === "" || !window.sala || window.miIdx === undefined) return;
     
     let idMostrar = window.miIdx;
+    // Si el ID es de un visitante (empieza por 'v'), lo formateamos para el chat
     if (typeof idMostrar === 'string' && idMostrar.startsWith('v')) {
         idMostrar = "Visitante " + idMostrar.replace('v', '');
     }
@@ -793,20 +835,9 @@ window.enviarMensaje = function() {
 
 // --- Lógica de Lanzamiento de Dado ---
 window.tirarDado = async function() {
-    // 1. Verificación: Los visitantes NO pueden mover fichas
-    if (window.esVisitante) {
-        console.warn("Los visitantes no pueden lanzar el dado.");
-        return;
-    }
-
-    // 2. Verificación básica y de bloqueo
+    if (window.esVisitante) { console.warn("Los visitantes no pueden lanzar el dado."); return; }
     if (typeof window.miIdx === 'undefined' || window.estaLanzando) return;
-    
-    // Usamos window.db por consistencia
-    if (typeof window.db === 'undefined' || !window.db) {
-        console.error("Firebase DB no está definida.");
-        return;
-    }
+    if (typeof window.db === 'undefined' || !window.db) return;
 
     window.estaLanzando = true;
     const btnDado = document.querySelector('img[alt="Lanzar dado"]') || document.getElementById('dice');
@@ -815,23 +846,19 @@ window.tirarDado = async function() {
     try {
         const salaRef = ref(window.db, 'salas/' + window.sala);
         const snap = await get(salaRef);
-        
-        if (!snap.exists()) { console.error("Sala perdida"); return; }
+        if (!snap.exists()) { console.error("Sala perdida"); window.estaLanzando = false; return; }
         let s = snap.val();
 
-        // Seguridad: Verificar que existen jugadores
-        if (!s.jugadores) { console.error("No hay jugadores en la sala"); window.estaLanzando = false; return; }
+        if (!s.jugadores) { console.error("No hay jugadores"); window.estaLanzando = false; return; }
 
-        // --- LÓGICA DE AUTO-INICIO Y TURNO ---
         if (!s.turno || s.estado !== "jugando") {
             await update(salaRef, { estado: "jugando", turno: window.miIdx });
-            s.turno = window.miIdx;
-            s.estado = "jugando";
+            s.turno = window.miIdx; s.estado = "jugando";
         }
 
         const keys = Object.keys(s.jugadores || {});
-        const jugadoresReales = keys.filter(k => !String(k).startsWith('v'));
-        const esSolo = jugadoresReales.length === 1;
+        // Lógica de ID: Filtramos por los IDs de los jugadores para verificar si es el turno
+        const esSolo = keys.filter(k => !String(k).startsWith('v')).length === 1;
 
         if (!esSolo && String(s.turno) !== String(window.miIdx)) {
             window.estaLanzando = false;
@@ -839,19 +866,16 @@ window.tirarDado = async function() {
             return;
         }
 
-        // --- BLOQUEO DE CÁRCEL (BLINDADO) ---
         const miJugador = s.jugadores[window.miIdx];
         if (!miJugador) return; 
 
-        // Si enCarcel es mayor a 0, detenemos el flujo aquí mismo
         if ((miJugador.enCarcel ?? 0) > 0) {
-            window.mostrarOpcionesCarcel(); // Abrimos el modal
-            window.estaLanzando = false; // Liberamos el flag
-            if (btnDado) btnDado.style.pointerEvents = 'auto'; // Reactivamos botón
-            return; // EXIT POINT: El jugador no puede tirar
+            window.mostrarOpcionesCarcel();
+            window.estaLanzando = false;
+            if (btnDado) btnDado.style.pointerEvents = 'auto';
+            return;
         }
 
-        // --- LANZAMIENTO DEL DADO ---
         const array = new Uint32Array(1);
         window.crypto.getRandomValues(array);
         const dado = (array[0] % 6) + 1;
@@ -859,35 +883,56 @@ window.tirarDado = async function() {
         window.lanzarDado3D(dado);
         await new Promise(r => setTimeout(r, 700));
 
+        // --- LÓGICA TRES SEIS (FRAUDE) ---
+        window.consecutivos6 = (dado === 6) ? (window.consecutivos6 + 1) : 0;
+
+        if (window.consecutivos6 >= 3) {
+            window.consecutivos6 = 0;
+            
+            // --- ACTUALIZACIÓN DE REPUTACIÓN POR ID ---
+            if (typeof window.actualizarReputacionConContador === 'function') {
+                await window.actualizarReputacionConContador('fraude', false);
+            }
+
+            await update(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { 
+                pos: 9, enCarcel: 1 
+            });
+            
+            window.log("¡Cazado! " + (window.nombres[window.miIdx] || "Jugador") + " fue enviado a la cárcel por fraude.");
+            
+            window.abrirModal("¡FRAUDE EN EL CASINO!", `
+                <div class="modal-fraude">
+                    <h2>¡Juego Sucio!</h2>
+                    <p>La seguridad del casino te ha sorprendido haciendo trampa con los dados.</p>
+                    <p>Te enviamos a la cárcel a cumplir condena (un turno sin jugar).</p>
+                    <button onclick="window.cerrarModal(); window.pasarTurno();" class="btn-sidebar" style="margin-top: 10px;">Aceptar consecuencias</button>
+                </div>
+            `);
+            
+            window.estaLanzando = false;
+            if (btnDado) btnDado.style.pointerEvents = 'auto';
+            return; 
+        }
+
+        // --- MOVIMIENTO NORMAL ---
         const posAnterior = Number(miJugador.pos || 0);
         const nuevaPos = (posAnterior + dado) % 28;
         
-        // --- LÓGICA DE SALIDA ($250 AUTOMÁTICOS) ---
+        // Verificación de paso por SALIDA usando el ID
         if (nuevaPos < posAnterior) {
-            await update(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), {
-                dinero: increment(250)
-            });
+            await update(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { dinero: increment(250) });
             window.log("¡Pasaste por SALIDA y ganaste $250!");
         }
 
-        // --- ACTUALIZACIÓN DE POSICIÓN ---
-        const miJugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-        await update(miJugadorRef, { pos: nuevaPos });
+        // Actualización de posición mediante ID
+        await update(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx), { pos: nuevaPos });
 
-        // --- LÓGICA DE PASAR TURNO ---
         if (!esSolo) {
-            if (dado !== 6) {
-                window.pasarTurno();
-            } else {
-                const nombreJugador = (window.nombres && window.nombres[window.miIdx]) ? window.nombres[window.miIdx] : window.miIdx;
-                window.log(nombreJugador + " sacó 6 y repite turno!");
-            }
+            if (dado !== 6) window.pasarTurno();
+            else window.log((window.nombres[window.miIdx] || window.miIdx) + " sacó 6 y repite turno!");
         }
 
-        // --- MANEJO DE CASILLA ---
-        if (typeof window.manejarCasilla === 'function') {
-            await window.manejarCasilla(nuevaPos, true);
-        }
+        if (typeof window.manejarCasilla === 'function') await window.manejarCasilla(nuevaPos, true);
 
     } catch (e) {
         console.error("Error al lanzar:", e);
@@ -931,6 +976,7 @@ window.sortearPrimerTurno = function() {
         const s = snap.val();
         if (!s || !s.jugadores) return;
 
+        // Filtramos IDs que no sean visitantes
         const listaJugadores = Object.keys(s.jugadores).filter(id => !id.startsWith('v'));
         if (listaJugadores.length === 0) return;
 
@@ -940,55 +986,55 @@ window.sortearPrimerTurno = function() {
 };
 
 window.pasarTurno = async function() {
-    const salaRef = ref(db, 'salas/' + window.sala);
+    const salaRef = ref(window.db, 'salas/' + window.sala);
     const snap = await get(salaRef);
     const s = snap.val();
     if (!s || !s.jugadores) return;
 
-    // Solo tomamos jugadores reales (no visitantes)
+    // Solo tomamos jugadores reales (no visitantes) usando sus IDs
     const listaJugadores = Object.keys(s.jugadores).filter(id => !id.startsWith('v'));
     
-    // Si no hay nadie en la sala, abortar
     if (listaJugadores.length === 0) return;
 
-    const idxActual = listaJugadores.indexOf(s.turno);
-    
-    // Función recursiva para encontrar el siguiente jugador válido
-    const buscarSiguiente = async (indice) => {
-        let siguienteIdx = (indice + 1) % listaJugadores.length;
-        let siguienteId = listaJugadores[siguienteIdx];
-        let jugadorSiguiente = s.jugadores[siguienteId];
+    let currentIndex = listaJugadores.indexOf(s.turno);
+    let siguienteId = s.turno; 
+    let encontrado = false;
 
-        // --- LÓGICA DE CÁRCEL ---
-        // Si el jugador tiene turnos pendientes en la cárcel
-        if ((jugadorSiguiente.enCarcel ?? 0) > 0) {
-            let nuevoContador = jugadorSiguiente.enCarcel - 1;
+    // Buscamos al siguiente jugador libre (damos una vuelta completa como máximo)
+    for (let i = 1; i <= listaJugadores.length; i++) {
+        let candidateIdx = (currentIndex + i) % listaJugadores.length;
+        let candidateId = listaJugadores[candidateIdx];
+        let candidate = s.jugadores[candidateId];
 
-            // Si el contador llega a 0, liberamos al jugador explícitamente
+        // LÓGICA DE CÁRCEL
+        if (candidate && (candidate.enCarcel ?? 0) > 0) {
+            let nuevoContador = candidate.enCarcel - 1;
+
             if (nuevoContador <= 0) {
-                await update(ref(db, `salas/${window.sala}/jugadores/${siguienteId}`), {
-                    enCarcel: null // Eliminamos la propiedad de la DB
+                // Cumplió condena: Sale libre
+                await update(ref(window.db, `salas/${window.sala}/jugadores/${candidateId}`), {
+                    enCarcel: null
                 });
-                window.log(jugadorSiguiente.nombre + " ha cumplido su condena y sale de la cárcel.");
-                return siguienteId; // Es su turno, ya es libre
+                window.log((candidate.nombre || candidateId) + " ha cumplido su condena y sale de la cárcel.");
+                siguienteId = candidateId;
+                encontrado = true;
+                break; // Es su turno
             } else {
-                // Si aún tiene condena, actualizamos y saltamos su turno
-                await update(ref(db, `salas/${window.sala}/jugadores/${siguienteId}`), {
+                // Sigue en la cárcel: Restamos turno y continuamos buscando
+                await update(ref(window.db, `salas/${window.sala}/jugadores/${candidateId}`), {
                     enCarcel: nuevoContador
                 });
-                window.log(jugadorSiguiente.nombre + " sigue en la cárcel. Le quedan " + nuevoContador + " turnos.");
-                
-                // Recursión: Buscamos al siguiente, saltando a este jugador
-                return await buscarSiguiente(siguienteIdx);
+                window.log((candidate.nombre || candidateId) + " sigue en la cárcel. Le quedan " + nuevoContador + " turnos.");
+                // No rompemos el bucle, seguimos buscando al siguiente jugador libre
             }
+        } else {
+            // Jugador libre, es su turno
+            siguienteId = candidateId;
+            encontrado = true;
+            break;
         }
-        
-        // Si no está en la cárcel, es su turno
-        return siguienteId;
-    };
+    }
 
-    const siguienteId = await buscarSiguiente(idxActual);
-    
     // Finalizamos el cambio de turno
     await update(salaRef, { turno: siguienteId });
     window.log("Turno de: " + (s.jugadores[siguienteId]?.nombre || siguienteId));
@@ -1076,17 +1122,17 @@ window.actualizarTokens = function(jugadores) {
 
         // Usamos Optional Chaining (?.) por si acaso 'pos' no existe
         const p = parseInt(jugador.pos) || 0; 
-        const nombre = jugador.nombre;
         const celda = document.getElementById('cell-' + p);
 
         // Verificamos que todo exista antes de crear nada
-        if (celda && nombre && tokensMap[nombre]) {
+        // ACTUALIZADO A ID: Usamos 'id' para la validación y el mapeo
+        if (celda && id && tokensMap[id]) {
             celda.style.position = 'relative';
 
             const token = document.createElement('img');
             token.className = 'token';
             token.id = 'token-' + id;
-            token.src = tokensMap[nombre];
+            token.src = tokensMap[id]; // ACTUALIZADO A ID
 
             // Ajustes de estilo
             token.style.position = 'absolute';
@@ -1125,7 +1171,7 @@ window.verificarBancarrota = async function(jugadorIdx, saldo) {
         if (count > 0 && count % 3 === 0) {
             repActual = Math.max(0, repActual - 1);
             updates.reputacion = repActual;
-            window.log(`¡Advertencia! ${data.nombre} ha acumulado ${count} bancarrotas. ¡Reputación reducida!`);
+            window.log(`¡Advertencia! ${data.nombre || jugadorIdx} ha acumulado ${count} bancarrotas. ¡Reputación reducida!`);
             
             if (typeof window.renderEstrellas === 'function') {
                 window.renderEstrellas(repActual);
@@ -1138,7 +1184,7 @@ window.verificarBancarrota = async function(jugadorIdx, saldo) {
         // Notificación
         push(ref(db, 'salas/' + window.sala + '/chat'), {
             n: "Banco",
-            m: `¡Alerta! ${data.nombre} ha caído en bancarrota con un saldo de $${saldo}. (Total: ${count} veces)`,
+            m: `¡Alerta! ${data.nombre || jugadorIdx} ha caído en bancarrota con un saldo de $${saldo}. (Total: ${count} veces)`,
             t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         });
 
@@ -1153,7 +1199,8 @@ window.verificarBancarrota = async function(jugadorIdx, saldo) {
 };
 
 window.abrirBanco = async function() {
-    if (typeof window.sala === 'undefined' || window.miIdx === -1 || !db) {
+    // Verificación actualizada para ID
+    if (typeof window.sala === 'undefined' || !window.miIdx || !db) {
         window.abrirModal("Error", `
             <div class="abrirModal">
                 <p>Debes estar unido a una sala para acceder a los servicios bancarios.</p>
@@ -1188,7 +1235,6 @@ window.abrirBanco = async function() {
     `);
 };
 
-
 // --- 2. VER SALDOS (Distingue jugadores y visitantes) ---
 window.verSaldos = function() {
     if (!window.sala || typeof db === 'undefined') return;
@@ -1206,7 +1252,7 @@ window.verSaldos = function() {
         } else {
             snap.forEach(c => {
                 const j = c.val();
-                const key = c.key.toString();
+                const key = c.key.toString(); // ID del jugador/visitante
                 const esVisitante = key.startsWith('v'); 
                 
                 // Si es visitante, usa "Citizen", si es jugador usa su nombre guardado o ID
@@ -1227,6 +1273,7 @@ window.verSaldos = function() {
 
 // --- SOLICITAR PRÉSTAMO ---
 window.solicitarPrestamo = async function(monto) {
+    // Usamos el ID (window.miIdx) para la referencia
     const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const snap = await get(jRef);
     const j = snap.val();
@@ -1275,7 +1322,7 @@ window.abrirPagar = async function() {
 
 // --- PAGAR PRÉSTAMO ---
 window.pagarPrestamo = async function() {
-    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const jRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const snap = await get(jRef);
     const j = snap.val();
 
@@ -1330,7 +1377,7 @@ window.verificarParColor = async function(pos, todasLasPropiedades) {
     const tieneMonopolio = propiasDelGrupo.length === grupo.indices.length;
 
     if (tieneMonopolio) {
-        const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+        const jugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
         const snap = await get(jugadorRef);
         let j = snap.val();
 
@@ -1353,7 +1400,7 @@ window.verificarParColor = async function(pos, todasLasPropiedades) {
         }
     } else {
         // HUECO CUBIERTO: Si pierde una propiedad, quitamos el bono
-        const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+        const jugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
         const snap = await get(jugadorRef);
         let j = snap.val();
 
@@ -1379,8 +1426,8 @@ window.verificarMonopolio = function(pos, todasLasPropiedades) {
 window.comprar = async function(pos) {
     if (typeof window.sala === 'undefined' || typeof window.miIdx === 'undefined') return;
 
-    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    const propRef = ref(db, 'salas/' + window.sala + '/propiedades/' + pos);
+    const jugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const propRef = ref(window.db, 'salas/' + window.sala + '/propiedades/' + pos);
 
     // Obtenemos ambos datos a la vez para validar la compra
     const [snapJugador, snapProp] = await Promise.all([get(jugadorRef), get(propRef)]);
@@ -1402,16 +1449,17 @@ window.comprar = async function(pos) {
 
     // 3. Verificación de fondos
     if (j.dinero >= precio) {
-        // Ejecución atómica (ambos cambios suceden a la vez)
+        // Ejecución atómica
         const updates = {};
         updates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = j.dinero - precio;
         updates['salas/' + window.sala + '/propiedades/' + pos] = { 
             owner: window.miIdx, 
             nivel: 0, 
-            hipotecada: false 
+            hipotecada: false,
+            p: precio // <--- ESTO ES LO QUE FALTABA
         };
 
-        await update(ref(db), updates);
+        await update(ref(window.db), updates);
 
         // --- UI Y ACCIONES ---
         window.pintarCasilla(pos, window.miIdx);
@@ -1419,7 +1467,7 @@ window.comprar = async function(pos) {
         window.cerrarModal();
         
     } else {
-        // 4. Fondos insuficientes (Ventana con opción de préstamo)
+        // 4. Fondos insuficientes
         window.abrirModal("Fondos insuficientes", `
             <div style="text-align: center; padding: 10px;">
                 <p>No tienes suficiente dinero para esta compra.</p>
@@ -1438,14 +1486,20 @@ window.comprar = async function(pos) {
     }
 };
 
-window.verPropiedad = function(pos, permitirCompra = false) {
+window.verPropiedad = function(pos, permitirCompra = false, dataActual = null) {
     const p = window.mapa[pos];
     if (!p || p.p === 0) return;
 
-    // 1. Carga segura de datos
-    const data = window.salaData || {}; 
+    // 1. Carga segura de datos (Prioriza la data actual, o usa la global como respaldo)
+    const data = dataActual || window.salaData || {}; 
     const props = data.propiedades || {};
     const prop = props[pos] || null;
+    
+    // Obtener color del grupo para el encabezado
+    const grupo = grupos.find(g => g.indices.includes(pos));
+    const colorHeader = grupo ? grupo.color : "#ff80bf";
+    
+    // Obtener clima de forma segura
     const clima = (window.climas && window.climas[data.climaIdx || 0]) ? window.climas[data.climaIdx || 0] : { n: "Normal", mult: 1 };
     const mult = clima.mult;
 
@@ -1466,8 +1520,9 @@ window.verPropiedad = function(pos, permitirCompra = false) {
     let listaAlquileres = "";
 
     if (esTransporte) {
-        const dueño = prop ? prop.owner : null;
-        const cantidad = dueño !== null ? indicesTransporte.filter(idx => props[idx]?.owner === dueño).length : 0;
+        // Usamos el owner ID directamente
+        const ownerId = prop ? prop.owner : null;
+        const cantidad = ownerId !== null ? indicesTransporte.filter(idx => props[idx]?.owner == ownerId).length : 0;
         const tabla = { 0: 0, 1: 250, 2: 350, 3: 350, 4: 450 };
         alquiler = Math.floor(tabla[cantidad] * mult);
         listaAlquileres = `<li>1 poseído: $250</li><li>2 poseídos: $350</li><li>3 poseídos: $350</li><li>4 poseídos: $450</li>`;
@@ -1475,24 +1530,26 @@ window.verPropiedad = function(pos, permitirCompra = false) {
         const niveles = [0.1, 0.15, 0.2, 0.3, 0.4, 0.5];
         const nivel = prop ? (prop.nivel || 0) : 0;
         alquiler = Math.floor((p.p * niveles[nivel]) * mult);
-        listaAlquileres = niveles.map((n, i) => `<li style="margin: 3px 0;">Nivel ${i + 1}: $${Math.floor(p.p * n * mult)}</li>`).join('');
+        listaAlquileres = niveles.map((n, i) => {
+            let label = i === 0 ? "Base" : (i < 5 ? `Nivel ${i} (Casas)` : "Hotel (Nivel 5)");
+            return `<li style="margin: 3px 0;">${label}: $${Math.floor(p.p * n * mult)}</li>`;
+        }).join('');
     }
 
-    // 4. Estados de Dueño (CORREGIDO Y BLINDADO)
-    const esDuenio = prop && prop.owner !== undefined && parseInt(prop.owner) === parseInt(window.miIdx);
+    // 4. Estados de Dueño (Blindaje total: usamos el ID como string, NO convertimos a entero)
+    const ownerId = prop ? prop.owner : null;
+    const esDuenio = (ownerId !== null && String(ownerId) === String(window.miIdx));
     const estaHipotecada = prop && prop.hipotecada;
     const colorClima = mult < 1 ? '#e74c3c' : '#ff80bf';
     
-    // Convertimos owner a entero para asegurar un índice válido (0, 1, 2, 3...)
-    const ownerIdx = (prop && prop.owner !== undefined) ? parseInt(prop.owner) : -1;
-    
-    // Obtenemos color y nombre asegurando que el índice exista en los arrays globales
-    const colorDueño = (ownerIdx >= 0 && window.colores && window.colores[ownerIdx]) ? window.colores[ownerIdx] : "#ccc";
-    const nombreDueño = (ownerIdx >= 0 && window.nombres && window.nombres[ownerIdx]) ? window.nombres[ownerIdx] : "Desconocido";
+    // Identificación robusta: Primero buscamos en los datos de la sala, luego en las globales
+    const jugadorData = (ownerId && data.jugadores && data.jugadores[ownerId]) ? data.jugadores[ownerId] : null;
+    const nombreDueño = jugadorData ? (jugadorData.nombre || "Jugador") : (window.nombres && window.nombres[ownerId] ? window.nombres[ownerId] : "Desconocido");
+    const colorDueño = (window.colores && window.colores[ownerId]) ? window.colores[ownerId] : "#ccc";
 
     let contenido = `
         <div class="card-property">
-            <div class="card-header" style="background:#ff80bf; color:white; padding:10px; border-radius:5px 5px 0 0; text-align:center; font-weight:bold;">${p.n}</div>
+            <div class="card-header" style="background:${colorHeader}; color:white; padding:10px; border-radius:5px 5px 0 0; text-align:center; font-weight:bold;">${p.n}</div>
             <div class="card-body" style="padding:15px;">
                 ${esTransporte ? `<div style="text-align:center; margin:15px 0;"><img src="${iconos[pos]}" style="width:80px; filter: ${filtroRosa};"></div>` : ''}
                 <p>Valor de compra: <b>$${p.p}</b></p>
@@ -1507,7 +1564,7 @@ window.verPropiedad = function(pos, permitirCompra = false) {
 
     contenido += `<div style="text-align: center; margin-top: 25px;">`; 
 
-    // 5. Botones de Acción (Exclusividad protegida)
+    // 5. Botones de Acción
     if (!prop) {
         contenido += permitirCompra ? 
             `<button class="btn-sidebar" style="width:100%; display:block; background:#ff80bf; color:white; margin-bottom:10px;" onclick="window.comprar(${pos}); window.cerrarModal();">Comprar Propiedad</button>` : 
@@ -1520,7 +1577,7 @@ window.verPropiedad = function(pos, permitirCompra = false) {
     } else if (!estaHipotecada) {
         contenido += `
             <div style="border-left: 5px solid ${colorDueño}; padding-left: 10px; margin-bottom: 15px;">Dueño: <b>${nombreDueño}</b></div>
-            <button class="btn-sidebar" style="width:100%; display:block; background:#e67e22; color:white; margin-bottom:10px;" onclick="window.interaccionAlquiler('${prop.owner}', ${alquiler}); window.cerrarModal();">Pagar Alquiler</button>`;
+            <button class="btn-sidebar" style="width:100%; display:block; background:#e67e22; color:white; margin-bottom:10px;" onclick="window.interaccionAlquiler('${ownerId}', ${alquiler}); window.cerrarModal();">Pagar Alquiler</button>`;
     } else {
         contenido += `<div style="border-left: 5px solid ${colorDueño}; padding-left: 10px; margin-bottom: 15px;">Dueño: <b>${nombreDueño}</b></div>
                       <p>Propiedad hipotecada. No paga alquiler.</p>`;
@@ -1542,7 +1599,7 @@ window.abrirIntercambio = function() {
             return;
         }
 
-        // Filtramos propiedades que realmente pertenecen al usuario
+        // Filtramos propiedades que realmente pertenecen al usuario usando ID
         let misProps = Object.keys(data.propiedades).filter(idx => 
             String(data.propiedades[idx].owner) === String(window.miIdx)
         );
@@ -1558,7 +1615,7 @@ window.abrirIntercambio = function() {
             return `<option value="${idx}">${nombre}</option>`;
         }).join('');
 
-        // Filtramos jugadores para que no se incluya a sí mismo
+        // Filtramos jugadores para que no se incluya a sí mismo (usando ID)
         let optionsJugadores = Object.keys(data.jugadores || {}).filter(jIdx => 
             String(jIdx) !== String(window.miIdx)
         ).map(jIdx => {
@@ -1586,7 +1643,7 @@ window.abrirIntercambio = function() {
                         onclick="window.ejecutarIntercambio()">Enviar Oferta</button>
             </div>
         `;
-        window.abrirModal("🤝 Intercambio", contenido);
+        window.abrirModal("Intercambio", contenido);
     });
 };
 
@@ -1607,6 +1664,7 @@ window.ejecutarIntercambio = async function() {
     const snap = await get(propRef);
     const prop = snap.val();
 
+    // Verificación estricta de ID
     if (!prop || String(prop.owner) !== String(window.miIdx)) {
         window.abrirModal("Error", "Ya no posees esta propiedad, el intercambio se ha cancelado.");
         return;
@@ -1634,12 +1692,11 @@ window.ejecutarIntercambio = async function() {
 };
 
 // --- 2. ESCUCHA DE OFERTAS (CON BOTONES MODIFICADOS) ---
-// Variable global para controlar qué ofertas ya hemos mostrado en esta sesión
 window.ofertasProcesadas = new Set();
 
 window.escucharOfertas = function() {
     // 1. Limpiar listener anterior de forma segura
-    const ofertasRef = ref(db, 'salas/' + window.sala + '/ofertas');
+    const ofertasRef = ref(window.db, 'salas/' + window.sala + '/ofertas');
     
     // Si ya tienes un listener activo, Firebase maneja el reemplazo, 
     // pero es buena práctica no acumular.
@@ -1689,7 +1746,7 @@ window.confirmarCompra = async function(key, vendedorIdx, pos, precio) {
     window.abrirModal("Procesando...", "Verificando fondos e intercambio...");
     
     // 1. Verificación de seguridad: ¿Aún tiene el comprador el dinero?
-    const compradorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const compradorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const snapComprador = await get(compradorRef);
     const dineroComprador = snapComprador.val()?.dinero || 0;
 
@@ -1718,7 +1775,7 @@ window.confirmarCompra = async function(key, vendedorIdx, pos, precio) {
     updates['salas/' + window.sala + '/ofertas/' + key + '/estado'] = 'completada';
 
     // 3. Ejecutar actualización atómica
-    update(ref(db), updates)
+    update(ref(window.db), updates)
     .then(() => {
         // Limpiar control de caché para que no vuelva a saltar el modal
         if (window.ofertasProcesadas) window.ofertasProcesadas.delete(key);
@@ -1738,7 +1795,7 @@ window.confirmarCompra = async function(key, vendedorIdx, pos, precio) {
 // --- 4. RECHAZAR OFERTA ---
 window.rechazarOferta = function(key) {
     // Marcamos como rechazada en la base de datos
-    update(ref(db, 'salas/' + window.sala + '/ofertas/' + key), { 
+    update(ref(window.db, 'salas/' + window.sala + '/ofertas/' + key), { 
         estado: 'rechazada' 
     })
     .then(() => {
@@ -1762,7 +1819,7 @@ window.interaccionAlquiler = function(ownerIdx, monto) {
             <p>El dueño espera su pago.</p>
             <div style="display:flex; flex-direction:column; gap:10px;">
                 <button class="btn-accion" style="background:#e74c3c;" onclick="window.procesarEvasion('${ownerIdx}', ${montoLimpio})">Intentar Evadir (Riesgo)</button>
-                <button class="btn-accion" style="background:#2ecc71;" onclick="window.confirmarPago('${ownerIdx}', ${montoLimpio})">Pagar Alquiler</button>
+                <button class="btn-accion" style="background:#2ecc71;" onclick="window.pagarAlquiler('${ownerIdx}', ${montoLimpio})">Pagar Alquiler</button>
             </div>
         </div>
     `;
@@ -1780,33 +1837,54 @@ window.pagarAlquiler = async function(ownerIdx, monto) {
         return;
     }
 
-    const updates = {};
-    const esImpuesto = (ownerIdx === 'IMPUESTO');
+    const esImpuesto = (String(ownerIdx) === 'IMPUESTO');
     
-    // 1. Descontar dinero al jugador actual (siempre ocurre)
+    // 1. Obtener nombre del pagador
+    const nombrePagador = window.nombres[window.miIdx] || "Jugador";
+    
+    // 2. Obtener nombre del receptor de forma robusta (buscando directo en DB si falla la caché)
+    let nombreReceptor = "Dueño";
+    if (esImpuesto) {
+        nombreReceptor = "el Pozo de Impuestos";
+    } else {
+        try {
+            const snapReceptor = await get(ref(window.db, `salas/${window.sala}/jugadores/${ownerIdx}/nombre`));
+            nombreReceptor = snapReceptor.val() || window.nombres[ownerIdx] || "Dueño";
+        } catch (e) {
+            nombreReceptor = window.nombres[ownerIdx] || "Dueño";
+        }
+    }
+    
+    const textoLog = `${nombrePagador} ha pagado $${montoLimpio} a ${nombreReceptor}.`;
+
+    const updates = {};
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    // 1. Descontar dinero al jugador actual
     updates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = increment(-montoLimpio);
 
-    // 2. Sumar dinero al destino (Dueño o Pozo de Impuestos)
+    // 2. Sumar dinero al destino
     if (esImpuesto) {
         updates['salas/' + window.sala + '/pozoImpuestos'] = increment(montoLimpio);
     } else {
         updates['salas/' + window.sala + '/jugadores/' + ownerIdx + '/dinero'] = increment(montoLimpio);
     }
 
-    // 3. Registrar el evento en el chat (visible para todos)
-    const msgId = push(ref(db, 'salas/' + window.sala + '/chat')).key;
+    // 3. Registrar el evento en el chat
+    const msgId = push(ref(window.db, 'salas/' + window.sala + '/chat')).key;
     updates['salas/' + window.sala + '/chat/' + msgId] = {
         n: "Sistema",
-        m: esImpuesto 
-            ? `Se han pagado impuestos por $${montoLimpio}.` 
-            : `Alquiler de $${montoLimpio} pagado correctamente.`,
-        t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        m: textoLog,
+        t: timestamp
     };
 
-    // 4. Ejecución atómica (o todo se guarda, o nada)
+    // 4. Ejecución atómica y notificación
     try {
-        await update(ref(db), updates);
-        window.cerrarModal(); // Cerramos el modal tras éxito
+        await update(ref(window.db), updates);
+        
+        window.cerrarModal(); 
+        window.log(textoLog);
+        
     } catch (e) {
         console.error("Error crítico en pago:", e);
         window.abrirModal("Error", "No se pudo procesar el pago: " + e.message);
@@ -1845,78 +1923,89 @@ window.confirmarPago = async function(ownerIdx, monto) {
 
 // --- 2. PROCESAR EVASIÓN ---
 window.procesarEvasion = async function(ownerIdx, monto) {
+
     if (window.decisionTomada) return;
+
     window.decisionTomada = true;
-    
-    const montoLimpio = parseFloat(monto) || 0;
-    const esImpuesto = (ownerIdx === 'IMPUESTO');
-    
+
     // Desactivar botones para evitar clics múltiples
     const botones = document.querySelectorAll('.btn-accion');
     botones.forEach(b => { b.disabled = true; b.style.opacity = "0.5"; });
 
-    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    const snap = await get(jugadorRef);
-    let j = snap.val() || {};
-    const rnd = Math.random();
-    const nombre = window.nombres ? window.nombres[window.miIdx] : "Jugador";
+    try {
+        const montoLimpio = parseFloat(monto) || 0;
+        const esImpuesto = (ownerIdx === 'IMPUESTO');
 
-    // --- LÓGICA DE AZAR ---
-    if (rnd > 0.6) {
-        // ÉXITO
-        window.logGlobal("¡" + nombre + " ha evadido el pago con éxito!");
-        window.cerrarModal();
-    } 
-    else if (rnd > 0.3) {
-        // EVASIÓN PARCIAL
-        const montoParcial = Math.max(1, Math.floor(montoLimpio / 2));
-        window.logGlobal("¡" + nombre + " logró evasión parcial! Paga solo $" + montoParcial);
-        
-        if (esImpuesto) {
-            // Pago parcial de impuestos (manual)
-            const updates = {};
-            updates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = increment(-montoParcial);
-            updates['salas/' + window.sala + '/pozoImpuestos'] = increment(montoParcial);
-            await update(ref(db), updates);
+        const jugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+        const snap = await get(jugadorRef);
+        let j = snap.val() || {};
+        const rnd = Math.random();
+        const nombre = window.nombres ? window.nombres[window.miIdx] : "Jugador";
+
+        // --- LÓGICA DE AZAR ---
+        if (rnd > 0.6) {
+            // ÉXITO
+            window.logGlobal(nombre + " evadió los impuestos y se ahorró " + montoLimpio);
             window.cerrarModal();
-        } else {
-            // Pago parcial de alquiler (usando la centralizada)
-            await window.pagarAlquiler(ownerIdx, montoParcial);
+        } 
+        else if (rnd > 0.3) {
+            // EVASIÓN PARCIAL
+            const montoParcial = Math.max(1, Math.floor(montoLimpio / 2));
+            const ahorro = montoLimpio - montoParcial;
+            window.logGlobal(nombre + " evadió los impuestos y se ahorró " + ahorro + " (pagó " + montoParcial + ")");
+            
+            if (esImpuesto) {
+                // Pago parcial de impuestos (manual)
+                const updates = {};
+                updates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = increment(-montoParcial);
+                updates['salas/' + window.sala + '/pozoImpuestos'] = increment(montoParcial);
+                await update(ref(window.db), updates);
+                window.cerrarModal();
+            } else {
+                // Pago parcial de alquiler (usando la centralizada)
+                await window.pagarAlquiler(ownerIdx, montoParcial);
+            }
+        } 
+        else {
+            // FALLO: MULTA
+            const multa = montoLimpio + 100;
+            let intentos = (j.intentosFallidos || 0) + 1;
+            let updates = { intentosFallidos: intentos };
+            
+            // Penalización por reincidencia
+            if (intentos >= 5) { 
+                updates.intentosFallidos = 0; 
+                updates.estrellas = Math.max(0, (j.estrellas || 0) - 1); 
+                window.logGlobal("¡" + nombre + " ha perdido 1 estrella por reincidencia!");
+            }
+            await update(jugadorRef, updates);
+            
+            window.logGlobal(nombre + " evadió los impuestos y tiene que pagar " + montoLimpio + " más 100 por multa");
+            
+            if (esImpuesto) {
+                // Pago de multa de impuestos (manual)
+                const taxUpdates = {};
+                taxUpdates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = increment(-multa);
+                taxUpdates['salas/' + window.sala + '/pozoImpuestos'] = increment(multa);
+                await update(ref(window.db), taxUpdates);
+                window.cerrarModal();
+            } else {
+                // Pago de multa alquiler
+                await window.pagarAlquiler(ownerIdx, multa);
+            }
         }
-    } 
-    else {
-        // FALLO: MULTA
-        const multa = montoLimpio + 100;
-        let intentos = (j.intentosFallidos || 0) + 1;
-        let updates = { intentosFallidos: intentos };
-        
-        // Penalización por reincidencia
-        if (intentos >= 5) { 
-            updates.intentosFallidos = 0; 
-            updates.estrellas = Math.max(0, (j.estrellas || 0) - 1); 
-            window.logGlobal("¡" + nombre + " ha perdido 1 estrella por reincidencia!");
-        }
-        await update(jugadorRef, updates);
-        
-        window.logGlobal("¡" + nombre + " fue atrapado evadiendo! Paga multa de $" + multa);
-        
-        if (esImpuesto) {
-            // Pago de multa de impuestos (manual)
-            const taxUpdates = {};
-            taxUpdates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = increment(-multa);
-            taxUpdates['salas/' + window.sala + '/pozoImpuestos'] = increment(multa);
-            await update(ref(db), taxUpdates);
-            window.cerrarModal();
-        } else {
-            // Pago de multa alquiler
-            await window.pagarAlquiler(ownerIdx, multa);
-        }
+    } catch (e) {
+        console.error("Error en proceso de evasión:", e);
+    } finally {
+        // Aseguramos que siempre se reactiven los botones y se libere la decisión
+        window.decisionTomada = false;
+        botones.forEach(b => { b.disabled = false; b.style.opacity = "1"; });
     }
 };
 
-// --- HELPER OBLIGATORIO (Asegúrate de tenerlo definido) ---
+// --- HELPER ---
 window.logGlobal = function(mensaje) {
-    push(ref(db, 'salas/' + window.sala + '/chat'), {
+    push(ref(window.db, 'salas/' + window.sala + '/chat'), {
         n: "Sistema",
         m: mensaje,
         t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -1928,35 +2017,49 @@ window.pagarImpuesto = async function(monto) {
     const montoLimpio = parseFloat(monto) || 0;
     if (montoLimpio <= 0) return;
 
-    const updates = {};
-    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (!window.db) {
+        console.error("Error: La base de datos no está inicializada.");
+        return;
+    }
 
-    // Descontar dinero y sumar al pozo
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const updates = {};
+
+    // 1. Descontar dinero y sumar al pozo (Operación atómica)
     updates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = increment(-montoLimpio);
     updates['salas/' + window.sala + '/pozoImpuestos'] = increment(montoLimpio);
 
-    // Registro en Chat
-    const msgId = push(ref(db, 'salas/' + window.sala + '/chat')).key;
+    // 2. Registro en Chat (Visible para todos)
+    const chatRef = ref(window.db, 'salas/' + window.sala + '/chat');
+    const msgId = push(chatRef).key;
     updates['salas/' + window.sala + '/chat/' + msgId] = {
         n: "Sistema",
-        m: `Se han pagado $${montoLimpio} en impuestos.`,
+        m: (window.nombres[window.miIdx] || "Jugador") + " ha pagado $" + montoLimpio + " en impuestos.",
         t: timestamp
     };
 
     try {
-        await update(ref(db), updates);
+        // Ejecutar todas las actualizaciones de una vez
+        await update(ref(window.db), updates);
+        
+        // 3. Confirmación inmediata para el jugador (Gamelog)
         window.cerrarModal();
-        window.log("Impuesto pagado correctamente.");
+        window.log("¡Impuestos pagados! Se han descontado $" + montoLimpio + " de tu cuenta.");
+        
+        // Opcional: Si quieres que el turno pase automáticamente tras pagar, descomenta la siguiente línea:
+        // window.pasarTurno();
+        
     } catch (e) {
-        window.abrirModal("Error", "No se pudo procesar el impuesto: " + e.message);
+        console.error("Error al pagar impuestos:", e);
+        window.abrirModal("Error", "No se pudo procesar el pago: " + e.message);
     }
 };
 
 // --- 2. MEJORAR PROPIEDAD (ATÓMICO Y VALIDADO) ---
 window.mejorar = function(pos) {
-    const pRef = ref(db, 'salas/' + window.sala + '/propiedades/' + pos);
-    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    const tRef = ref(db, 'salas/' + window.sala + '/propiedades');
+    const pRef = ref(window.db, 'salas/' + window.sala + '/propiedades/' + pos);
+    const jRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const tRef = ref(window.db, 'salas/' + window.sala + '/propiedades');
 
     Promise.all([get(tRef), get(jRef)]).then(async ([snapT, snapJ]) => {
         const todas = snapT.val() || {};
@@ -1981,23 +2084,31 @@ window.mejorar = function(pos) {
             return;
         }
 
+        // Cálculo de incremento: 5% por mejora (niveles 1-4), 15% al llegar a Hotel (nivel 5)
+        const nuevoNivel = nivelActual + 1;
+        const factorIncremento = (nuevoNivel === 5) ? 0.15 : 0.05;
+        // CORRECCIÓN: Forzamos a número para evitar NaN
+        const precioActual = parseFloat(prop.p) || 0;
+        const nuevoPrecio = Math.floor(precioActual * (1 + factorIncremento));
+
         // --- TRANSACCIÓN ATÓMICA ---
         const updates = {};
-        updates['salas/' + window.sala + '/propiedades/' + pos + '/nivel'] = nivelActual + 1;
+        updates['salas/' + window.sala + '/propiedades/' + pos + '/nivel'] = nuevoNivel;
+        updates['salas/' + window.sala + '/propiedades/' + pos + '/p'] = nuevoPrecio; // Incremento de valor y alquiler
         updates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = increment(-costo);
         
         // Log al chat
-        const msgId = push(ref(db, 'salas/' + window.sala + '/chat')).key;
+        const msgId = push(ref(window.db, 'salas/' + window.sala + '/chat')).key;
         updates['salas/' + window.sala + '/chat/' + msgId] = {
             n: "Sistema",
-            m: `${window.nombres[window.miIdx]} mejoró ${prop.n || 'propiedad'} a nivel ${nivelActual + 1}.`,
+            m: `${window.nombres[window.miIdx]} mejoró ${prop.n || 'propiedad'} a nivel ${nuevoNivel}.`,
             t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
 
         try {
-            await update(ref(db), updates);
+            await update(ref(window.db), updates);
             window.cerrarModal();
-            window.log("Propiedad mejorada al nivel " + (nivelActual + 1));
+            window.log("Propiedad mejorada al nivel " + nuevoNivel);
         } catch (e) {
             window.abrirModal("Error", "Error al mejorar la propiedad: " + e.message);
         }
@@ -2006,8 +2117,8 @@ window.mejorar = function(pos) {
 
 // --- 1. HIPOTECAR / LIBERAR (ATÓMICO Y REALISTA) ---
 window.hipotecar = async function(pos) {
-    const pRef = ref(db, 'salas/' + window.sala + '/propiedades/' + pos);
-    const jRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const pRef = ref(window.db, 'salas/' + window.sala + '/propiedades/' + pos);
+    const jRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
 
     // 1. Obtener datos actuales
     const [snapP, snapJ] = await Promise.all([get(pRef), get(jRef)]);
@@ -2028,7 +2139,7 @@ window.hipotecar = async function(pos) {
 
     const updates = {};
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const msgId = push(ref(db, 'salas/' + window.sala + '/chat')).key;
+    const msgId = push(ref(window.db, 'salas/' + window.sala + '/chat')).key;
 
     if (!p.hipotecada) {
         // --- ACCIÓN: HIPOTECAR ---
@@ -2041,11 +2152,11 @@ window.hipotecar = async function(pos) {
             t: timestamp
         };
 
-        await update(ref(db), updates);
+        await update(ref(window.db), updates);
         window.abrirModal("Banco Hipotecario", `<div style="text-align:center;">
             <p>Propiedad hipotecada con éxito.</p>
             <p style="font-size:1.5em; color:#e74c3c;">Has recibido: <b>$${valorHipoteca}</b></p>
-            <button class="btn-sidebar" onclick="window.cerrarModal()">Aceptar</button>
+            <button style="background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer;" onclick="window.cerrarModal()">Aceptar</button>
         </div>`);
 
     } else {
@@ -2064,11 +2175,11 @@ window.hipotecar = async function(pos) {
             t: timestamp
         };
 
-        await update(ref(db), updates);
+        await update(ref(window.db), updates);
         window.abrirModal("Banco Hipotecario", `<div style="text-align:center;">
             <p>Has pagado la deuda y liberado tu propiedad.</p>
             <p style="font-size:1.5em; color:#2ecc71;">Costo: <b>$${costoLiberar}</b></p>
-            <button class="btn-sidebar" onclick="window.cerrarModal()">Aceptar</button>
+            <button style="background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer;" onclick="window.cerrarModal()">Aceptar</button>
         </div>`);
     }
 };
@@ -2099,7 +2210,7 @@ window.ejecutarEvento = async function() {
     window.abrirModal("¡Carta de Evento!", `
         <div style="text-align:center; padding:20px;">
             <p style="font-size:1.2em; font-weight:bold; margin-bottom:20px;">${carta.txt}</p>
-            <button class="btn-sidebar" onclick="window.procesarTransaccionCarta(${valor}, '${carta.txt}')">Aceptar</button>
+            <button style="background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer;" onclick="window.procesarTransaccionCarta(${valor}, '${carta.txt}')">Aceptar</button>
         </div>
     `);
 };
@@ -2110,7 +2221,7 @@ window.procesarTransaccionCarta = async function(valor, texto) {
     
     const updates = {};
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const msgId = push(ref(db, 'salas/' + window.sala + '/chat')).key;
+    const msgId = push(ref(window.db, 'salas/' + window.sala + '/chat')).key;
 
     // Actualizar dinero del jugador
     updates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = increment(valor);
@@ -2123,7 +2234,7 @@ window.procesarTransaccionCarta = async function(valor, texto) {
     };
 
     try {
-        await update(ref(db), updates);
+        await update(ref(window.db), updates);
         console.log("Evento procesado correctamente.");
     } catch (e) {
         console.error("Error al procesar evento:", e);
@@ -2150,14 +2261,14 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     let g = (typeof window.obtenerGrupo === 'function') ? window.obtenerGrupo(posInt) : null;
     if (g && g.color === "#d24285") {
         if (!prop) {
-            window.verPropiedad(posInt, puedeComprar);
+            window.verPropiedad(posInt, puedeComprar, data); // Pasamos data
         } else if (prop.owner !== window.miIdx) {
             const trans = [8, 24, 26, 27];
             const count = trans.filter(i => data.propiedades && data.propiedades[i] && data.propiedades[i].owner === prop.owner).length;
             const alquiler = { 1: 100, 2: 150, 3: 250, 4: 300 }[count] || 100;
             window.interaccionAlquiler(prop.owner, alquiler);
         } else {
-            window.verPropiedad(posInt, false);
+            window.verPropiedad(posInt, false, data); // Pasamos data
         }
         return;
     }
@@ -2167,7 +2278,7 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
             const alquilerReal = (p.a && p.a > 0) ? p.a : Math.floor(p.p * 0.1);
             window.interaccionAlquiler(prop.owner, alquilerReal);
         } else {
-            window.verPropiedad(posInt, puedeComprar);
+            window.verPropiedad(posInt, puedeComprar, data); // Pasamos data
         }
         return;
     }
@@ -2181,7 +2292,6 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
     else if (posInt === 9 && esLlegadaPorMovimiento) {
         await update(jugadorRef, { enCarcel: 1, pos: 9 });
         window.mostrarOpcionesCarcel();
-        // Pasamos el turno inmediatamente al caer en la cárcel
         window.pasarTurno(); 
         return; 
     }
@@ -2190,8 +2300,8 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
         const contenido = `
             <h2>Impuestos</h2>
             <p>Debes pagar: <b>$${monto}</b></p>
-            <button class="btn-sidebar" onclick="window.pagarImpuesto(${monto}); window.cerrarModal();">Pagar</button>
-            <button class="btn-sidebar" onclick="window.procesarEvasion('IMPUESTO', ${monto}); window.cerrarModal();">Evadir (40% éxito)</button>
+            <button style="background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer; margin:5px;" onclick="window.pagarImpuesto(${monto}); window.cerrarModal();">Pagar</button>
+            <button style="background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer; margin:5px;" onclick="window.procesarEvasion('IMPUESTO', ${monto}); window.cerrarModal();">Evadir (40% éxito)</button>
         `;
         window.abrirModal("Impuestos", contenido);
     }
@@ -2204,9 +2314,21 @@ window.manejarCasilla = async function(pos, esLlegadaPorMovimiento = false) {
 };
 
 // --- 2. MOSTRAR OPCIONES (SIN BUCLES) ---
+window.mostrarOpcionesCarcel = function() {
+    const contenido = `
+        <div class="contenedor-carcel">
+            <p style="text-align: center; color: #333; margin-top: 0;">Estás en la cárcel. ¿Qué deseas hacer?</p>
+            <button style="background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer; display:block; width:100%; margin-bottom:5px;" onclick="window.pagarFianza()">Pagar Fianza ($200)</button>
+            <button style="background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer; display:block; width:100%; margin-bottom:5px;" onclick="window.quedarseEnCarcel()">Cumplir condena (1 turno sin jugar)</button>
+            <button style="background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer; display:block; width:100%; margin-bottom:5px;" onclick="window.intentarHackeo()">Intentar Hackear el sistema de escape (50% éxito)</button>
+        </div>
+    `;
+    window.abrirModal("¡Alto ahí! Estás bajo arresto y tienes derecho a un abogado.", contenido);
+};
+
 // --- 3. PAGAR FIANZA (Libre inmediatamente) ---
 window.pagarFianza = async function() {
-    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const jugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const snap = await get(jugadorRef);
     const j = snap.val();
     
@@ -2225,21 +2347,42 @@ window.pagarFianza = async function() {
     // Como pagó, el jugador no pierde el turno, puede seguir jugando
 };
 
-// --- 4. CUMPLIR CONDENA (1 turno de castigo) ---
 window.quedarseEnCarcel = async function() {
-    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
-    // Establecemos 1 turno de castigo
-    await update(jugadorRef, { enCarcel: 1 });
+    if (!window.miIdx || !window.sala) return;
     
+    const jugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const chatRef = ref(window.db, 'salas/' + window.sala + '/chat');
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // 1. Actualizamos el estado del jugador en la base de datos
+    // enCarcel: 1 indica que está castigado.
+    await update(jugadorRef, { enCarcel: 1 });
+
+    // 2. Registro público en el chat para que todos sepan que está en la cárcel
+    const msgId = push(chatRef).key;
+    await update(ref(window.db), {
+        ['salas/' + window.sala + '/chat/' + msgId]: {
+            n: "Sistema",
+            m: `${window.nombres[window.miIdx] || "El jugador"} ha decidido cumplir condena y perderá este turno.`,
+            t: timestamp
+        }
+    });
+    
+    // 3. Confirmación visual local
     window.log("Has decidido cumplir condena de 1 turno.");
     window.cerrarModal();
-    // Forzamos el paso de turno
-    if (typeof window.pasarTurno === 'function') window.pasarTurno();
+
+    // 4. Forzamos el paso de turno
+    // IMPORTANTE: Asegúrate de que tu lógica de "pasarTurno" también verifique
+    // el campo "enCarcel" en los datos de la sala.
+    if (typeof window.pasarTurno === 'function') {
+        window.pasarTurno();
+    }
 };
 
 // --- 5. INTENTAR HACKEO ---
 window.intentarHackeo = async function() {
-    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const jugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const snap = await get(jugadorRef);
     const j = snap.val();
 
@@ -2250,9 +2393,9 @@ window.intentarHackeo = async function() {
         
         window.abrirModal("¡Éxito!", `
             <div style="text-align: center; padding: 15px;">
-                <h2 style="color: #4dff88;">Sistema Hackeado</h2>
+                <h2 style="color: #ff80bf;">Sistema Hackeado</h2>
                 <p>Has burlado la seguridad y quedado en libertad.</p>
-                <button onclick="window.cerrarModal()" style="width:100%; padding:10px; background:#4dff88; border:none; cursor:pointer;">Continuar</button>
+                <button onclick="window.cerrarModal()" style="width:100%; padding:10px; background:#ff80bf; color:white; border:none; cursor:pointer;">Continuar</button>
             </div>
         `);
     } 
@@ -2269,13 +2412,13 @@ window.intentarHackeo = async function() {
 
         const html = `
             <div style="text-align: center; padding: 15px;">
-                <h2 style="color: #ff4d4d;">¡Hackeo Fallido!</h2>
+                <h2 style="color: #ff80bf;">¡Hackeo Fallido!</h2>
                 <p>El sistema te ha bloqueado por 2 turnos.</p>
-                <div style="background: #fff0f0; padding: 10px; margin: 10px 0; border: 1px solid red;">
+                <div style="background: #fff0f0; padding: 10px; margin: 10px 0; border: 1px solid #ff80bf;">
                     <b>CASTIGO: 2 TURNOS SIN JUGAR</b>
                 </div>
                 <button onclick="window.cerrarModal(); window.pasarTurno();" 
-                        style="width:100%; padding:10px; background:#ff4d4d; color:white; border:none; cursor:pointer;">
+                        style="width:100%; padding:10px; background:#ff80bf; color:white; border:none; cursor:pointer;">
                     Aceptar consecuencias
                 </button>
             </div>
@@ -2304,7 +2447,7 @@ window.abrirModalMisiones = function() {
             <div style="background: #fff; padding: 10px; margin: 10px 0; border-radius: 10px; border: 1px solid ${m.color}; text-align: left;">
                 <div style="font-weight: bold; color: ${m.color};">${m.titulo}</div>
                 <div style="font-size: 0.9em; margin: 5px 0;">${m.desc}</div>
-                <button class="btn-accion" style="width:100%; background:${m.color};" onclick="window.completarMisionVisitante('${m.id}')">Completar</button>
+                <button style="width:100%; background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer;" onclick="window.completarMisionVisitante('${m.id}')">Completar</button>
             </div>`;
         });
     } else {
@@ -2321,7 +2464,7 @@ window.abrirModalMisiones = function() {
                 <div style="font-weight: bold; color: #ff59aa;">${m.titulo}</div>
                 <div style="font-size: 0.9em; margin: 5px 0;">${m.desc}</div>
                 <div style="font-size: 0.85em; font-weight: bold; color: #ff59aa;">Premio: $${m.rec}</div>
-                <button class="btn-accion" style="width:100%;" onclick="window.otorgarRecompensaMision({id: '${m.id}', titulo: '${m.titulo}', rec: ${m.rec}})">Reclamar</button>
+                <button style="width:100%; background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer;" onclick="window.otorgarRecompensaMision({id: '${m.id}', titulo: '${m.titulo}', rec: ${m.rec}})">Reclamar</button>
             </div>`;
         });
     }
@@ -2332,7 +2475,7 @@ window.abrirModalMisiones = function() {
 
 // --- 2. RECOMPENSA ATÓMICA Y LOG GLOBAL ---
 window.otorgarRecompensaMision = async function(mision) {
-    const jugadorRef = ref(db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
+    const jugadorRef = ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx);
     const snap = await get(jugadorRef);
     const j = snap.val() || {};
     
@@ -2347,7 +2490,7 @@ window.otorgarRecompensaMision = async function(mision) {
     // 2. Preparar actualizaciones
     const updates = {};
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const msgId = push(ref(db, 'salas/' + window.sala + '/chat')).key;
+    const msgId = push(ref(window.db, 'salas/' + window.sala + '/chat')).key;
 
     // Aumentar dinero
     updates['salas/' + window.sala + '/jugadores/' + window.miIdx + '/dinero'] = increment(mision.rec);
@@ -2371,7 +2514,7 @@ window.otorgarRecompensaMision = async function(mision) {
 
     // 3. Ejecutar todo de una vez
     try {
-        await update(ref(db), updates);
+        await update(ref(window.db), updates);
         window.cerrarModal();
         
         // 4. Feedback visual
@@ -2461,7 +2604,7 @@ window.aplicarConsecuenciaReputacion = async function(esMalaAccion) {
         return;
     }
 
-    const vRef = ref(db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
+    const vRef = ref(window.db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
     
     try {
         // 1. Obtenemos el estado más reciente
@@ -2516,7 +2659,7 @@ window.intentarUsarPoder = async function(esMalaAccion, callbackDelPoder) {
         return;
     }
 
-    const vRef = ref(db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
+    const vRef = ref(window.db, 'salas/' + window.sala + '/visitantes/' + window.miIdx);
     const snap = await get(vRef);
     const v = snap.val();
 
@@ -2645,7 +2788,7 @@ window.seleccionarObjetivoSabotaje = async function(porcentaje, costo) {
     snap.forEach(c => {
         // Validación del jugador (asegúrate de que window.esJugadorValido esté definido)
         if (typeof window.esJugadorValido === 'function' && window.esJugadorValido(c.key, c.val())) {
-            html += `<button class="btn-sidebar" style="width:100%; margin-bottom:5px;" 
+            html += `<button style="width:100%; margin-bottom:5px; background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer;" 
                      onclick="window.ejecutarSabotaje('${c.key}', ${porcentaje}, ${costo}); window.cerrarModal()">
                      Sabotear ${c.key} (${(porcentaje * 100).toFixed(0)}%)</button>`;
         }
@@ -2706,7 +2849,7 @@ window.abrirMenuRescate = async function() {
         // Verificamos si está en cárcel
         if ((c.val().enCarcel ?? 0) > 0) {
             hayPresos = true;
-            html += `<button class="btn-sidebar" style="width:100%; margin-bottom:5px;" 
+            html += `<button style="width:100%; margin-bottom:5px; background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer;" 
                      onclick="window.ejecutarRescate('${c.key}', 300); window.cerrarModal()">
                      Liberar ${c.key}</button>`;
         }
@@ -2763,6 +2906,7 @@ window.tomarControlClima = function() {
         }
     }).catch(e => console.error("Error al verificar clima:", e));
 };
+
 // --- 2. EJECUCIÓN CLIMA (CORREGIDO PARA NO BORRAR EL LOG) ---
 window.cambiarClimaConCooldown = async function(idx) {
     // 1. Validar pago
@@ -2829,9 +2973,9 @@ window.cambiarClimaConCooldown = async function(idx) {
 window.abrirControlClima = function() {
     let html = `<div style="max-height: 300px; overflow-y: auto;">`;
     window.climas.forEach((c, idx) => {
-        html += `<button class="btn-sidebar" style="width:100%; margin:5px 0; padding:10px; border-radius:10px;" 
-                    onclick="window.cambiarClimaConCooldown(${idx})">
-                    <b>${c.n}</b><br><small>Tipo: ${c.tipo || 'Neutral'}</small>
+        html += `<button style="width:100%; margin:5px 0; padding:10px; border-radius:10px; background:#ff80bf; color:white; border:none; cursor:pointer;" 
+                     onclick="window.cambiarClimaConCooldown(${idx})">
+                     <b>${c.n}</b><br><small>Tipo: ${c.tipo || 'Neutral'}</small>
                  </button>`;
     });
     window.abrirModal("☁️ Panel de control climático", html + `</div>`);
@@ -2891,7 +3035,7 @@ window.abrirMenuProteccion = async function() {
         // Validación de jugador válido
         if (typeof window.esJugadorValido === 'function' && window.esJugadorValido(c.key, c.val())) {
             hayJugadores = true;
-            html += `<button class="btn-sidebar" style="margin-bottom:5px; width:100%" 
+            html += `<button style="background:#ff80bf; color:white; border:none; padding:10px; cursor:pointer; margin-bottom:5px; width:100%" 
                      onclick="window.activarEscudo('${c.key}')">
                      🛡️ Proteger a ${c.key}</button>`;
         }
@@ -2904,6 +3048,65 @@ window.abrirMenuProteccion = async function() {
 // --- UTILIDAD (Asegurada) ---
 window.esJugadorValido = (id, d) => (d && d.tipo === 'jugador') || !id.startsWith('v');
 
+// --- VINCULACIÓN BLINDADA POR DELEGACIÓN DE EVENTOS ---
+document.addEventListener('click', function(e) {
+    // Buscamos si el elemento clickeado es nuestro botón o algo dentro de él
+    const btn = e.target.closest('#btn-reputacion-global');
+    
+    if (btn) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Ejecutamos la función de reputación
+        if (typeof window.mostrarAvisoReputacion === 'function') {
+            window.mostrarAvisoReputacion();
+        } else {
+            console.error("Error: window.mostrarAvisoReputacion no está definida.");
+        }
+    }
+}, true); // El 'true' asegura que capturemos el clic antes que cualquier otra capa del juego
+
+console.log("Sistema de Reputación: Evento delegado activo permanentemente.");
+
+window.mostrarAvisoReputacion = async function() {
+    // 1. Obtener los datos del jugador actual
+    const rol = window.esVisitante ? 'visitantes' : 'jugadores';
+    const userRef = ref(window.db, `salas/${window.sala}/${rol}/${window.miIdx}`);
+    const snap = await get(userRef);
+    const datos = snap.val() || { reputacion: 0 };
+
+    // 2. Obtener título y descripción
+    const info = window.obtenerTituloFinal(datos);
+    const rep = parseInt(datos.reputacion) || 0;
+
+    // 3. Crear estrellas (Rosa para activas, Gris para inactivas)
+    let estrellasHTML = '';
+    for(let i = 1; i <= 5; i++) {
+        const color = i <= rep ? '#ff59aa' : '#ccc';
+        estrellasHTML += `<span style="color: ${color}; font-size: 28px; margin: 0 3px;">★</span>`;
+    }
+
+    // 4. Contenido con la estética solicitada
+    const contenido = `
+        <div style="text-align: center; padding: 20px; font-family: Arial, sans-serif; color: #333; background: #fff;">
+            <h2 style="margin: 0 0 15px 0; font-size: 18px; text-transform: uppercase; letter-spacing: 1px; color: #ff59aa;">Reputación</h2>
+            <div style="margin-bottom: 20px;">${estrellasHTML}</div>
+            <h3 style="margin: 0 0 10px 0; font-size: 24px; color: #ff59aa;">${info.t}</h3>
+            <p style="font-size: 15px; margin-bottom: 30px; color: #f7c2dc; line-height: 1.5;">
+                ${info.d}
+            </p>
+            <div style="border-top: 1px solid #eee; margin-top: 20px; padding-top: 20px;">
+                <button onclick="window.cerrarModal()" style="padding: 10px 30px; background: #ff59aa; border: none; color: white; cursor: pointer; font-size: 14px; font-weight: bold; border-radius: 4px;">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    `;
+
+    // 5. Abrir el modal
+    window.abrirModal("Información", contenido);
+};
+
 // --- 1. LÓGICA UNIFICADA DE TÍTULOS ---
 window.obtenerTituloFinal = function(datos) {
     const rep = parseInt(datos.reputacion) || 0;
@@ -2912,13 +3115,13 @@ window.obtenerTituloFinal = function(datos) {
     if (datos.alineamiento) {
         const esGargola = datos.alineamiento === 'gargola';
         const niveles = esGargola ? [
-            {t: "Sombra", d: "Apenas inicias tu camino de caos."},
+            {t: "Sombra", d: "Apenas inicias tu camino del caos."},
             {t: "Inquietud", d: "Tu presencia incomoda a la ciudad."},
             {t: "Saboteador", d: "Has causado problemas reales."},
             {t: "Agente del Caos", d: "El pánico sigue tus pasos."},
             {t: "Monarca Oscuro", d: "La ciudad es tu patio de juegos."}
         ] : [
-            {t: "Aprendiz de Luz", d: "Dando tus primeros pasos bondadosos."},
+            {t: "Aprendiz de Luz", d: "Dando tus primeros pasos en el camino del bien."},
             {t: "Ayudante", d: "La gente empieza a notar tu bondad."},
             {t: "Guardián", d: "Proteges a los necesitados."},
             {t: "Héroe Local", d: "Eres un pilar de la comunidad."},
@@ -2932,7 +3135,7 @@ window.obtenerTituloFinal = function(datos) {
     // Si es JUGADOR NORMAL, usamos la tabla estándar
     const data = [
         { t: "Principiante en Sombras", d: "Apenas comienzas tu camino." },
-        { t: "Novato Urbano", d: "Empiezas a ser reconocido." },
+        { t: "Novato Urbano", d: "Empiezas a ser reconocido en las calles." },
         { t: "Estrella Naciente", d: "Tu nombre suena en los negocios locales." },
         { t: "Ciudadano Distinguido", d: "Cuentas con el respeto de los habitantes." },
         { t: "Icono de la Ciudad", d: "Tu influencia es innegable." },
@@ -2973,48 +3176,6 @@ window.renderEstrellas = function(rep, datos) {
     }
 };
 
-// Vinculación automática del botón (Optimizado)
-const intervalReputacion = setInterval(() => {
-    const btn = document.getElementById('btn-reputacion-global');
-    
-    // Si el botón existe y aún no tiene evento click
-    if (btn) {
-        if (!btn.onclick) {
-            btn.onclick = window.mostrarAvisoReputacion;
-            btn.style.cursor = 'pointer';
-            console.log("Botón de reputación vinculado exitosamente.");
-        }
-        
-        // ¡IMPORTANTE! Limpiamos el intervalo para que deje de consumir recursos
-        clearInterval(intervalReputacion);
-    }
-}, 1000);
-
-window.completarMisionVisitante = async function(tipo) {
-    const rol = window.esVisitante ? 'visitantes' : 'jugadores';
-    const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
-    const snap = await get(userRef);
-    const datos = snap.val();
-    if (!datos) return;
-
-    // Usamos 'reputacion' (el mismo campo)
-    const repActual = datos.reputacion ?? 0;
-    const cambio = (tipo === 'angel') ? 1 : -1;
-    const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
-    
-    await update(userRef, { 
-        reputacion: nuevaRep,
-        dinero: increment((tipo === 'angel') ? 200 : 150),
-        tipoReputacion: tipo // 'angel' o 'gargola'
-    });
-
-    // Disparamos la actualización visual
-    window.renderEstrellas(nuevaRep);
-    
-    // Opcional: mostrar aviso si quieres
-    window.mostrarAvisoReputacionVisitante(); 
-};
-
 window.verificarAscenso = function(repAnterior, repNueva, datosUsuario) {
     // 1. Solo mostramos si el nivel aumentó realmente
     if (repNueva > repAnterior) {
@@ -3034,86 +3195,6 @@ window.verificarAscenso = function(repAnterior, repNueva, datosUsuario) {
                 <button onclick="window.cerrarModal()" style="background: #ff59aa; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer;">¡Genial!</button>
             </div>
         `);
-    }
-};
-
-window.completarMisionVisitante = async function(tipo) {
-    const rol = window.esVisitante ? 'visitantes' : 'jugadores';
-    const userRef = ref(window.db, `salas/${window.sala}/${rol}/${window.miIdx}`);
-    
-    // 1. Obtener datos actuales
-    const snap = await get(userRef);
-    const datos = snap.val();
-    if (!datos) return;
-
-    // 2. Calcular cambios
-    const repActual = parseInt(datos.reputacion) || 0;
-    const cambio = (tipo === 'angel') ? 1 : -1;
-    const nuevaRep = Math.min(5, Math.max(0, repActual + cambio));
-    
-    // Preparamos el objeto actualizado para las funciones de UI
-    const datosActualizados = {
-        ...datos,
-        reputacion: nuevaRep,
-        alineamiento: tipo // Mantenemos el estándar de 'alineamiento'
-    };
-
-    // 3. Actualizar base de datos
-    await update(userRef, { 
-        reputacion: nuevaRep,
-        dinero: increment((tipo === 'angel') ? 200 : 150),
-        alineamiento: tipo 
-    });
-
-    // 4. Integración Total con el nuevo sistema UI
-    // Actualiza visualmente el botón con el nuevo Título
-    window.renderEstrellas(nuevaRep, datosActualizados);
-    
-    // Verifica si hubo ascenso y muestra el modal
-    window.verificarAscenso(repActual, nuevaRep, datosActualizados);
-    
-    console.log(`Misión completada: ${tipo}. Reputación: ${nuevaRep}`);
-};
-
-/// --- 1. CONFIGURACIÓN DE HERRAMIENTAS DE DEBUG ---
-window.firebaseTools = { ref, get, update, increment }; 
-
-window.verInfoReputacionEnConsola = async function() {
-    const rol = window.esVisitante ? 'visitantes' : 'jugadores';
-    // Asegúrate de que 'db' esté disponible globalmente o usa 'window.db' si es necesario
-    const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
-    
-    try {
-        const snap = await get(userRef);
-        const datos = snap.val();
-        
-        if (!datos) {
-            console.warn("⚠️ No se encontraron datos del jugador actual.");
-            return;
-        }
-
-        // Info extraída del usuario
-        const info = {
-            Nombre: datos.nombre || "Desconocido",
-            Reputacion: datos.reputacion ?? 0,
-            Alineacion: datos.alineamiento || "Neutral", // CORREGIDO: Ahora busca 'alineamiento'
-            Misiones_Completadas: datos.misionesCompletadas || 0,
-            Dinero: datos.dinero || 0
-        };
-
-        console.log("%c--- REPORTE DE REPUTACIÓN Y MISIONES ---", "color: #ff59aa; font-weight: bold; font-size: 14px;");
-        console.table(info);
-        
-        // Diagnóstico visual en consola
-        if (datos.alineamiento === 'angel') {
-            console.log("%cEstado: Protector de la ciudad (Ángel) 👼", "color: #ff59aa;");
-        } else if (datos.alineamiento === 'gargola') {
-            console.log("%cEstado: Agente del caos (Gárgola) 👿", "color: #ff59aa;");
-        } else {
-            console.log("%cEstado: Neutro", "color: #888;");
-        }
-    } catch (e) {
-        console.error("❌ Error al cargar datos para la consola:", e);
     }
 };
 
@@ -3168,6 +3249,48 @@ window.completarMisionVisitante = async function(tipo) {
 
     } catch (error) {
         console.error("Error al completar misión:", error);
+    }
+};
+
+/// --- 1. CONFIGURACIÓN DE HERRAMIENTAS DE DEBUG ---
+window.firebaseTools = { ref, get, update, increment }; 
+
+window.verInfoReputacionEnConsola = async function() {
+    const rol = window.esVisitante ? 'visitantes' : 'jugadores';
+    // Asegúrate de que 'db' esté disponible globalmente o usa 'window.db' si es necesario
+    const userRef = ref(db, `salas/${window.sala}/${rol}/${window.miIdx}`);
+    
+    try {
+        const snap = await get(userRef);
+        const datos = snap.val();
+        
+        if (!datos) {
+            console.warn("⚠️ No se encontraron datos del jugador actual.");
+            return;
+        }
+
+        // Info extraída del usuario
+        const info = {
+            Nombre: datos.nombre || "Desconocido",
+            Reputacion: datos.reputacion ?? 0,
+            Alineacion: datos.alineamiento || "Neutral", // CORREGIDO: Ahora busca 'alineamiento'
+            Misiones_Completadas: datos.misionesCompletadas || 0,
+            Dinero: datos.dinero || 0
+        };
+
+        console.log("%c--- REPORTE DE REPUTACIÓN Y MISIONES ---", "color: #ff59aa; font-weight: bold; font-size: 14px;");
+        console.table(info);
+        
+        // Diagnóstico visual en consola
+        if (datos.alineamiento === 'angel') {
+            console.log("%cEstado: Protector de la ciudad (Ángel) 👼", "color: #ff59aa;");
+        } else if (datos.alineamiento === 'gargola') {
+            console.log("%cEstado: Agente del caos (Gárgola) 👿", "color: #ff59aa;");
+        } else {
+            console.log("%cEstado: Neutro", "color: #888;");
+        }
+    } catch (e) {
+        console.error("❌ Error al cargar datos para la consola:", e);
     }
 };
 
@@ -3246,6 +3369,21 @@ window.pintarTodasLasCasillas = function(salaData) {
         const prop = salaData.propiedades[pos];
         if (prop.owner !== undefined) {
             window.pintarCasilla(pos, prop.owner);
+        }
+
+        // Dentro de tu bucle renderBoard:
+        let cell = document.getElementById('cell-' + pos);
+        let hc = cell ? cell.querySelector('.house-container') : null; 
+        if (hc) {
+            hc.innerHTML = "";
+            let nivel = salaData.propiedades[pos]?.nivel || 0;
+            if (nivel > 0 && nivel < 5) {
+                for (let k = 0; k < nivel; k++) { 
+                    let h = document.createElement('div'); h.className = 'house'; hc.appendChild(h); 
+                }
+            } else if (nivel === 5) { 
+                let h = document.createElement('div'); h.className = 'hotel'; hc.appendChild(h); 
+            }
         }
     });
 };
@@ -3338,10 +3476,11 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }
     };
-    vincularBotonesUI(); // Vinculamos al cargar
+    vincularBotonesUI();
 
     // 7. LISTENERS GLOBALES (Firebase)
     if (window.db && window.sala && window.miIdx) {
+        
         // Notificaciones Privadas
         onValue(ref(window.db, 'salas/' + window.sala + '/jugadores/' + window.miIdx + '/notificacion'), (snap) => {
             const aviso = snap.val();
@@ -3356,24 +3495,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-  // Gamelog: Escuchamos cada vez que se añade un nuevo log
-const logsRef = query(ref(window.db, 'salas/' + window.sala + '/logs'), limitToLast(50));
+        // Gamelog: Escuchamos los logs recientes
+        const logsRef = query(ref(window.db, 'salas/' + window.sala + '/logs'), limitToLast(50));
+        off(logsRef); // Limpiamos para evitar duplicados
+        onChildAdded(logsRef, (snap) => {
+            const logEntry = snap.val();
+            if (logEntry && logEntry.mensaje && typeof window.log === 'function') {
+                window.log(logEntry.mensaje);
+            }
+        });
 
-// Limpiamos listeners previos para evitar duplicados si la función se recarga
-off(logsRef); 
-
-onChildAdded(logsRef, (snap) => {
-    const logEntry = snap.val();
-    if (logEntry && logEntry.mensaje) {
-        // Llamamos a tu función window.log existente que dibuja en el HTML
-        if (typeof window.log === 'function') {
-            window.log(logEntry.mensaje);
-        }
-    }
-});
-        
-        // 7b. LISTENER DE REPUTACIÓN (ACTUALIZADO PARA TÍTULOS)
-        // Usamos 'visitantes' o 'jugadores' según corresponda
+        // Listener de Reputación (Actualizado para títulos)
         const rutaRep = window.esVisitante 
             ? 'salas/' + window.sala + '/visitantes/' + window.miIdx 
             : 'salas/' + window.sala + '/jugadores/' + window.miIdx;
@@ -3381,7 +3513,7 @@ onChildAdded(logsRef, (snap) => {
         onValue(ref(window.db, rutaRep), (snap) => {
             const data = snap.val();
             if (data && data.reputacion !== undefined) {
-                // PASAMOS EL OBJETO COMPLETO 'data' para que el render detecte el alineamiento y pinte el título
+                // Pasamos el objeto completo para renderizar estrellas y título
                 window.renderEstrellas(data.reputacion, data);
             }
         });
