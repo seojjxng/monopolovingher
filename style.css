@@ -17,18 +17,14 @@ body {
     display: flex;
     flex-direction: row;        
     justify-content: center;    /* Mantiene centrado horizontal */
-    
-    /* CAMBIA ESTO: de 'center' a 'stretch' */
-    align-items: stretch;        
+    align-items: stretch;     
     
     gap: 20px;                  
     max-width: 1000px;          
     width: 100%;                
     margin: 0 auto;             
     padding: 0 10px;
-    
-    /* Añade esto para asegurar que el contenedor tenga altura */
-    min-height: 600px; 
+
 }
 /* TABLERO */
 /* Contenedor principal del sidebar */
@@ -37,14 +33,18 @@ body {
     flex-direction: column;
     width: 300px;
     flex-shrink: 0;
-    align-self: stretch; /* Esto le dice al wrapper: "toma la altura de tu vecino (el tablero)" */
+    align-self: stretch; 
+    height: 100%; /* Obliga al wrapper a respetar la altura del contenedor padre */
+    min-height: 0; /* Permite que el contenedor se encoja si es necesario */
+    overflow: hidden;
 }
 .sidebar {
-    /* En lugar de height: 100%, usa flex: 1 para que ocupe todo el espacio sobrante */
     flex: 1; 
     display: flex;
     flex-direction: column;
     gap: 15px;
+    min-height: 0; /* Evita que el sidebar crezca más allá de su límite */
+    overflow: hidden; 
 }
 /* Botón estilo Sidebar (consistente con los otros botones) */
 .btn-sidebar {
@@ -57,6 +57,7 @@ body {
     cursor: pointer;
     transition: all 0.3s ease;
     text-align: center;
+    flex-shrink: 0; /* Evita que el botón se comprima */
 }
 
 .btn-sidebar:hover {
@@ -109,13 +110,14 @@ body {
     display: flex;
     flex-direction: row;
     justify-content: center;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 20px;
     width: 100%;
     max-width: 950px;
     margin: 0 auto; /* Importante para centrar el bloque principal */
     padding: 0 10px;
     box-sizing: border-box;
+    height: 600px;
 }
 
 /* LA COLUMNA PRINCIPAL */
@@ -176,29 +178,28 @@ body {
 .btn { width: 100%; padding: 10px; background: #ff59aa; color: #d24285; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 12px; }
 #banco-container .btn { width: auto; flex: 1; font-size: 10px; padding: 8px 5px; }
 /* Ajustes críticos para Chat y Log */
-#game-log, #chat-log { 
-    /* ELIMINA height: 125px !important; */
-    flex-grow: 1; /* Esto hace que ocupen el espacio disponible */
-    min-height: 100px; /* Tamaño mínimo aceptable */
+#game-log, #chat-log {
+    flex: 1; /* Se estiran para llenar el espacio vacío dentro del panel */
     
+    /* AQUÍ ocurre el scroll */
     overflow-y: auto; 
+    
+    /* Estilos */
     font-size: 11px; 
     color: #c71585; 
     padding: 10px; 
     background: white; 
     border-radius: 10px; 
     border: 1px solid #ffccd5; 
-    margin: 5px 0 15px 0; 
+    margin: 5px 0 5px 0; 
     width: 100%;
-    /* Quitamos flex-shrink: 0 para permitir que se compriman si es necesario */
-    position: relative; 
+    box-sizing: border-box; 
     scrollbar-width: none; 
 }
 
-/* Chrome, Safari y Opera */
 #game-log::-webkit-scrollbar, 
 #chat-log::-webkit-scrollbar {
-    display: none;
+    display: none; 
 }
 /* Estilo del bloque de clima para que se mantenga fijo arriba */
 .clima-header {
@@ -268,12 +269,47 @@ body {
 .reputacion-bar { height: 100%; width: 50%; background: #ff59aa; transition: width 0.5s ease-in-out; }
 #lista-misiones { list-style: none; padding: 0; text-align: left; max-height: 300px; overflow-y: auto; font-size: 13px; }
 /* El contenedor de las celdas DEBE tener position relative */
+/* Tus celdas actuales */
 .celda-juego {
     position: relative;
-    border: 1px solid #ccc; /* temporalmente ponle borde para ver si las celdas existen */
+    border: 1px solid #ccc;
     display: flex;
     justify-content: center;
     align-items: center;
+    /* Recomendación: Añade esto si el contenido se desborda */
+    overflow: hidden; 
+}
+
+/* Contenedor de mejoras (se posiciona automáticamente abajo) */
+.house-container {
+    position: absolute;
+    bottom: 2px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    gap: 2px;
+    height: 12px;
+    pointer-events: none; /* Muy importante: permite que el clic pase a través de las casas a la celda */
+}
+
+/* Estilo de las casas */
+.house {
+    width: 10px;
+    height: 10px;
+    background-color: #2ecc71; /* Verde */
+    border-radius: 2px;
+    border: 1px solid #27ae60;
+}
+
+/* Estilo del hotel */
+.hotel {
+    width: 22px;
+    height: 10px;
+    background-color: #e74c3c; /* Rojo */
+    border-radius: 2px;
+    border: 1px solid #c0392b;
 }
 
 .token {
@@ -340,7 +376,7 @@ body {
     padding: 6px 15px;
     border-radius: 20px;
     border: 1px solid #ff80bf;
-    color: #c71585;
+    color: #ff80bf;
     font-weight: bold;
     display: flex;
     align-items: center;
@@ -371,13 +407,19 @@ body {
     border-radius: 15px; 
     border: 2px solid #ffccd5; 
     
-    /* Configuración para estiramiento total */
-    flex-grow: 1;        /* Esto hace que crezca */
-    min-height: 0;       /* IMPORTANTE: Esto permite que el panel se encoja o estire según el padre */
-    
     display: flex; 
     flex-direction: column; 
     gap: 10px; 
+    box-sizing: border-box; 
+    
+    /* Esto obliga al panel a llenar los 600px del padre */
+    height: 100%; 
+    flex-grow: 0;
+    width: 300px; 
+    flex-shrink: 0;
+    
+    /* IMPORTANTE: Esto evita que el contenido se salga del panel */
+    overflow: hidden; 
 }
 .scroll-box { flex-grow: 1; background: #fff5f7; border: 1px solid #ffccd5; border-radius: 8px; padding: 8px; overflow-y: auto; font-size: 12px; min-height: 100px; }
 .input-field { padding: 8px; border: 1px solid #ffccd5; border-radius: 8px; width: 100%; }
@@ -516,8 +558,45 @@ button { cursor: pointer; }
     box-shadow: 5px 5px 0px #333;
     margin: 10px;
 }
-.impuestos { border: 3px solid #c0392b; background: #fadbd8; }
-.carcel { border: 3px solid #f1c40f; background: #fef9e7; }
+.impuestos { border: 3px solid #ff80bf; background: #fadbd8; }
+/* Estilo del contenedor que pediste */
+.contenedor-carcel {
+    border: 3px solid #ff80bf;
+    background: #fef9e7;
+    padding: 15px;
+    border-radius: 10px;
+}
+
+/* Botón que NO cambia con el hover */
+.btn-modal-carcel {
+    background-color: #ff80bf;
+    color: white;
+    padding: 10px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    margin: 5px 0;
+    width: 100%;
+    transition: none !important; /* Desactiva cualquier animación */
+}
+
+/* Fuerza que el hover sea IDÉNTICO al normal */
+.btn-modal-carcel:hover {
+    background-color: #ff80bf !important;
+    filter: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+.modal-fraude {
+    border: 3px solid #c0392b;
+    background: #fdf2f2;
+    padding: 20px;
+    text-align: center;
+    border-radius: 15px;
+    color: #c0392b;
+}
+.modal-fraude h2 { margin-top: 0; }
+
 #contenedor-poderes-dinamico {
     position: absolute;
     bottom: 10px;
@@ -544,7 +623,7 @@ button { cursor: pointer; }
     top: 80px; /* Debajo de la barra de navegación/poderes */
     right: 20px;
     background: #fff;
-    border: 2px solid #4dff88;
+    border: 2px solid #ff80bf;
     color: #000;
     padding: 15px 20px;
     border-radius: 10px;
