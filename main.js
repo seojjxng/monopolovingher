@@ -143,6 +143,31 @@ window.sincronizar = function() {
         return;
     }
 
+    // --- FUNCIÓN HELPER ---
+    function actualizarUIClima(idx) {
+        const climaInfo = (window.climas && window.climas[idx]) ? window.climas[idx].n : "Cargando...";
+    
+    // 1. Display principal
+    const elClima = document.getElementById('clima-display');
+    if (elClima) elClima.innerText = `Clima: ${climaInfo}`;
+    
+    // 2. Clima Header en contenedor independiente (INMUNE A WINDOW.LOG)
+    let container = document.getElementById('clima-container');
+    if (!container) {
+        // Si no existe el contenedor, lo creamos dinámicamente encima del game-log
+        const gameLog = document.getElementById('game-log');
+        if (gameLog) {
+            container = document.createElement('div');
+            container.id = 'clima-container';
+            gameLog.parentNode.insertBefore(container, gameLog);
+        }
+    }
+    
+    if (container) {
+        container.innerHTML = `<div id="clima-header" style="font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px; color: #ff80bf; font-weight: bold; position: sticky; top: 0; background: #fff5f7; z-index: 10;">☁️ Clima actual: ${climaInfo}</div>`;
+        }
+    }
+
     console.log("Sincronizando sala:", window.sala);
 
     // 2. LIMPIEZA TOTAL DE LISTENERS
@@ -184,15 +209,12 @@ window.sincronizar = function() {
         const s = snap.val();
         if (!s) return; 
 
-        // Actualizamos estado global
         window.salaData = s;
 
-        // PINTADO DE CASILLAS
         if (typeof window.pintarTodasLasCasillas === 'function') {
             window.pintarTodasLasCasillas(s);
         }
 
-        // Lógica de Creador y Botón Iniciar (RESTAURADA CON CLASES)
         window.creadorSala = s.creador;
         const btnIniciar = document.getElementById('btn-iniciar-partida');
         if (btnIniciar) {
@@ -210,24 +232,24 @@ window.sincronizar = function() {
             }
         }
 
-        // Detección de inicio de partida
+        if (s.climaIdx !== undefined) {
+            actualizarUIClima(s.climaIdx);
+        }
+
         if (window.estadoPrevio === "esperando" && s.estado === "jugando") {
             if (typeof window.anunciar === 'function') window.anunciar("¡La partida ha comenzado!");
         }
         window.estadoPrevio = s.estado;
 
-        // Dinero
         const elDinero = document.getElementById('dinero-mio');
         if (elDinero && s.jugadores && s.jugadores[window.miIdx]) {
             elDinero.innerText = s.jugadores[window.miIdx].dinero ?? 0;
         }
 
-        // Turnos
         if (typeof window.actualizarTurnoUI === 'function') {
             window.actualizarTurnoUI(s);
         }
 
-        // Botón Dado
         const btnDado = document.querySelector('img[alt="Lanzar dado"]') || document.getElementById('dice');
         if (btnDado) {
             const esMiTurno = (s.estado === "jugando" && String(s.turno) === String(window.miIdx));
@@ -236,29 +258,25 @@ window.sincronizar = function() {
             btnDado.style.cursor = esMiTurno ? 'pointer' : 'default';
         }
 
-        // Tokens
         if (s.jugadores && typeof window.actualizarTokens === 'function') {
             try { window.actualizarTokens(s.jugadores); } catch (e) { console.error("Error tokens:", e); }
         }
     });
 
-    // 6. CLIMA LISTENER
+    // 6. CLIMA LISTENER (Implementación solicitada)
     window.climaListener = onValue(climaRef, (snap) => {
-        const val = snap.val();
-        const idx = (val !== null && val !== undefined) ? val : 0;
-        const elClima = document.getElementById('clima-display');
-        if (elClima && window.climas && window.climas[idx]) elClima.innerText = `Clima: ${window.climas[idx].n}`;
-        
-        const gameLog = document.getElementById('game-log');
-        if (gameLog) {
-            let header = document.getElementById('clima-header');
-            if (!header) {
-                header = document.createElement('div');
-                header.id = 'clima-header';
-                header.style.cssText = "font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px; color: #ff80bf; font-weight: bold; position: sticky; top: 0; background: #fff5f7; z-index: 10;";
-                gameLog.prepend(header);
+        const idx = snap.val() !== null ? snap.val() : 0;
+        actualizarUIClima(idx);
+
+        const clima = window.climas ? window.climas[idx] : null;
+        if (clima) {
+            const gameLog = document.getElementById('game-log');
+            if (gameLog) {
+                gameLog.innerHTML += `<div style="font-size: 0.85em; margin-bottom: 4px; border-bottom: 1px solid #ffccd5; padding-bottom: 2px; color: #ff80bf; font-weight: bold;">
+                    ☁️ Clima actual: ${clima.n}
+                </div>`;
+                gameLog.scrollTop = gameLog.scrollHeight;
             }
-            header.innerHTML = `☁️ Clima actual: ${window.climas ? window.climas[idx].n : "Cargando..."}`;
         }
     });
 
@@ -336,29 +354,48 @@ window.cerrarModal = function() {
         modal.style.display = 'none';
     }
 };
+
+// --- 1. CONFIGURACIÓN GLOBAL ---
+window.climas = Object.freeze([
+    // Bonanza (Suben alquiler)
+    { n: "Primavera Soleada", mult: 1.0, tipo: "bonanza" }, 
+    { n: "Primavera Lluviosa", mult: 1.0, tipo: "bonanza" },
+    { n: "Verano Caluroso", mult: 1.0, tipo: "bonanza" }, 
+    { n: "Verano Nublado", mult: 1.0, tipo: "bonanza" },
+    
+    // Neutral (Se mantienen)
+    { n: "Otoño Fresco", mult: 1.0, tipo: "neutral" }, 
+    { n: "Otoño Ventoso", mult: 1.0, tipo: "neutral" },
+    
+    // Desastres (Bajan alquiler)
+    { n: "Lluvia Fuerte", mult: 0.7, tipo: "desastre" }, 
+    { n: "Tormenta Eléctrica", mult: 0.5, tipo: "desastre" },
+    { n: "Ventisca", mult: 0.6, tipo: "desastre" }, 
+    { n: "Nevada Intensa", mult: 0.6, tipo: "desastre" },
+    { n: "Tornado", mult: 0.5, tipo: "desastre" }
+]);
+
 window.iniciarCicloClima = function() {
     if (window.climaInterval) clearInterval(window.climaInterval);
     
-    // Importante: Asegúrate de tener 'push' en tus importaciones de Firebase
     window.climaInterval = setInterval(async () => {
         try {
-            const salaSnap = await get(ref(db, 'salas/' + window.sala));
+            // USAMOS window.db
+            const salaSnap = await get(ref(window.db, 'salas/' + window.sala));
             const salaData = salaSnap.val();
             if (!salaData) return;
 
-            // Si hay visitantes, el sistema automático se detiene
             const hayVisitantes = salaData.visitantes && Object.keys(salaData.visitantes).length > 0;
             if (hayVisitantes) return; 
 
-            const controlRef = ref(db, 'salas/' + window.sala + '/controladorClima');
+            const controlRef = ref(window.db, 'salas/' + window.sala + '/controladorClima');
             const snap = await get(controlRef);
             const ctrl = snap.val();
             const ahora = Date.now();
             
-            // Verificamos cooldown de 5 minutos (300,000 ms)
             if (!ctrl || (ahora - (ctrl.timestamp || 0) > 300000)) {
-                const nuevoIdx = Math.floor(Math.random() * window.climas.length);
-                const nuevoClima = window.climas[nuevoIdx];
+                const nuevoIdx = Math.floor(Math.random() * (window.climas ? window.climas.length : 1));
+                const nuevoClima = window.climas ? window.climas[nuevoIdx] : { n: "Desconocido" };
                 
                 const porcentaje = Math.random() < 0.5 ? 0.05 : 0.10;
                 let ajuste = 0;
@@ -366,20 +403,16 @@ window.iniciarCicloClima = function() {
                 if (nuevoClima.tipo === "desastre") ajuste = -porcentaje;
                 else if (nuevoClima.tipo === "bonanza") ajuste = porcentaje;
 
-                // 1. Actualizar clima y modificador
-                await update(ref(db, 'salas/' + window.sala), { 
+                await update(ref(window.db, 'salas/' + window.sala), { 
                     climaIdx: nuevoIdx,
                     modificadorAlquiler: ajuste
                 });
                 
-                // 2. Actualizar timestamp
                 await update(controlRef, { timestamp: ahora });
                 
-                // 3. Registro con PUSH (Para no borrar los logs anteriores)
-                const mensaje = `¡El clima cambió a ${nuevoClima.n}! ${ajuste !== 0 ? 'Ajuste de alquiler: ' + (ajuste * 100).toFixed(0) + '%' : 'Alquiler estable.'}`;
+                const mensaje = `¡El clima cambió a ${nuevoClima.n}! ${ajuste !== 0 ? 'Ajuste: ' + (ajuste * 100).toFixed(0) + '%' : 'Alquiler estable.'}`;
                 
-                // Aquí usamos push para añadir un nuevo registro al listado de logs
-                await push(ref(db, 'salas/' + window.sala + '/logs'), {
+                await push(ref(window.db, 'salas/' + window.sala + '/logs'), {
                     mensaje: mensaje,
                     timestamp: ahora
                 });
@@ -2730,8 +2763,7 @@ window.tomarControlClima = function() {
         }
     }).catch(e => console.error("Error al verificar clima:", e));
 };
-
-// --- 2. EJECUCIÓN CLIMA (Con Lógica de Reputación y Alquileres) ---
+// --- 2. EJECUCIÓN CLIMA (CORREGIDO PARA NO BORRAR EL LOG) ---
 window.cambiarClimaConCooldown = async function(idx) {
     // 1. Validar pago
     const costo = 200;
@@ -2745,22 +2777,22 @@ window.cambiarClimaConCooldown = async function(idx) {
         const porcentaje = Math.random() < 0.5 ? 0.05 : 0.10;
         let ajuste = 0;
         let efecto = "";
-        let esMalaAccion = null; // null = sin impacto reputación (neutral)
+        let esMalaAccion = null;
 
         if (nuevoClima.tipo === "desastre") {
             ajuste = -porcentaje;
             efecto = `¡Desastre! Los alquileres bajan un ${(porcentaje * 100).toFixed(0)}%.`;
-            esMalaAccion = true; // Mala acción para reputación
+            esMalaAccion = true;
         } else if (nuevoClima.tipo === "bonanza") {
             ajuste = porcentaje;
             efecto = `¡Bonanza! Los alquileres suben un ${(porcentaje * 100).toFixed(0)}%.`;
-            esMalaAccion = false; // Buena acción para reputación
+            esMalaAccion = false;
         } else {
             ajuste = 0;
             efecto = "El mercado de alquileres se mantiene estable.";
         }
 
-        // 3. Aplicar consecuencia de reputación SI es necesario
+        // 3. Aplicar consecuencia de reputación
         if (esMalaAccion !== null) {
             await window.aplicarConsecuenciaReputacion(esMalaAccion);
         }
@@ -2776,9 +2808,10 @@ window.cambiarClimaConCooldown = async function(idx) {
             modificadorAlquiler: ajuste 
         });
         
-        // 5. Registrar en Log (Identificando al autor)
+        // 5. Registrar en Log USANDO PUSH (Para no borrar historial)
         const mensajeLog = `☁️ ${nombreUsuario} cambió el clima a ${nuevoClima.n}. ${efecto}`;
-        await update(ref(window.db, 'salas/' + window.sala + '/logs'), {
+        // IMPORTANTE: Se requiere importar 'push' de firebase/database
+        await push(ref(window.db, 'salas/' + window.sala + '/logs'), {
             mensaje: mensajeLog,
             timestamp: Date.now()
         });
@@ -3338,7 +3371,7 @@ onChildAdded(logsRef, (snap) => {
         }
     }
 });
-
+        
         // 7b. LISTENER DE REPUTACIÓN (ACTUALIZADO PARA TÍTULOS)
         // Usamos 'visitantes' o 'jugadores' según corresponda
         const rutaRep = window.esVisitante 
